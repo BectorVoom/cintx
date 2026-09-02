@@ -44,9 +44,24 @@
 //!   Past it, new keys fall back to the heuristic rather than growing the cache
 //!   without limit.
 //!
-//! # The default is `off`, and why
+//! # The default follows the decomposition, and why
 //!
-//! Tuning is **opt-in**. On the 16-core CPU-runtime dev host, a 4096-quartet
+//! Tuning is on for the **cooperative** (planed-backend) decomposition and off
+//! for the **per-unit** (host-runtime) one. That is not a compromise: the two
+//! were measured with different instruments and gave opposite answers.
+//!
+//! On the ROCm gfx1151 device, where CubeCL ranks candidates by *device
+//! timestamp*, `balanced` beat the heuristic on every def2 work list —
+//! H2O/def2-SVP 33.3 -> 32.4 ms (1.03x), SO2/def2-SVP 369 -> 256 ms (1.44x),
+//! H2O/def2-TZVP 194 -> 151 ms (1.28x) — with bit-identical values
+//! (`def2_rocm_extended_and_tuning`). On the 16-core CPU-runtime dev host,
+//! where the ranking is host wall clock, it lost. The measurement below is that
+//! CPU result, and it is why the per-unit default stayed where it was.
+//!
+//! `CINTX_AUTOTUNE=off|balanced|extensive` and [`set_policy`] override both
+//! defaults.
+//!
+//! On the 16-core CPU-runtime dev host, a 4096-quartet
 //! `s`/`p`/`d` batch (8 launch classes) measured, in release, as the median of
 //! 25 repeats:
 //!
@@ -65,18 +80,18 @@
 //! kernel's compiled identity — which is where the ~65 s cold first call in an
 //! earlier run went.
 //!
-//! So the machinery ships complete, tested and documented, with the default set
-//! to the geometry that is already measured. Turn it on where you can measure
-//! the result: a quiet machine, and especially a GPU backend, where the ranking
-//! is a device-timestamp profile rather than host wall clock and where the
-//! cooperative arm has a real plane-width search to do. `CINTX_AUTOTUNE=off`
-//! is not a kill switch for a default-on feature; it is the default.
+//! So the per-unit default stays on the geometry that is already measured. The
+//! prediction that closed that paragraph — "turn it on where the ranking is a
+//! device-timestamp profile rather than host wall clock, and where the
+//! cooperative arm has a real plane-width search to do" — is the one the ROCm
+//! rows above went and checked, which is why the cooperative default is now
+//! `balanced` rather than an invitation.
 //!
 //! # Environment
 //!
 //! - `CINTX_AUTOTUNE=off|balanced|extensive` — tuning policy, or
-//!   [`set_policy`] to choose one programmatically. `off` (the default) is the
-//!   pure heuristic path. `balanced` and `extensive` map onto CubeCL's
+//!   [`set_policy`] to choose one programmatically. Either overrides the
+//!   per-decomposition default; `off` is the pure heuristic path. `balanced` and `extensive` map onto CubeCL's
 //!   [`AutotuneLevel`], which controls how coarsely
 //!   [`anchor`](cubecl::tune::anchor) buckets the workload fields of the key,
 //!   and therefore how many distinct keys exist.
@@ -247,36 +262,84 @@ impl AutotunePolicy {
     }
 }
 
-/// The active tuning policy.
+/// The policy the caller asked for, if any.
 ///
-/// Resolved from `CINTX_AUTOTUNE` on first read, unless [`set_policy`] has
-/// already spoken. An unrecognized environment value is reported and the
-/// default used rather than erroring: this is a performance knob, and no result
-/// depends on it.
+/// `None` means neither `CINTX_AUTOTUNE` nor [`set_policy`] has spoken, and the
+/// per-decomposition default in [`policy_for`] applies. An unrecognized
+/// environment value is reported and treated as unset rather than erroring:
+/// this is a performance knob, and no result depends on it.
 #[must_use]
-pub fn policy() -> AutotunePolicy {
+pub fn configured_policy() -> Option<AutotunePolicy> {
     if let Some(policy) = AutotunePolicy::from_code(POLICY.load(Ordering::Relaxed)) {
-        return policy;
+        return Some(policy);
     }
-    let resolved = match std::env::var("CINTX_AUTOTUNE") {
-        Ok(value) if !value.is_empty() => AutotunePolicy::parse(&value).unwrap_or_else(|| {
-            tracing::warn!(
-                value = %value,
-                "unrecognized CINTX_AUTOTUNE value; using the default policy"
-            );
-            DEFAULT_POLICY
-        }),
-        _ => DEFAULT_POLICY,
-    };
-    // A racing reader may resolve the same value concurrently; both store the
-    // same code, so the race is benign.
-    POLICY.store(resolved.code(), Ordering::Relaxed);
-    resolved
+    match std::env::var("CINTX_AUTOTUNE") {
+        Ok(value) if !value.is_empty() => match AutotunePolicy::parse(&value) {
+            Some(parsed) => {
+                // A racing reader may resolve the same value concurrently; both
+                // store the same code, so the race is benign.
+                POLICY.store(parsed.code(), Ordering::Relaxed);
+                Some(parsed)
+            }
+            None => {
+                tracing::warn!(
+                    value = %value,
+                    "unrecognized CINTX_AUTOTUNE value; using the per-backend default"
+                );
+                None
+            }
+        },
+        _ => None,
+    }
 }
 
-/// The policy in force when neither `CINTX_AUTOTUNE` nor [`set_policy`] says
-/// otherwise.
-const DEFAULT_POLICY: AutotunePolicy = AutotunePolicy::Off;
+/// The policy in force for a dispatch with this decomposition.
+///
+/// # Why the default is per decomposition
+///
+/// The decomposition *is* the backend question the measurement turns on. A
+/// [`Decomposition::PerUnit`] dispatch runs on a host runtime whose units are OS
+/// threads and whose profiled timings are host wall clock; a
+/// [`Decomposition::Cooperative`] one runs on a backend with hardware planes,
+/// where CubeCL ranks candidates by device timestamp. Those are different
+/// measurement instruments, and they gave opposite answers:
+///
+/// | decomposition | workload | `off` | `balanced` | |
+/// |---|---|---|---|---|
+/// | per-unit (16-core CPU) | 4096 quartets, 8 classes | 75.7 / 81.5 ms | 88.8 / 273 ms | slower |
+/// | cooperative (ROCm gfx1151) | H2O/def2-SVP, 3081 quartets | 33.3 ms | 32.4 ms | 1.03x |
+/// | cooperative (ROCm gfx1151) | SO2/def2-SVP, 22 155 quartets | 369 ms | 256 ms | **1.44x** |
+/// | cooperative (ROCm gfx1151) | H2O/def2-TZVP, 18 145 quartets | 194 ms | 151 ms | **1.28x** |
+///
+/// The GPU rows are `def2_rocm_extended_and_tuning`'s, and they came with
+/// bit-identical values — the kernel covers the same index space at every
+/// geometry, so a tuned launch buys speed and never results.
+///
+/// So the default follows the evidence rather than splitting the difference:
+/// tuning is on where its ranking is trustworthy and measurably wins, and off
+/// where the module's own CPU measurement said it does not. `CINTX_AUTOTUNE`
+/// and [`set_policy`] override both.
+#[must_use]
+pub fn policy_for(decomposition: Decomposition) -> AutotunePolicy {
+    configured_policy().unwrap_or(match decomposition {
+        Decomposition::PerUnit => AutotunePolicy::Off,
+        Decomposition::Cooperative => AutotunePolicy::Balanced,
+    })
+}
+
+/// The process-wide policy, for questions that name no decomposition.
+///
+/// Diagnostics and the CubeCL level install use this. It reports the configured
+/// policy when there is one and [`DEFAULT_POLICY`] otherwise; the decision that
+/// actually gates a dispatch is [`policy_for`].
+#[must_use]
+pub fn policy() -> AutotunePolicy {
+    configured_policy().unwrap_or(DEFAULT_POLICY)
+}
+
+/// The policy reported when nothing is configured and no decomposition is
+/// named. Not the value a cooperative dispatch gets — see [`policy_for`].
+pub const DEFAULT_POLICY: AutotunePolicy = AutotunePolicy::Off;
 
 /// Choose the tuning policy programmatically, overriding `CINTX_AUTOTUNE`.
 ///
@@ -319,7 +382,10 @@ pub fn install_runtime_config() {
         if std::env::var("CUBECL_AUTOTUNE_LEVEL").is_err() {
             config.autotune.level = match policy() {
                 AutotunePolicy::Extensive => AutotuneLevel::Extensive,
-                // `Off` never reaches a tuned dispatch; the level is irrelevant.
+                // `Off` never reaches a tuned dispatch, so the level it maps to
+                // is irrelevant — and a cooperative dispatch under the
+                // per-decomposition default arrives here wanting `Balanced`
+                // anyway.
                 AutotunePolicy::Off | AutotunePolicy::Balanced => AutotuneLevel::Balanced,
             };
         }
@@ -538,7 +604,7 @@ pub fn cube_width_priority(key: &LaunchGeometryKey, width: u32, budget_bytes: us
 /// tuner is constructed.
 #[must_use]
 pub fn should_tune(key: &LaunchGeometryKey, items: usize) -> bool {
-    if !policy().enabled() || items < MIN_TUNE_ITEMS {
+    if !policy_for(key.decomposition).enabled() || items < MIN_TUNE_ITEMS {
         return false;
     }
     install_runtime_config();

@@ -452,14 +452,14 @@ fn rocm_backend_fma_fusion_probe() {
         println!("CINTX_ROCM_ORACLE not set; skipping");
         return;
     }
-    use cintx_cubecl::{BASE_DEVICE_NROOTS, RysFamily, device_nroots_ceiling, probe_fma_fusion};
+    use cintx_cubecl::{
+        BASE_DEVICE_NROOTS, EXTENDED_DEVICE_NROOTS, RysFamily, device_nroots_ceiling,
+        probe_fma_fusion,
+    };
 
     for (label, kind) in [("cpu", BackendKind::Cpu), ("rocm", BackendKind::Rocm)] {
         let resolved = backend(kind);
         let probe = probe_fma_fusion(&resolved);
-        // `int2e` is the family this suite exercises, and it has not been
-        // flipped onto the inline extended entry — so its ceiling stays at the
-        // base whatever the probe says, which is exactly the assertion below.
         let ceiling = device_nroots_ceiling(&resolved, RysFamily::Int2e);
         println!(
             "  {label:<6} fused={:<6} divergent={}/{}  nroots ceiling={ceiling}",
@@ -473,12 +473,25 @@ fn rocm_backend_fma_fusion_probe() {
              ceiling must stay at {BASE_DEVICE_NROOTS}.",
             probe.divergent, probe.pairs
         );
-        // Scaffolding only: the raise is task 33-03 and needs a green per-family
-        // oracle parity test as well as this probe, one family at a time.
+        // The probe is necessary but not sufficient: `int2e`'s ceiling is
+        // raised only when the family has been flipped (task 33-03 did that)
+        // *and* `extended-device-rys` is compiled in. This assertion used to
+        // read `ceiling == BASE_DEVICE_NROOTS` unconditionally, which was
+        // scaffolding from before the flip and held only because the suite
+        // happened to be built without the feature.
+        let expected = if cfg!(feature = "extended-device-rys")
+            && RysFamily::Int2e.runs_extended_rys()
+        {
+            EXTENDED_DEVICE_NROOTS
+        } else {
+            BASE_DEVICE_NROOTS
+        };
         assert_eq!(
-            ceiling, BASE_DEVICE_NROOTS,
-            "{label}: a passing probe alone must not raise the ceiling for a \
-             family that has not been flipped"
+            ceiling, expected,
+            "{label}: the ceiling must follow `int2e`'s own flip \
+             (runs_extended_rys={}) and the feature (={}), and nothing else",
+            RysFamily::Int2e.runs_extended_rys(),
+            cfg!(feature = "extended-device-rys"),
         );
     }
 }

@@ -85,8 +85,9 @@ pub use transfer::{TransferPlan, TransferWorkspaceBuffers};
 pub use tuning::{
     AutotunePolicy, CANDIDATE_CUBE_WIDTHS, Decomposition, LaunchGeometryKey, MAX_TUNED_KEYS,
     MIN_TUNE_ITEMS, TUNE_SAMPLE_MAX_ITEMS, TUNE_SAMPLE_MIN_ITEMS, TUNE_SAMPLE_WORK_BUDGET,
-    TUNING_SCHEMA_VERSION, TunedFamily, cube_width_priority, device_fingerprint,
-    install_runtime_config, policy, set_policy, tune_sample_items, tuned_key_count,
+    DEFAULT_POLICY, TUNING_SCHEMA_VERSION, TunedFamily, configured_policy,
+    cube_width_priority, device_fingerprint, install_runtime_config, policy, policy_for,
+    set_policy, tune_sample_items, tuned_key_count,
 };
 
 #[cfg(test)]

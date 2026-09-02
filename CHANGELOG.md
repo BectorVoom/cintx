@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — autotuning is on by default where its ranking is trustworthy (2026-09-02)
+
+`docs/design/def2_speed_precision_plan.md` D3.1, and the answer to the question Phase 6 left
+open. That module shipped with tuning off and a prediction: "turn it on where the ranking is
+a device-timestamp profile rather than host wall clock, and where the cooperative arm has a
+real plane-width search to do." This went and checked, on the ROCm gfx1151 device, over the
+def2 work lists:
+
+| decomposition | workload | `off` | `balanced` | |
+|---|---|---|---|---|
+| per-unit (16-core CPU) | 4096 quartets, 8 classes | 75.7 / 81.5 ms | 88.8 / 273 ms | slower |
+| cooperative (ROCm) | H2O/def2-SVP, 3 081 quartets | 33.6 ms | 31.8 ms | 1.06x |
+| cooperative (ROCm) | SO2/def2-SVP, 22 155 quartets | 375 ms | 260 ms | **1.44x** |
+| cooperative (ROCm) | H2O/def2-TZVP, 18 145 quartets | 196 ms | 145 ms | **1.36x** |
+
+Every GPU row came with **bit-identical values** (`worst |off - tuned| = 0.000e0`), which is
+the part that had to hold either way: the kernel covers the same index space at every
+geometry, so a tuned launch buys speed and never results.
+
+So the default is now per **decomposition**, which is the backend question the measurement
+turns on — `Cooperative` (planed backends, device-timestamp ranking) defaults to `balanced`,
+`PerUnit` (host runtimes, wall-clock ranking) stays `off`. `CINTX_AUTOTUNE` and `set_policy`
+override both. `policy()` still reports the process-wide answer for diagnostics;
+`policy_for(decomposition)` is what gates a dispatch, and `configured_policy()` reports
+whether the caller asked for anything at all.
+
+### Added — the def2 claims verified on a GPU backend (2026-09-02)
+
+D1.3's precondition. Every def2 gate so far ran on the CPU backend, where `two_e_per_unit`
+selects the one-quartet-per-unit decomposition; the cooperative shape — real `sync_cube`
+barriers, the cube splitting the contraction — was compiled for every backend and executed on
+none in CI. The extended Rys entry is a double-double solver whose correctness rests on the
+FMA probe, and both ran on that shape for the first time here.
+
+`def2_rocm_extended_and_tuning` reports: the ROCm FMA probe passes (`fused=true`,
+`divergent=0/6`), all six families reach the extended ceiling, and the def2-TZVP `nroots` 6-7
+quartets reproduce vendored libcint — H2O worst `|diff|/tol = 0.000` over 26 068 elements,
+SO2 `0.002` over 945 798. The cooperative and per-unit shapes agree to 6.1e-14, so the launch
+topology does not change a result.
+
+`def2_batch_rocm_parity`'s FMA-probe test asserted `int2e`'s ceiling was *unraised* — scaffolding
+from before task 33-03 flipped that family, which held only because the suite happened to be
+built without `extended-device-rys`. It now asserts the ceiling follows `int2e`'s own flip and
+the feature, and nothing else.
+
 ### Added — specialization prewarm, and one launch per signature verified on the def2 lists (2026-09-02)
 
 `docs/design/def2_speed_precision_plan.md` D2.
