@@ -28,7 +28,10 @@
 
 #![cfg(all(feature = "cpu", has_vendor_libcint))]
 
-use cintx_basis::{AtomSpec, Molecule, RawArrays, StandardBasis, to_raw_arrays};
+#[path = "def2_fixtures.rs"]
+mod def2_fixtures;
+
+use cintx_basis::{Molecule, RawArrays, StandardBasis, to_raw_arrays};
 use cintx_compat::raw::{RawApiId, eval_raw};
 use cintx_driver::{
     BasisView, DiagonalEvaluator, DriverError, LaunchTier, QuartetEvaluator, ShellPair,
@@ -36,6 +39,9 @@ use cintx_driver::{
     run_buckets, screen_quartets,
 };
 use cintx_oracle::vendor_ffi;
+use def2_fixtures::{methane, sulfur_dioxide, water};
+use serde_json::{Value, json};
+use std::sync::Mutex;
 
 /// Shared-memory budget used only for the tier histogram, not for dispatch.
 const SHARED_MEMORY_BYTES: usize = 48 * 1024;
@@ -116,32 +122,105 @@ impl QuartetEvaluator for CintxEngine<'_> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
+// The machine-readable record (D0.2)
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn water(basis: StandardBasis) -> Molecule {
-    Molecule::new(
-        vec![
-            AtomSpec::from_angstrom("O", [0.0, 0.0, 0.0]).unwrap(),
-            AtomSpec::from_angstrom("H", [0.0, 0.757, 0.587]).unwrap(),
-            AtomSpec::from_angstrom("H", [0.0, -0.757, 0.587]).unwrap(),
-        ],
-        basis,
-    )
+/// Rows collected by every `run_case` / `run_batch_case` in this process.
+///
+/// A benchmark that only prints cannot be compared against last week's, and the
+/// plan's G5 says a speed number is only admissible with the work list, the
+/// coverage and the match status that produced it. So every row a run produces
+/// is accumulated here and written once, rather than each case writing its own
+/// file and the last one winning.
+static ROWS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+
+fn record(row: Value) {
+    ROWS.lock().expect("bench row sink poisoned").push(row);
 }
 
-fn methane(basis: StandardBasis) -> Molecule {
-    let d = 0.629;
-    Molecule::new(
-        vec![
-            AtomSpec::from_angstrom("C", [0.0, 0.0, 0.0]).unwrap(),
-            AtomSpec::from_angstrom("H", [d, d, d]).unwrap(),
-            AtomSpec::from_angstrom("H", [-d, -d, d]).unwrap(),
-            AtomSpec::from_angstrom("H", [-d, d, -d]).unwrap(),
-            AtomSpec::from_angstrom("H", [d, -d, -d]).unwrap(),
-        ],
-        basis,
-    )
+/// Per-bucket census of one work list: class, Rys order, tier, quartet count.
+///
+/// This is D0.3's baseline field. "def2-TZVP has classes above nroots 5" is a
+/// yes/no; what makes D1's progress measurable is *how much work* sits in them,
+/// and that is a per-bucket number that has to be recorded before the coverage
+/// changes underneath it.
+fn bucket_rows(basis: &BasisView<'_>, buckets: &[cintx_driver::Bucket]) -> Vec<Value> {
+    buckets
+        .iter()
+        .map(|bucket| {
+            let tier = bucket.class.tier(SHARED_MEMORY_BYTES);
+            json!({
+                "class": bucket.class.angular_momenta,
+                "nroots": bucket.class.nroots,
+                "quartets": bucket.len(),
+                "g_tensor_bytes": bucket.class.g_tensor_bytes(),
+                "tier": format!("{tier:?}"),
+                "above_base_ceiling": bucket.class.nroots as usize
+                    > cintx_cubecl::BASE_DEVICE_NROOTS,
+                // The contraction shape D2.4 wants per bucket: a class that is
+                // contraction-bound rather than angular-momentum-bound is the
+                // one that should prefer the cooperative kernel arm.
+                "primitive_work": bucket
+                    .quartets
+                    .iter()
+                    .map(|&q| cintx_driver::primitive_work(basis, q))
+                    .sum::<u64>(),
+            })
+        })
+        .collect()
+}
+
+/// Split of a bucket list by the base device envelope — the D0.3 baseline.
+fn envelope_split(buckets: &[cintx_driver::Bucket]) -> Value {
+    let (mut above, mut below) = (0_usize, 0_usize);
+    for bucket in buckets {
+        if bucket.class.nroots as usize > cintx_cubecl::BASE_DEVICE_NROOTS {
+            above += bucket.len();
+        } else {
+            below += bucket.len();
+        }
+    }
+    json!({
+        "quartets_at_or_below_base_ceiling": below,
+        "quartets_above_base_ceiling": above,
+        "fraction_above_base_ceiling": if above + below == 0 {
+            0.0
+        } else {
+            above as f64 / (above + below) as f64
+        },
+    })
+}
+
+/// Write everything this process collected to the mandatory artifact locations.
+///
+/// Called from each `#[test]` entry point after its cases run. Writing on every
+/// call rather than once at exit means a run interrupted halfway still leaves
+/// the rows it did produce, which is the difference between a partial record and
+/// none.
+fn flush_artifact(run: &str) {
+    let rows = ROWS.lock().expect("bench row sink poisoned").clone();
+    if rows.is_empty() {
+        return;
+    }
+    let artifact = json!({
+        "schema": "cintx_def2_throughput/1",
+        "run": run,
+        "backend": "cpu",
+        "reference_engine": "libcint 6.1.3 (C, 1 thread)",
+        "extended_device_rys": cfg!(feature = "extended-device-rys"),
+        "base_nroots_ceiling": cintx_cubecl::BASE_DEVICE_NROOTS,
+        "quartet_cap": quartet_cap(),
+        "repeats": bench_repeats(),
+        "cases": rows,
+    });
+    match cintx_oracle::fixtures::write_pretty_json_artifact(
+        "/mnt/data/cintx_def2_throughput.json",
+        "cintx_def2_throughput.json",
+        &artifact,
+    ) {
+        Ok(written) => println!("\nthroughput artifact: {}", written.actual_path.display()),
+        Err(error) => eprintln!("\nthroughput artifact NOT written: {error}"),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -261,14 +340,32 @@ fn run_case(label: &str, molecule: &Molecule, tolerance: f64) {
         "  launch tiers: thread-per-quartet={}  cube+shared={}  cube+global={}",
         tiers[0], tiers[1], tiers[2]
     );
+    // The envelope report, against the ceiling this build actually has. Printing
+    // a literal `nroots<=5` here would have gone stale the moment D1 raised the
+    // ceiling, and would have read as a coverage gap where there is none.
+    let device_ceiling = cintx_cubecl::device_nroots_ceiling(
+        &cintx_cubecl::backend::ResolvedBackend::from_intent(&cintx_runtime::BackendIntent {
+            backend: cintx_runtime::BackendKind::Cpu,
+            ..Default::default()
+        })
+        .expect("cpu backend"),
+        cintx_cubecl::RysFamily::Int2e,
+    );
+    let eligible: usize = buckets
+        .iter()
+        .filter(|b| b.class.nroots as usize <= device_ceiling)
+        .map(|b| b.len())
+        .sum();
+    let above_base: usize = buckets
+        .iter()
+        .filter(|b| b.class.nroots as usize > cintx_cubecl::BASE_DEVICE_NROOTS)
+        .map(|b| b.len())
+        .sum();
     println!(
-        "  device-eligible (nroots<=5): {} of {} quartets",
-        buckets
-            .iter()
-            .filter(|b| b.class.nroots <= 5)
-            .map(|b| b.len())
-            .sum::<usize>(),
-        kept.len()
+        "  device-eligible (nroots<={device_ceiling}): {eligible} of {} sampled quartets  \
+         [{above_base} of them above the base ceiling {}]",
+        buckets.iter().map(|b| b.len()).sum::<usize>(),
+        cintx_cubecl::BASE_DEVICE_NROOTS,
     );
 
     // Correctness before speed: only compare timings if values agree.
@@ -340,18 +437,48 @@ fn run_case(label: &str, molecule: &Molecule, tolerance: f64) {
             actual.stats.quartets_failed, mismatches
         );
     }
+
+    record(json!({
+        "case": label,
+        "mode": "per-quartet",
+        "tolerance": tolerance,
+        "shells": basis.nbas(),
+        "pairs": pairs.len(),
+        "quartets_enumerated": quartets.len(),
+        "quartets_kept": report.kept,
+        "kept_fraction": report.kept_fraction(),
+        "quartets_sampled": sampled,
+        "buckets": buckets.len(),
+        "envelope": envelope_split(&buckets),
+        "bucket_rows": bucket_rows(&basis, &buckets),
+        "tier_counts": {
+            "thread_per_quartet": tiers[0],
+            "cube_per_quartet_shared": tiers[1],
+            "cube_per_quartet_global": tiers[2],
+        },
+        "warmup_seconds": warmup.as_secs_f64(),
+        "libcint_seconds": ref_secs,
+        "cintx_seconds": act_secs,
+        "quartets_evaluated": actual.stats.quartets_evaluated,
+        "quartets_failed": actual.stats.quartets_failed,
+        "max_abs_diff_vs_vendor": max_diff,
+        "mismatched_elements": mismatches,
+        "comparable": actual.stats.quartets_failed == 0 && mismatches == 0,
+    }));
 }
 
 #[test]
 #[ignore = "throughput benchmark; run explicitly in release with --ignored"]
 fn def2_whole_workload_throughput() {
-    println!("\nCPU-backend note: CubeCL and libcint run on the same silicon here, so the");
-    println!("realistic CPU-backend goal is parity after batching removes per-launch overhead.");
-    println!("A throughput win is expected only on a GPU backend (cuda/rocm/wgpu).\n");
+    println!("\nCPU-backend note: CubeCL and libcint run on the same silicon here, so this");
+    println!("case measures the per-quartet route, where cintx pays a planner pass, twelve");
+    println!("allocations, a dispatch and a blocking readback per shell quartet. It is the");
+    println!("cost `def2_batched_throughput` removes, and it is reported so the gap between");
+    println!("the two routes stays visible rather than being quoted away.\n");
 
-    // Scope is opt-in: def2-TZVP routes its f quartets (Rys order 6-7) through
-    // the host serial loop, so a full TZVP sweep is far slower than the SVP one
-    // and is gated behind CINTX_BENCH_SCOPE=full.
+    // Scope is opt-in: the heavier fixtures multiply the wall clock of a route
+    // that is already the slow one, so they are gated behind
+    // CINTX_BENCH_SCOPE=full.
     let scope = std::env::var("CINTX_BENCH_SCOPE").unwrap_or_else(|_| "svp".to_owned());
 
     run_case(
@@ -372,15 +499,32 @@ fn def2_whole_workload_throughput() {
             1e-10,
         );
         run_case(
+            "SO2 / def2-SVP  (screened 1e-10)",
+            &sulfur_dioxide(StandardBasis::Def2Svp),
+            1e-10,
+        );
+        run_case(
             "H2O / def2-TZVP (screened 1e-10)",
             &water(StandardBasis::Def2Tzvp),
             1e-10,
         );
+        // The second-row TZVP case (D0.1). It is last because it is the
+        // heaviest: SO2/def2-TZVP is 35 shells, and it is the only fixture
+        // whose nroots 6-7 buckets carry enough quartets to weigh anything in a
+        // TZVP timing.
+        run_case(
+            "SO2 / def2-TZVP (screened 1e-10)",
+            &sulfur_dioxide(StandardBasis::Def2Tzvp),
+            1e-10,
+        );
     } else {
         println!(
-            "\n(CH4 and def2-TZVP cases skipped; set CINTX_BENCH_SCOPE=full to include them.)"
+            "\n(CH4, SO2 and def2-TZVP cases skipped; set CINTX_BENCH_SCOPE=full to \
+             include them.)"
         );
     }
+
+    flush_artifact("def2_whole_workload_throughput");
 }
 
 /// The screening correctness gate: at tolerance 0 the kept list must be the
@@ -686,6 +830,37 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
              Speed is not reported for an incorrect run."
         );
     }
+
+    // The batched case bucketes only for the record: `evaluate_2e_quartet_batch`
+    // does its own class grouping internally, and re-deriving it here would be a
+    // second opinion rather than a measurement. The bucket rows describe the
+    // work list, and `launches`/`launch_classes` describe what the backend did
+    // with it — D2.2's consolidation check reads the two together.
+    let buckets = bucket_quartets(&basis, &kept);
+    record(json!({
+        "case": label,
+        "mode": "batched",
+        "tolerance": tolerance,
+        "shells": basis.nbas(),
+        "quartets_enumerated": quartets.len(),
+        "quartets_kept": kept.len(),
+        "buckets": buckets.len(),
+        "envelope": envelope_split(&buckets),
+        "bucket_rows": bucket_rows(&basis, &buckets),
+        "kernel_launch_count": batched.stats.kernel_launch_count,
+        "launch_classes": batched.stats.launch_classes,
+        "readback_count": batched.stats.readback_count,
+        "transfer_bytes": batched.stats.transfer_bytes,
+        "max_g_slab_bytes": batched.stats.max_g_slab_bytes,
+        "warmup_seconds": warm_secs,
+        "libcint_seconds": ref_secs,
+        "cintx_seconds": act_secs,
+        "dispatch_ns": batched.stats.dispatch_ns,
+        "host_transform_ns": batched.stats.host_transform_ns,
+        "max_abs_diff_vs_vendor": max_diff,
+        "mismatched_elements": mismatches,
+        "comparable": mismatches == 0,
+    }));
 }
 
 #[test]
@@ -706,4 +881,29 @@ fn def2_batched_throughput() {
         &methane(StandardBasis::Def2Svp),
         1e-10,
     );
+    run_batch_case(
+        "SO2 / def2-SVP  (screened 1e-10)",
+        &sulfur_dioxide(StandardBasis::Def2Svp),
+        1e-10,
+    );
+    if std::env::var("CINTX_BENCH_SCOPE").as_deref() == Ok("full") {
+        // TZVP through the batch path needs the extended device Rys ceiling for
+        // its nroots 6-7 classes (D1). Without the feature those classes are
+        // refused, and the case would report NOT COMPARABLE rather than a
+        // number — correct, but not worth the minutes it costs by default.
+        run_batch_case(
+            "H2O / def2-TZVP (screened 1e-10)",
+            &water(StandardBasis::Def2Tzvp),
+            1e-10,
+        );
+        run_batch_case(
+            "SO2 / def2-TZVP (screened 1e-10)",
+            &sulfur_dioxide(StandardBasis::Def2Tzvp),
+            1e-10,
+        );
+    } else {
+        println!("\n(def2-TZVP batch cases skipped; set CINTX_BENCH_SCOPE=full.)");
+    }
+
+    flush_artifact("def2_batched_throughput");
 }

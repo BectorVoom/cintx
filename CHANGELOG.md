@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — def2 coverage census, a second-row fixture, and machine-readable throughput rows (2026-09-02)
+
+`docs/design/def2_speed_precision_plan.md` D0, and the executable form of gates G1 and G2.
+
+**The coverage question had no test.** `def2_tzvp_exceeds_the_device_envelope` proves the
+*opposite* — that TZVP has classes above `nroots = 5` — and the six extended-Rys parity gates
+each prove that *their* family is right where it runs. Nothing said a whole def2 work list is
+served without a refusal. `def2_device_coverage` asks every batch surface, for every launch
+class in a def2 work list, whether it accepts the class, using one representative tuple per
+class (eligibility is a class property, decided in one `if nroots > ceiling`, so a
+representative is a complete test and costs seconds rather than hours — the SO2/TZVP 2e list
+alone is ~200 k quartets).
+
+Measured on the CPU backend with the extended path on: **32 classes above the base ceiling
+across four workloads, zero refusals.** Without the feature the same census reports every one
+of those classes refused — asserted equal, class for class, so a future regression cannot
+turn a refusal into a silent evaluation at a lower order.
+
+- **SO2** is the second-row fixture D0.1 asks for. Sulfur's def2-TZVP block runs
+  `s s s s s p p p p p d d f`, so its `(f f | f f)` classes are carried by an atom with real
+  contraction depth. It matters: H2O/def2-TZVP puts **14 of 18 145** screened quartets above
+  the base ceiling (0.08%), SO2/def2-TZVP puts **620 of 181 070** (0.34%) — 4.4x the weight,
+  which is the difference between a rounding error and a measurable bucket.
+- **`def2_fixtures`** is shared by the census and the benchmark, so the two are describing
+  the same molecules rather than two geometries wearing one name.
+- **`cintx_def2_throughput.json`** (D0.2) carries every case's work list, per-bucket rows
+  (class, Rys order, tier, quartet count, G-tensor bytes, primitive work), the envelope split
+  D0.3 asks for as a baseline, launch/readback/transfer counters, both engines' times, and
+  the match status. G5 says a speed number is inadmissible without them, so they travel
+  together.
+- **`cintx_def2_coverage.json`** carries the per-family class census.
+
+**And the numbers, from the batched route with all four fixtures device-resident** (CPU
+backend, best of 9, values compared before timing, 0 mismatched elements throughout):
+
+| workload | quartets | libcint 6.1.3 | cintx batched | |
+|---|---|---|---|---|
+| CH4 / def2-SVP | 14 706 | 9.97 ms | 5.47 ms | **1.82x faster** |
+| SO2 / def2-SVP | 21 271 | 29.5 ms | 19.9 ms | **1.48x faster** |
+| H2O / def2-TZVP | 18 145 | 15.2 ms | 10.9 ms | **1.39x faster** |
+| SO2 / def2-TZVP | 181 070 | 351 ms | 279 ms | **1.26x faster** |
+
+That is G3, on the CPU backend, which the benchmark's own header had said to expect only on a
+GPU: "CubeCL and libcint run on the same silicon here, so the realistic CPU-backend goal is
+parity". The two def2-TZVP rows exist at all only because D1 put their `nroots` 6-7 classes on
+the device — before that they were refused. The header now describes the per-quartet route,
+which remains 20-90x slower and is reported so the gap between the two routes stays visible
+instead of being quoted away.
+
 ### Fixed — the inline extended-Rys entry skipped the vendor's small-x branch (2026-09-02)
 
 `rys_roots_host_wheeler` takes the vendor's global `x <= SMALLX_LIMIT (3e-7)` affine table

@@ -1,0 +1,358 @@
+{
+  "backend": "cpu",
+  "base_nroots_ceiling": 5,
+  "classes_above_base_ceiling": 32,
+  "extended_nroots_ceiling": 12,
+  "fma_fusion_verified": true,
+  "schema": "cintx_def2_coverage/1",
+  "workloads": [
+    {
+      "auxiliary_basis": "def2/J",
+      "auxiliary_shells": 25,
+      "families": [
+        {
+          "accepted": 72,
+          "classes": 72,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 9,
+          "classes": 9,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_nuc",
+          "nroots_present": [
+            1,
+            2,
+            3
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 9,
+          "classes": 9,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_ipnuc",
+          "nroots_present": [
+            1,
+            2,
+            3
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 45,
+          "classes": 45,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 45,
+          "classes": 45,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e_ip1",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "refusals": [],
+          "refused": 0
+        }
+      ],
+      "shells": 12,
+      "workload": "H2O/def2-SVP"
+    },
+    {
+      "auxiliary_basis": "def2/J",
+      "auxiliary_shells": 25,
+      "families": [
+        {
+          "accepted": 178,
+          "classes": 178,
+          "classes_above_base_ceiling": 8,
+          "device_nroots_ceiling": 12,
+          "family": "int2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 16,
+          "classes": 16,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_nuc",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 16,
+          "classes": 16,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_ipnuc",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 75,
+          "classes": 75,
+          "classes_above_base_ceiling": 1,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 75,
+          "classes": 75,
+          "classes_above_base_ceiling": 3,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e_ip1",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "refusals": [],
+          "refused": 0
+        }
+      ],
+      "shells": 19,
+      "workload": "H2O/def2-TZVP"
+    },
+    {
+      "auxiliary_basis": "def2/J",
+      "auxiliary_shells": 47,
+      "families": [
+        {
+          "accepted": 81,
+          "classes": 81,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 9,
+          "classes": 9,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_nuc",
+          "nroots_present": [
+            1,
+            2,
+            3
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 9,
+          "classes": 9,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_ipnuc",
+          "nroots_present": [
+            1,
+            2,
+            3
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 45,
+          "classes": 45,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 45,
+          "classes": 45,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e_ip1",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "refusals": [],
+          "refused": 0
+        }
+      ],
+      "shells": 20,
+      "workload": "SO2/def2-SVP"
+    },
+    {
+      "auxiliary_basis": "def2/J",
+      "auxiliary_shells": 47,
+      "families": [
+        {
+          "accepted": 256,
+          "classes": 256,
+          "classes_above_base_ceiling": 15,
+          "device_nroots_ceiling": 12,
+          "family": "int2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 16,
+          "classes": 16,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_nuc",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 16,
+          "classes": 16,
+          "classes_above_base_ceiling": 0,
+          "device_nroots_ceiling": 12,
+          "family": "int1e_ipnuc",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 80,
+          "classes": 80,
+          "classes_above_base_ceiling": 1,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "refusals": [],
+          "refused": 0
+        },
+        {
+          "accepted": 80,
+          "classes": 80,
+          "classes_above_base_ceiling": 4,
+          "device_nroots_ceiling": 12,
+          "family": "int3c2e_ip1",
+          "nroots_present": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "refusals": [],
+          "refused": 0
+        }
+      ],
+      "shells": 35,
+      "workload": "SO2/def2-TZVP"
+    }
+  ]
+}
