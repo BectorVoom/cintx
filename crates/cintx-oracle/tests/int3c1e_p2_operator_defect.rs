@@ -127,7 +127,11 @@ fn int3c1e_p2_returns_the_plain_int3c1e_value() {
     for ls in [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 3, 4]] {
         let (_, p2) = evaluate("int3c1e_p2_cart", ls);
         let (_, plain) = evaluate("int3c1e_cart", ls);
-        let identical = p2.iter().zip(&plain).filter(|(a, b)| a.to_bits() == b.to_bits()).count();
+        let identical = p2
+            .iter()
+            .zip(&plain)
+            .filter(|(a, b)| a.to_bits() == b.to_bits())
+            .count();
         println!(
             "  l={ls:?}: {identical}/{} elements of int3c1e_p2 are bit-identical to int3c1e",
             p2.len()

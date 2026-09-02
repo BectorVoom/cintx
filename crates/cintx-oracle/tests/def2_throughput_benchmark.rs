@@ -766,8 +766,8 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
     // shipped entry point here is what keeps the benchmark's cold column and a
     // caller's start-up cost the same measurement.
     let warm_start = std::time::Instant::now();
-    let prewarm = cintx_cubecl::prewarm_2e_work_list(&backend, &shells, &list)
-        .expect("batched prewarm");
+    let prewarm =
+        cintx_cubecl::prewarm_2e_work_list(&backend, &shells, &list).expect("batched prewarm");
     let warm_secs = warm_start.elapsed().as_secs_f64();
 
     let mut act_secs = f64::INFINITY;

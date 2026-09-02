@@ -169,11 +169,8 @@ fn high_order_triples(arrays: &RawArrays) -> Vec<[u32; 3]> {
     for mu in arrays.orbital_shells() {
         for nu in mu..arrays.orbital_shells().end {
             for p in arrays.auxiliary_shells() {
-                let nroots = deriv_nroots(
-                    shell_l(arrays, mu),
-                    shell_l(arrays, nu),
-                    shell_l(arrays, p),
-                );
+                let nroots =
+                    deriv_nroots(shell_l(arrays, mu), shell_l(arrays, nu), shell_l(arrays, p));
                 if nroots > BASE_DEVICE_NROOTS {
                     list.push([mu as u32, nu as u32, p as u32]);
                 }
@@ -231,9 +228,7 @@ fn ext_rys_3c2e_deriv_batch_matches_vendor() {
         for family in [ThreeC2eDerivFamily::Ip1, ThreeC2eDerivFamily::Ip2] {
             let (_, label) = api_for(family);
             let batch = evaluate_3c2e_deriv_triple_batch(&cpu_backend(), family, &shells, &list)
-                .unwrap_or_else(|e| {
-                    panic!("{}: high-order {label} batch failed: {e}", aux.name())
-                });
+                .unwrap_or_else(|e| panic!("{}: high-order {label} batch failed: {e}", aux.name()));
 
             let mut classes: BTreeSet<(usize, usize, usize)> = BTreeSet::new();
             let mut orders: BTreeSet<usize> = BTreeSet::new();
@@ -243,7 +238,8 @@ fn ext_rys_3c2e_deriv_batch_matches_vendor() {
 
             for (index, t) in list.iter().enumerate() {
                 // Three Cartesian components per AO block.
-                let len = 3 * shell_ao(&arrays, t[0] as usize)
+                let len = 3
+                    * shell_ao(&arrays, t[0] as usize)
                     * shell_ao(&arrays, t[1] as usize)
                     * shell_ao(&arrays, t[2] as usize);
                 let start = batch.offsets[index];
@@ -323,7 +319,8 @@ fn ext_rys_3c2e_deriv_per_tuple_matches_vendor() {
         let mut compared = 0_usize;
 
         for t in &list {
-            let len = 3 * shell_ao(&arrays, t[0] as usize)
+            let len = 3
+                * shell_ao(&arrays, t[0] as usize)
                 * shell_ao(&arrays, t[1] as usize)
                 * shell_ao(&arrays, t[2] as usize);
             let shls = [t[0] as i32, t[1] as i32, t[2] as i32];
@@ -484,7 +481,17 @@ fn ext_rys_3c2e_deriv_reaches_every_arm() {
             // SAFETY: `actual` is sized from the vendor's own AO counts times
             // the three derivative components.
             let status = unsafe {
-                eval_raw(api, Some(&mut actual), None, &[0, 1, 2], &atm, &bas, &env, None, None)
+                eval_raw(
+                    api,
+                    Some(&mut actual),
+                    None,
+                    &[0, 1, 2],
+                    &atm,
+                    &bas,
+                    &env,
+                    None,
+                    None,
+                )
             };
             assert!(
                 status.is_ok(),
@@ -553,7 +560,17 @@ fn ext_rys_3c2e_deriv_still_refuses_past_the_extended_ceiling() {
         let mut actual = vec![0.0_f64; len];
         // SAFETY: `actual` is sized from the AO counts of the synthetic triple.
         let status = unsafe {
-            eval_raw(api, Some(&mut actual), None, &[0, 1, 2], &atm, &bas, &env, None, None)
+            eval_raw(
+                api,
+                Some(&mut actual),
+                None,
+                &[0, 1, 2],
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
         };
         assert!(
             status.is_err(),

@@ -5097,7 +5097,6 @@ fn run_1e_giao_nuc_batches<R: Runtime>(
     let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
     let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
 
-
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -6199,7 +6198,6 @@ fn run_1e_nuc_grad_batches<R: Runtime>(
     let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
     let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
 
-
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -7116,7 +7114,6 @@ fn run_1e_rinv_batches<R: Runtime>(
     let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
     let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
 
-
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -7639,7 +7636,6 @@ fn run_1e_drinv_batches<R: Runtime>(
     // every `nroots`, and only a group with `nroots >= 6` reads it.
     let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
     let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
-
 
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
@@ -8196,7 +8192,6 @@ fn run_1e_nuc_grad_both_batches<R: Runtime>(
     let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
     let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
 
-
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -8715,7 +8710,6 @@ fn run_1e_nuc_gradgrad_bra_batches<R: Runtime>(
     // every `nroots`, and only a group with `nroots >= 6` reads it.
     let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
     let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
-
 
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,

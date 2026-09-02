@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the spinor transform now covers libcint's whole `l` range, and refuses past it (2026-09-03)
+
+The Cartesian-to-spinor Clebsch-Gordan tables in `c2spinor_coeffs.rs` were transcribed by
+hand for `l = 0..=4` and stopped. Above that the transform had two behaviours, both wrong:
+the 2D/4D bra path **panicked** (`cart_to_spinor_sf_2d: l=5 > 4 not supported`, reachable
+from `eval_raw` with an ordinary `h` shell), and the single-block ket path returned empty
+coefficient rows and so handed back **zeros with an `Ok`**. Neither is a ceiling libcint has:
+its `g_c2s[]` points spinor coefficients into `g_trans_cart2jR[]`/`jI[]` for `l = 0..=12`.
+
+- **`xtask gen-c2spinor-table`** extracts those 2 x 34 580 coefficients from the vendored
+  source into `transform/c2spinor_data.rs`, the same way `gen-c2s-table` does for the
+  spherical table, and `--check` is the drift gate. The block offsets it derives reproduce
+  `g_c2s[]`'s pointer arithmetic to the digit (`lt` 0, 4, 40, 160, 440, ...; `gt` 0, 16, 88,
+  280, 680, ...) and are pinned by a unit test. The LT-then-GT adjacency libcint's
+  `kappa == 0` path over-reads across is preserved by construction.
+- **The accessors read the generated table.** The hand-transcribed `l <= 4` tables stay as
+  the independent reference: `c2spinor::table_tests` pins the generated blocks against them
+  **bit for bit** — the only region where a second transcription exists to check the parse,
+  and what makes `l = 5..=12` trustworthy.
+- **`cintx_core::SPINOR_L_MAX = 12`**, enforced at `Shell::try_new` per representation
+  exactly as `SPHERIC_L_MAX` is, with `CoreError::SpinorAngularMomentumTooHigh`. The
+  transform's catch-all is now a backstop no public entry point can reach, and
+  `spinor_l_max_matches_the_table_ceiling` keeps the two constants one number.
+- **`spinor_high_l_parity`** (replacing the `#[ignore]`d `spinor_l_max_panic_defect`) gates
+  the fold against vendored libcint 6.1.3 at every new order. Its central test pushes
+  **libcint's own** `int1e_ovlp_cart`/`kin_cart` block through cintx's fold and compares with
+  libcint's spinor block — same input, only the fold differs — and agrees to **≤ 2.6e-14 of
+  the block peak** at every `l = 5..=12` and every `kappa` in `{-1, 0, +1}`. `int1e_nuc_spinor`
+  and `int2e_spinor` are gated end to end for every `l` the device ceiling admits (all of
+  `5..=12` with `extended-device-rys`), and `l = 13` is a typed refusal.
+- The two table drift gates — `gen-c2s-table --check`, which was never wired into CI, and the
+  new `gen-c2spinor-table --check` — now run in `manifest_drift_gate`.
+
+**One residual found on the way, recorded and not owned by this fix.** The first end-to-end
+version of the gate failed from `l = 9`, and the side-by-side probe showed why: cintx's
+**Cartesian** 1e overlap/kinetic block itself drifts from libcint as `l` grows — `max|diff| /
+peak` of 1.8e-13 at `l = 5`, 1.9e-11 at 8, 1.8e-10 at 11, 3.8e-10 at 12 (kinetic 8.7e-9 at 12)
+— and the spherical and spinor folds of it carry a *smaller* residual than the block they
+fold at every `l`. That is the 1e recurrence at high angular momentum, not the transform;
+`spinor_fold_does_not_amplify_the_kernels_own_residual` gates the fold against exactly that
+bound, and `cartesian_overlap_at_high_l_matches_vendor_strictly` is checked in `#[ignore]`d as
+the reproduction.
+
 ### Added — def2 precision budget, autotune artifact, and the nightly/PR split (2026-09-02)
 
 `docs/design/def2_speed_precision_plan.md` D3.4, D4 and D5, and the end of that plan's

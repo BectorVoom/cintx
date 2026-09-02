@@ -23,6 +23,25 @@ pub(crate) const SHELL_TUPLE_CAPACITY: usize = 4;
 /// entirely zeroed with an `Ok` status.
 pub const SPHERIC_L_MAX: u8 = 15;
 
+/// Highest angular momentum a **spinor** shell may carry.
+///
+/// The ceiling is libcint's own: `g_c2s[]` (`cart2sph.c`) carries spinor
+/// coupling coefficients — `cart2j_lt_*` / `cart2j_gt_*` into
+/// `g_trans_cart2jR[]` / `g_trans_cart2jI[]` — for `l = 0..=12` and `NULL`
+/// above, so beyond it there is no upstream reference to be compatible with.
+/// `cintx-cubecl`'s generated table carries exactly that range, and
+/// `transform::c2spinor::table_tests::spinor_l_max_matches_the_table_ceiling`
+/// pins the two constants together.
+///
+/// Validated per shell against its own `representation`, like
+/// [`SPHERIC_L_MAX`], and for the same reason: until this guard existed the
+/// spinor transform had two behaviours above its hand-transcribed `l = 4` —
+/// the 2D/4D bra path *panicked*, reachable from `eval_raw` with an ordinary
+/// `h` shell, and the single-block ket path returned empty coefficient rows and
+/// so handed back zeros with an `Ok`. Both are the failure the spherical guard
+/// was written to close, in a second place.
+pub const SPINOR_L_MAX: u8 = 12;
+
 /// Error when a shell tuple would exceed libcint's arity limits.
 #[derive(Debug, thiserror::Error)]
 #[error("shell tuple arity cannot exceed {0}")]
@@ -68,6 +87,13 @@ impl Shell {
             return Err(CoreError::SphericAngularMomentumTooHigh {
                 requested: ang_momentum,
                 max: SPHERIC_L_MAX,
+            });
+        }
+
+        if representation == Representation::Spinor && ang_momentum > SPINOR_L_MAX {
+            return Err(CoreError::SpinorAngularMomentumTooHigh {
+                requested: ang_momentum,
+                max: SPINOR_L_MAX,
             });
         }
 
@@ -229,5 +255,38 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// The spinor ceiling is enforced at construction, per representation: a
+    /// Cartesian shell needs no transform and is not capped, a spinor shell at
+    /// the ceiling is fine, one past it is a typed error rather than a panic
+    /// downstream.
+    #[test]
+    fn spinor_shell_past_the_ceiling_is_refused_at_construction() {
+        let make = |l: u8, rep| {
+            Shell::try_new(
+                0,
+                l,
+                1,
+                1,
+                0,
+                rep,
+                arc_from_slice(&[1.0]),
+                arc_from_slice(&[1.0]),
+            )
+        };
+        assert!(make(SPINOR_L_MAX, Representation::Spinor).is_ok());
+        let err = make(SPINOR_L_MAX + 1, Representation::Spinor).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CoreError::SpinorAngularMomentumTooHigh {
+                    requested,
+                    max: SPINOR_L_MAX,
+                } if requested == SPINOR_L_MAX + 1
+            ),
+            "{err:?}"
+        );
+        assert!(make(SPINOR_L_MAX + 1, Representation::Cart).is_ok());
     }
 }

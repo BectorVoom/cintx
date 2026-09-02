@@ -78,6 +78,14 @@ jobs:
               run: |
                   cargo run --manifest-path xtask/Cargo.toml --locked -- gen-rys-tables --check
 
+            - name: Run cart-to-sph table drift gate
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml --locked -- gen-c2s-table --check
+
+            - name: Run cart-to-spinor table drift gate
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml --locked -- gen-c2spinor-table --check
+
     oracle_parity_gate:
         name: oracle_parity_gate (${{ matrix.profile }})
         runs-on: ubuntu-latest

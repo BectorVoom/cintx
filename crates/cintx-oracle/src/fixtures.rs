@@ -1350,14 +1350,14 @@ impl OracleRawInputs {
     /// sph; the spinor fold's own correctness is gated by the c2spinor tests,
     /// not by a quadrature envelope.
     ///
-    /// There is also a hard reason: `cart_to_spinor_sf_2d` **panics** above
-    /// `l = 4` ("l=5 > 4 not supported"), and these samplers carry an `h` shell.
-    /// That panic is a defect in its own right — a library should return a typed
-    /// refusal, not unwind, on an input a public entry point accepted, and
-    /// `SPHERIC_L_MAX` exists because the *spherical* transform had the same
-    /// shape of gap. It is recorded in
-    /// `crates/cintx-oracle/tests/spinor_l_max_panic_defect.rs` rather than
-    /// worked around silently; fixing it is what would let this filter go.
+    /// This filter used to be forced: `cart_to_spinor_sf_2d` *panicked* above
+    /// `l = 4`, and these samplers carry an `h` shell. That is fixed — the
+    /// coupling table is generated from libcint for `l <= SPINOR_L_MAX = 12` and
+    /// the ceiling is a typed refusal at construction (see
+    /// `spinor_high_l_parity`). The filter stays for a different reason: the
+    /// budget's error column compares two cintx entry points (§ D4 caveat), so a
+    /// spinor row here would be another structural `0.0`, and adding it would
+    /// only mean re-recording the ratchet baseline for no information.
     #[must_use]
     pub fn representations(&self) -> Option<&'static [&'static str]> {
         if self.tag == BASE_FIXTURE_TAG {

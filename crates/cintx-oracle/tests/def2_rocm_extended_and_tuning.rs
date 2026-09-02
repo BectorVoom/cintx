@@ -210,7 +210,11 @@ fn rocm_extended_rys_matches_vendor_on_def2_tzvp() {
                 &arrays.env,
             );
             orders.insert(
-                q.iter().map(|&s| shell_l(&arrays, s as usize)).sum::<usize>() / 2 + 1,
+                q.iter()
+                    .map(|&s| shell_l(&arrays, s as usize))
+                    .sum::<usize>()
+                    / 2
+                    + 1,
             );
             let d = &device.values[device.offsets[index]..device.offsets[index] + len];
             let h = &host.values[host.offsets[index]..host.offsets[index] + len];

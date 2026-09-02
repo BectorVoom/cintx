@@ -38,6 +38,13 @@ pub enum CoreError {
         "spherical shell angular momentum {requested} exceeds SPHERIC_L_MAX={max}          (the cart-to-sph coefficient table's ceiling)"
     )]
     SphericAngularMomentumTooHigh { requested: u8, max: u8 },
+    /// A spinor shell whose angular momentum the Cartesian-to-spinor coupling
+    /// table cannot express — see [`crate::SPINOR_L_MAX`].
+    #[error(
+        "spinor shell angular momentum {requested} exceeds SPINOR_L_MAX={max} \
+         (the cart-to-spinor coupling table's ceiling, which is libcint's own)"
+    )]
+    SpinorAngularMomentumTooHigh { requested: u8, max: u8 },
 }
 
 #[allow(non_camel_case_types)]

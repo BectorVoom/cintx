@@ -479,15 +479,15 @@ fn rocm_backend_fma_fusion_probe() {
         // read `ceiling == BASE_DEVICE_NROOTS` unconditionally, which was
         // scaffolding from before the flip and held only because the suite
         // happened to be built without the feature.
-        let expected = if cfg!(feature = "extended-device-rys")
-            && RysFamily::Int2e.runs_extended_rys()
-        {
-            EXTENDED_DEVICE_NROOTS
-        } else {
-            BASE_DEVICE_NROOTS
-        };
+        let expected =
+            if cfg!(feature = "extended-device-rys") && RysFamily::Int2e.runs_extended_rys() {
+                EXTENDED_DEVICE_NROOTS
+            } else {
+                BASE_DEVICE_NROOTS
+            };
         assert_eq!(
-            ceiling, expected,
+            ceiling,
+            expected,
             "{label}: the ceiling must follow `int2e`'s own flip \
              (runs_extended_rys={}) and the feature (={}), and nothing else",
             RysFamily::Int2e.runs_extended_rys(),

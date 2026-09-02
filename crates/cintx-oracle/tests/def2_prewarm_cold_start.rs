@@ -99,7 +99,8 @@ fn prewarm_removes_the_first_batch_compilation() {
         "  prewarmed:  first batch {:.4} s, second {:.4} s  (first/second = {:.1}x)",
         first_after_prewarm.as_secs_f64(),
         second_after_prewarm.as_secs_f64(),
-        first_after_prewarm.as_secs_f64() / second_after_prewarm.as_secs_f64().max(f64::MIN_POSITIVE),
+        first_after_prewarm.as_secs_f64()
+            / second_after_prewarm.as_secs_f64().max(f64::MIN_POSITIVE),
     );
 
     assert!(
@@ -133,4 +134,3 @@ fn prewarm_removes_the_first_batch_compilation() {
          different specialization from the one the batch asks for"
     );
 }
-

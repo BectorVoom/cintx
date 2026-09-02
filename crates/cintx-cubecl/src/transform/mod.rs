@@ -2,6 +2,7 @@ pub mod c2s;
 pub mod c2s_data;
 pub mod c2spinor;
 pub mod c2spinor_coeffs;
+pub mod c2spinor_data;
 pub mod host_batch;
 pub mod profile;
 

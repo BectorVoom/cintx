@@ -170,7 +170,17 @@ fn sweep_real(
         // SAFETY: `actual` is sized `rank * ncart(li) * ncart(lj)`, the extent
         // the vendor writes for the same shells.
         let status = unsafe {
-            eval_raw(api, Some(&mut actual), None, &[0, 1], &atm, &bas, &env, None, None)
+            eval_raw(
+                api,
+                Some(&mut actual),
+                None,
+                &[0, 1],
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
         };
         assert!(
             status.is_ok(),

@@ -1,4 +1,13 @@
-//! Clebsch-Gordan coupling coefficient tables for cartesian-to-spinor transformation.
+//! Clebsch-Gordan coupling coefficient tables for cartesian-to-spinor transformation,
+//! hand-transcribed for `l = 0..=4`.
+//!
+//! **No longer what the transform reads.** `c2spinor.rs` reads the generated
+//! `c2spinor_data.rs` (`l = 0..=12`, extracted from the vendored libcint source by
+//! `xtask gen-c2spinor-table`). These tables are kept as the independent reference
+//! that generation is pinned against, bit for bit, in
+//! `c2spinor::table_tests::generated_table_matches_the_hand_transcribed_tables` —
+//! the only region where a second transcription exists to check the parse.
+//!
 //!
 //! Extracted from libcint `cart2sph.c` `g_trans_cart2jR[]` and `g_trans_cart2jI[]` arrays
 //! at the offsets documented in `g_c2s[]` (line ~3561).

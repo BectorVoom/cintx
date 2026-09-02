@@ -362,12 +362,17 @@ instruments at angular momenta and geometries nothing had used before.
    sides are identically zero. **Not fixed**; recorded in
    `crates/cintx-oracle/tests/int3c1e_p2_operator_defect.rs`.
 
-3. **The spinor transform panics above `l = 4`.** `cart_to_spinor_sf_2d`
-   `panic!`s rather than returning a typed refusal, reachable from `eval_raw`.
-   `SPHERIC_L_MAX` exists because the spherical transform had the same shape of
-   gap; the spinor side has the same finite table and no such constant. **Not
-   fixed**; recorded in
-   `crates/cintx-oracle/tests/spinor_l_max_panic_defect.rs`.
+3. **The spinor transform panicked above `l = 4`.** `cart_to_spinor_sf_2d`
+   `panic!`ed rather than returning a typed refusal, reachable from `eval_raw`,
+   and the single-block ket path returned zeros with an `Ok`. **Fixed
+   2026-09-03**, and not by adding a guard at 4: libcint's own `g_c2s[]` carries
+   spinor coefficients to `l = 12`, so the table is now generated from the
+   vendored source (`xtask gen-c2spinor-table`, drift-gated), `SPINOR_L_MAX = 12`
+   is enforced at `Shell::try_new` like `SPHERIC_L_MAX`, and
+   `spinor_high_l_parity` gates the fold against libcint at every new order.
+   Gating it surfaced one more residual, recorded there and not owned by the
+   fix: the Cartesian 1e overlap/kinetic recurrence drifts from libcint as `l`
+   grows (3.8e-10 of block peak at `l = 12`).
 
 The common cause is worth stating on its own: **the whole-manifest oracle matrix
 runs at `l <= 1`, on one atom, at one geometry.** Everything above that is

@@ -58,8 +58,8 @@ pub use kernels::one_electron::{
 pub use kernels::two_electron::{
     BatchExecutionStats as TwoEBatchStats, BatchOptions, BatchShell, PrewarmReport, ResidentBasis,
     ResidentTwoEBasis, TwoEBatchOptions, TwoEBatchOutput, evaluate_2e_quartet_batch,
-    evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with,
-    prewarm_2e_quartet_classes, prewarm_2e_work_list,
+    evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_quartet_classes,
+    prewarm_2e_work_list,
 };
 pub use plane::{
     CPU_CUBE_DIM_MAX, DEFAULT_PLANE_DIM, LaunchHardware, STANDARD_PLANE_ALIGNED_CUBE_DIM,
@@ -83,9 +83,9 @@ pub use shared_memory::{
 pub use specialization::{ComponentRank, SpecializationKey};
 pub use transfer::{TransferPlan, TransferWorkspaceBuffers};
 pub use tuning::{
-    AutotunePolicy, CANDIDATE_CUBE_WIDTHS, Decomposition, LaunchGeometryKey, MAX_TUNED_KEYS,
-    MIN_TUNE_ITEMS, TUNE_SAMPLE_MAX_ITEMS, TUNE_SAMPLE_MIN_ITEMS, TUNE_SAMPLE_WORK_BUDGET,
-    DEFAULT_POLICY, TUNING_SCHEMA_VERSION, TunedFamily, configured_policy,
+    AutotunePolicy, CANDIDATE_CUBE_WIDTHS, DEFAULT_POLICY, Decomposition, LaunchGeometryKey,
+    MAX_TUNED_KEYS, MIN_TUNE_ITEMS, TUNE_SAMPLE_MAX_ITEMS, TUNE_SAMPLE_MIN_ITEMS,
+    TUNE_SAMPLE_WORK_BUDGET, TUNING_SCHEMA_VERSION, TunedFamily, configured_policy,
     cube_width_priority, device_fingerprint, install_runtime_config, policy, policy_for,
     set_policy, tune_sample_items, tuned_key_count,
 };

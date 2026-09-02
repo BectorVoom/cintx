@@ -1,6 +1,7 @@
 mod bench_report;
 mod error_budget;
 mod gen_c2s_table;
+mod gen_c2spinor_table;
 mod gen_ecp_tables;
 mod gen_rys_tables;
 mod manifest_audit;
@@ -81,6 +82,11 @@ enum Command {
     GenC2sTable {
         check: bool,
     },
+    /// Extract libcint's `g_trans_cart2jR[]`/`g_trans_cart2jI[]` (l = 0..=12)
+    /// into `transform/c2spinor_data.rs`; `--check` is the drift gate.
+    GenC2spinorTable {
+        check: bool,
+    },
     Help,
 }
 
@@ -112,6 +118,7 @@ fn run() -> Result<()> {
         "gen-ecp-tables" => parse_gen_ecp_tables(args)?,
         "gen-rys-tables" => parse_gen_rys_tables(args)?,
         "gen-c2s-table" => parse_gen_c2s_table(args)?,
+        "gen-c2spinor-table" => parse_gen_c2spinor_table(args)?,
         "--help" | "-h" | "help" => Command::Help,
         other => return Err(anyhow!("unknown xtask command: {other}")),
     };
@@ -162,6 +169,7 @@ fn execute(command: Command) -> Result<()> {
         Command::GenEcpTables { check } => gen_ecp_tables::run_gen_ecp_tables(check),
         Command::GenRysTables { check } => gen_rys_tables::run_gen_rys_tables(check),
         Command::GenC2sTable { check } => gen_c2s_table::run_gen_c2s_table(check),
+        Command::GenC2spinorTable { check } => gen_c2spinor_table::run_gen_c2spinor_table(check),
         Command::Help => {
             print_help();
             Ok(())
@@ -469,6 +477,23 @@ fn parse_gen_c2s_table(args: impl Iterator<Item = String>) -> Result<Command> {
     Ok(Command::GenC2sTable { check })
 }
 
+fn parse_gen_c2spinor_table(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut check = false;
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--check" => {
+                check = true;
+                index += 1;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown gen-c2spinor-table flag: {other}")),
+        }
+    }
+    Ok(Command::GenC2spinorTable { check })
+}
+
 fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {
     parse_profiles_csv_with_allowlist(csv, &REQUIRED_PROFILES, REQUIRED_PROFILES_CSV)
 }
@@ -566,6 +591,12 @@ fn print_help() {
     );
     println!(
         "  gen-ecp-tables [--check]                   Extract PySCF K-Taylor tables to .bin blobs; --check is a byte-exact drift gate (Phase 19 D-15)"
+    );
+    println!(
+        "  gen-c2s-table [--check]                    Extract libcint's cart-to-sph table (l<=15) into transform/c2s_data.rs; --check is the drift gate"
+    );
+    println!(
+        "  gen-c2spinor-table [--check]               Extract libcint's cart-to-spinor tables (l<=12) into transform/c2spinor_data.rs; --check is the drift gate"
     );
     println!();
     println!("Defaults:");

@@ -28,8 +28,74 @@
 #![allow(clippy::too_many_arguments)]
 
 use super::c2s::ncart;
-use super::c2spinor_coeffs as cj;
+use super::c2spinor_data as data;
 use cintx_core::{CintFloat, cintxRsError};
+// The hand-transcribed `l <= 4` tables are reference data now: the transform
+// reads the generated module, and the tests pin the two together.
+#[cfg(test)]
+use super::c2spinor_coeffs as cj;
+
+pub use super::c2spinor_data::C2SPINOR_LMAX;
+
+/// Does the spinor coupling table cover `l`?
+///
+/// The table is generated from libcint's own `g_trans_cart2jR[]`/`jI[]` and
+/// stops where they do; see [`C2SPINOR_LMAX`].
+#[must_use]
+pub fn c2spinor_supports_l(l: u8) -> bool {
+    l <= C2SPINOR_LMAX
+}
+
+/// Fail-closed guard for callers that have an error channel.
+///
+/// # Errors
+/// [`cintxRsError::UnsupportedApi`] when `l` exceeds [`C2SPINOR_LMAX`].
+pub fn ensure_c2spinor_supported(l: u8) -> Result<(), cintxRsError> {
+    if c2spinor_supports_l(l) {
+        Ok(())
+    } else {
+        Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "spinor representation for l={l}: the cart-to-spinor coupling table \
+                 covers l<={C2SPINOR_LMAX}, which is libcint's own ceiling"
+            ),
+        })
+    }
+}
+
+/// The `l` block's `(LT, GT)` boundaries in the flat table: `[lt_start, gt_start, end)`.
+///
+/// `Shell::try_new` refuses a spinor shell past [`cintx_core::SPINOR_L_MAX`], so
+/// an out-of-range `l` here means a shell that bypassed construction. That is a
+/// programming error, and the assert is a backstop rather than the user-facing
+/// failure — the point of the guard is that this line is unreachable through
+/// any public entry point.
+fn block_bounds(l: u8) -> (usize, usize, usize) {
+    assert!(
+        c2spinor_supports_l(l),
+        "cart-to-spinor table has no block for l={l} (ceiling {C2SPINOR_LMAX}); a spinor \
+         shell past cintx_core::SPINOR_L_MAX reached the transform, which Shell::try_new \
+         is supposed to refuse"
+    );
+    let lt_start = data::CJ_OFFSET[l as usize];
+    let gt_start = lt_start + 2 * l as usize * 2 * ncart(l);
+    let end = data::CJ_OFFSET[l as usize + 1];
+    (lt_start, gt_start, end)
+}
+
+/// LT block (`j = l - 1/2`, `2l` rows of `2 * ncart(l)`): real and imaginary
+/// parts, flat and row-major. Empty at `l = 0`.
+fn lt_block(l: u8) -> (&'static [f64], &'static [f64]) {
+    let (lt, gt, _) = block_bounds(l);
+    (&data::CJ_R[lt..gt], &data::CJ_I[lt..gt])
+}
+
+/// GT block (`j = l + 1/2`, `2l + 2` rows of `2 * ncart(l)`): real and
+/// imaginary parts, flat and row-major.
+fn gt_block(l: u8) -> (&'static [f64], &'static [f64]) {
+    let (_, gt, end) = block_bounds(l);
+    (&data::CJ_R[gt..end], &data::CJ_I[gt..end])
+}
 
 /// Number of spinor components for angular momentum l and quantum number kappa.
 ///
@@ -237,60 +303,29 @@ fn apply_iket_si_block<F: CintFloat>(
     }
 }
 
-/// Retrieve GT block (j=l+1/2, kappa<0) coefficient rows for angular momentum l.
+/// GT block (`j = l + 1/2`, `kappa < 0`) coefficient rows for angular momentum `l`.
 ///
-/// Returns (real_rows, imag_rows) as slices of rows, where each row has 2*nf entries.
+/// Returns `(real_rows, imag_rows)`; each row is `2 * ncart(l)` values — the
+/// alpha coefficients then the beta ones.
 fn gt_coeff_rows(l: u8) -> (Vec<&'static [f64]>, Vec<&'static [f64]>) {
-    match l {
-        0 => (
-            cj::CJ_GT_L0_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_GT_L0_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        1 => (
-            cj::CJ_GT_L1_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_GT_L1_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        2 => (
-            cj::CJ_GT_L2_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_GT_L2_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        3 => (
-            cj::CJ_GT_L3_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_GT_L3_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        4 => (
-            cj::CJ_GT_L4_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_GT_L4_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        _ => (vec![], vec![]),
-    }
+    let (r, i) = gt_block(l);
+    let width = 2 * ncart(l);
+    (
+        r.chunks_exact(width).collect(),
+        i.chunks_exact(width).collect(),
+    )
 }
 
-/// Retrieve LT block (j=l-1/2, kappa>0) coefficient rows for angular momentum l.
+/// LT block (`j = l - 1/2`, `kappa > 0`) coefficient rows for angular momentum `l`.
+///
+/// No rows at `l = 0`, where `j = -1/2` does not exist.
 fn lt_coeff_rows(l: u8) -> (Vec<&'static [f64]>, Vec<&'static [f64]>) {
-    match l {
-        0 => (
-            cj::CJ_LT_L0_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_LT_L0_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        1 => (
-            cj::CJ_LT_L1_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_LT_L1_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        2 => (
-            cj::CJ_LT_L2_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_LT_L2_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        3 => (
-            cj::CJ_LT_L3_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_LT_L3_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        4 => (
-            cj::CJ_LT_L4_R.iter().map(|r| r.as_ref()).collect(),
-            cj::CJ_LT_L4_I.iter().map(|r| r.as_ref()).collect(),
-        ),
-        _ => (vec![], vec![]),
-    }
+    let (r, i) = lt_block(l);
+    let width = 2 * ncart(l);
+    (
+        r.chunks_exact(width).collect(),
+        i.chunks_exact(width).collect(),
+    )
 }
 
 /// Cart-to-spinor scalar-field (sf) transform.
@@ -1044,8 +1079,12 @@ fn apply_bra_block(
     }
 }
 
-/// Get flat coefficient slices for bra transform.
-/// Returns (gt_r, gt_i, lt_r, lt_i) as flat slices.
+/// Flat coefficient slices for the bra transform: `(gt_r, gt_i, lt_r, lt_i)`.
+///
+/// This used to be a five-arm `match` over the hand-transcribed tables with a
+/// `panic!` catch-all — reachable from `eval_raw` with an ordinary `h` shell,
+/// which is how the gap was found. The generated table covers libcint's whole
+/// range and the construction-time guard makes the backstop unreachable.
 fn bra_coeff_refs(
     l: u8,
 ) -> (
@@ -1054,39 +1093,9 @@ fn bra_coeff_refs(
     &'static [f64],
     &'static [f64],
 ) {
-    match l {
-        0 => (
-            cj::CJ_GT_L0_R.as_flattened(),
-            cj::CJ_GT_L0_I.as_flattened(),
-            cj::CJ_LT_L0_R.as_flattened(),
-            cj::CJ_LT_L0_I.as_flattened(),
-        ),
-        1 => (
-            cj::CJ_GT_L1_R.as_flattened(),
-            cj::CJ_GT_L1_I.as_flattened(),
-            cj::CJ_LT_L1_R.as_flattened(),
-            cj::CJ_LT_L1_I.as_flattened(),
-        ),
-        2 => (
-            cj::CJ_GT_L2_R.as_flattened(),
-            cj::CJ_GT_L2_I.as_flattened(),
-            cj::CJ_LT_L2_R.as_flattened(),
-            cj::CJ_LT_L2_I.as_flattened(),
-        ),
-        3 => (
-            cj::CJ_GT_L3_R.as_flattened(),
-            cj::CJ_GT_L3_I.as_flattened(),
-            cj::CJ_LT_L3_R.as_flattened(),
-            cj::CJ_LT_L3_I.as_flattened(),
-        ),
-        4 => (
-            cj::CJ_GT_L4_R.as_flattened(),
-            cj::CJ_GT_L4_I.as_flattened(),
-            cj::CJ_LT_L4_R.as_flattened(),
-            cj::CJ_LT_L4_I.as_flattened(),
-        ),
-        _ => panic!("cart_to_spinor_sf_2d: l={l} > 4 not supported"),
-    }
+    let (gt_r, gt_i) = gt_block(l);
+    let (lt_r, lt_i) = lt_block(l);
+    (gt_r, gt_i, lt_r, lt_i)
 }
 
 /// Spin-included (si) bra step of the 2D `c2s_si_1e` transform — all kappa cases.
@@ -4256,5 +4265,120 @@ mod tests {
                 "i-rot im at {e}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+
+    /// **The extraction gate.** The generated `l = 0..=12` table must agree, bit
+    /// for bit, with the hand-transcribed `l = 0..=4` tables this module ran on
+    /// from the start.
+    ///
+    /// The blocks above `l = 4` have no hand reference — they were parsed out of
+    /// libcint's `g_trans_cart2jR[]`/`jI[]` by `xtask gen-c2spinor-table` — so
+    /// the evidence that the parse, the LT-then-GT adjacency and the row width
+    /// are right has to come from the region where a reference exists. 2 320
+    /// coefficients across `l = 0..=4`, from the same extraction, reproduce
+    /// `CJ_{GT,LT}_L{0..4}_{R,I}` exactly.
+    #[test]
+    fn generated_table_matches_the_hand_transcribed_tables() {
+        fn rows<const W: usize, const N: usize>(t: &[[f64; W]; N]) -> Vec<&[f64]> {
+            t.iter().map(|r| &r[..]).collect()
+        }
+        fn check(l: u8, what: &str, got: &[&[f64]], want: &[&[f64]]) {
+            assert_eq!(got.len(), want.len(), "l={l} {what}: row count");
+            for (r, (g, w)) in got.iter().zip(want).enumerate() {
+                assert_eq!(g.len(), w.len(), "l={l} {what} row {r}: width");
+                for (c, (a, b)) in g.iter().zip(*w).enumerate() {
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "l={l} {what} row {r} col {c}: generated {a}, hand-transcribed {b}"
+                    );
+                }
+            }
+        }
+        macro_rules! pin {
+            ($l:expr, $gtr:ident, $gti:ident, $ltr:ident, $lti:ident) => {{
+                let (gr, gi) = gt_coeff_rows($l);
+                let (lr, li) = lt_coeff_rows($l);
+                check($l, "GT real", &gr, &rows(&cj::$gtr));
+                check($l, "GT imag", &gi, &rows(&cj::$gti));
+                check($l, "LT real", &lr, &rows(&cj::$ltr));
+                check($l, "LT imag", &li, &rows(&cj::$lti));
+            }};
+        }
+        pin!(0, CJ_GT_L0_R, CJ_GT_L0_I, CJ_LT_L0_R, CJ_LT_L0_I);
+        pin!(1, CJ_GT_L1_R, CJ_GT_L1_I, CJ_LT_L1_R, CJ_LT_L1_I);
+        pin!(2, CJ_GT_L2_R, CJ_GT_L2_I, CJ_LT_L2_R, CJ_LT_L2_I);
+        pin!(3, CJ_GT_L3_R, CJ_GT_L3_I, CJ_LT_L3_R, CJ_LT_L3_I);
+        pin!(4, CJ_GT_L4_R, CJ_GT_L4_I, CJ_LT_L4_R, CJ_LT_L4_I);
+    }
+
+    /// Every block's LT and GT row counts and widths must line up with the
+    /// offsets the accessors index by, or a block is read from its neighbour —
+    /// wrong without being obviously wrong.
+    #[test]
+    fn generated_table_blocks_have_the_right_shape() {
+        let mut cursor = 0usize;
+        for l in 0..=C2SPINOR_LMAX {
+            let width = 2 * ncart(l);
+            let (lr, li) = lt_coeff_rows(l);
+            let (gr, gi) = gt_coeff_rows(l);
+            assert_eq!(lr.len(), 2 * l as usize, "LT rows at l={l}");
+            assert_eq!(gr.len(), 2 * l as usize + 2, "GT rows at l={l}");
+            assert_eq!(li.len(), lr.len());
+            assert_eq!(gi.len(), gr.len());
+            assert_eq!(data::CJ_OFFSET[l as usize], cursor, "block start at l={l}");
+            cursor += (lr.len() + gr.len()) * width;
+        }
+        assert_eq!(cursor, data::CJ_R.len());
+        assert_eq!(cursor, data::CJ_I.len());
+        assert_eq!(data::CJ_OFFSET[C2SPINOR_LMAX as usize + 1], cursor);
+    }
+
+    /// The two ceilings are one number. `cintx-core` cannot depend on this
+    /// crate, so `Shell::try_new`'s spinor guard carries its own constant; this
+    /// pins it to the generated table's, which is the real authority.
+    #[test]
+    fn spinor_l_max_matches_the_table_ceiling() {
+        assert_eq!(C2SPINOR_LMAX, cintx_core::SPINOR_L_MAX);
+    }
+
+    /// A spinor shell past the ceiling is refused at construction, so the
+    /// accessors' `assert!` is a backstop rather than the user-facing failure;
+    /// and the guard with an error channel refuses the same way.
+    #[test]
+    fn above_the_ceiling_is_refused_not_zeroed_and_not_panicked() {
+        use cintx_core::{Representation, Shell};
+        use std::sync::Arc;
+
+        assert!(c2spinor_supports_l(C2SPINOR_LMAX));
+        assert!(!c2spinor_supports_l(C2SPINOR_LMAX + 1));
+        assert!(ensure_c2spinor_supported(C2SPINOR_LMAX).is_ok());
+        assert!(ensure_c2spinor_supported(C2SPINOR_LMAX + 1).is_err());
+
+        let make = |l: u8, rep| {
+            Shell::try_new(
+                0,
+                l,
+                1,
+                1,
+                0,
+                rep,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+        };
+        assert!(make(C2SPINOR_LMAX, Representation::Spinor).is_ok());
+        assert!(make(C2SPINOR_LMAX + 1, Representation::Spinor).is_err());
+        // A Cartesian shell needs no transform, so the cap does not apply.
+        assert!(make(C2SPINOR_LMAX + 1, Representation::Cart).is_ok());
+
+        // The backstop itself, for the shell that bypassed construction.
+        let caught = std::panic::catch_unwind(|| block_bounds(C2SPINOR_LMAX + 1));
+        assert!(caught.is_err(), "the accessor must not read past the table");
     }
 }

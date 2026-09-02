@@ -172,15 +172,9 @@ fn coverage_for(label: &str, molecule: &Molecule, aux: StandardBasis) -> serde_j
         |p| (l(p[0]) + l(p[1])) / 2 + 1,
         |p| {
             let list = [[p[0] as u32, p[1] as u32]];
-            evaluate_1e_pair_batch(
-                &backend,
-                OneEOperator::Nuclear,
-                &shells,
-                &atoms,
-                &list,
-            )
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            evaluate_1e_pair_batch(&backend, OneEOperator::Nuclear, &shells, &atoms, &list)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         },
     );
     let one_e_deriv = census(
@@ -189,15 +183,9 @@ fn coverage_for(label: &str, molecule: &Molecule, aux: StandardBasis) -> serde_j
         |p| (l(p[0]) + l(p[1])).div_ceil(2) + 1,
         |p| {
             let list = [[p[0] as u32, p[1] as u32]];
-            evaluate_1e_deriv_pair_batch(
-                &backend,
-                OneEDerivOperator::IpNuc,
-                &shells,
-                &atoms,
-                &list,
-            )
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            evaluate_1e_deriv_pair_batch(&backend, OneEDerivOperator::IpNuc, &shells, &atoms, &list)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         },
     );
 
@@ -232,14 +220,9 @@ fn coverage_for(label: &str, molecule: &Molecule, aux: StandardBasis) -> serde_j
         |t| (la(t[0]) + la(t[1]) + la(t[2]) + 1) / 2 + 1,
         |t| {
             let list = [[t[0] as u32, t[1] as u32, t[2] as u32]];
-            evaluate_3c2e_deriv_triple_batch(
-                &backend,
-                ThreeC2eDerivFamily::Ip1,
-                &aux_shells,
-                &list,
-            )
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            evaluate_3c2e_deriv_triple_batch(&backend, ThreeC2eDerivFamily::Ip1, &aux_shells, &list)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         },
     );
 
@@ -407,7 +390,8 @@ fn def2_work_lists_are_fully_device_covered() {
     println!("coverage artifact: {}", written.actual_path.display());
 
     assert_eq!(
-        total_refused, 0,
+        total_refused,
+        0,
         "{total_refused} def2 launch classes were refused by a batch surface; \
          see the REFUSED lines above and {}",
         written.actual_path.display()
