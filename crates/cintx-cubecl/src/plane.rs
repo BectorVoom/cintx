@@ -279,7 +279,28 @@ pub fn per_unit_width<R: cubecl::Runtime>(
 ) -> u32 {
     let hw = launch_hardware(client);
     let by_hardware = (hw.parallel_units as usize).min(hw.max_units_per_cube as usize);
-    let by_work = (n_items / min_items_per_unit.max(1)).max(1);
+    // S5: the work term is rounded **up** to a power of two before the clamps.
+    //
+    // A cube width is part of a kernel's compiled identity, so a launch that
+    // asks for 13 units and one that asks for 14 are two programs to the JIT
+    // even though nothing about the arithmetic differs. Left unquantized, the
+    // width tracks the work-list size directly: H2O/def2-SVP and CH4/def2-SVP
+    // share all 15 launch signatures, yet CH4 after H2O in one process paid
+    // 0.53 s of fresh compilation because a handful of its classes crossed a
+    // unit-count boundary.
+    //
+    // Rounding up rather than down keeps every unit that has work, and hands
+    // spare units an empty range of the blocked grid-stride walk — which they
+    // already tolerate, because `chunk = ceil(n / n_slots)` has always been able
+    // to leave the last slot short. The clamps below still bound the result by
+    // hardware and by scratch memory, so quantizing can never ask for a width
+    // the device or the budget refuses.
+    let by_work = (n_items / min_items_per_unit.max(1))
+        .max(1)
+        // Saturating, because a work count near `usize::MAX` has no next power
+        // of two and the hardware clamp below is what actually decides there.
+        .checked_next_power_of_two()
+        .unwrap_or(usize::MAX);
     by_hardware.min(by_work).min(by_memory).max(1) as u32
 }
 
@@ -925,6 +946,19 @@ mod tests {
 
         // Work-bound: 8 items at 4 items per unit is 2 units, whatever the host has.
         assert_eq!(per_unit_width(&client, 8, 4, usize::MAX), 2);
+        // S5: the work term is quantized up to a power of two, so neighbouring
+        // work-list sizes compile to one program instead of two. 5 items at 1
+        // per unit rounds to 8, not 5 — and is still clamped by the host's core
+        // count below.
+        assert_eq!(
+            per_unit_width(&client, 5, 1, usize::MAX) as usize,
+            8.min(cores)
+        );
+        assert_eq!(
+            per_unit_width(&client, 6, 1, usize::MAX),
+            per_unit_width(&client, 8, 1, usize::MAX),
+            "sizes inside one power-of-two bucket must share a width"
+        );
         // Memory-bound.
         assert_eq!(per_unit_width(&client, 1_000_000, 1, 3), 3);
         // Hardware-bound, and never zero.

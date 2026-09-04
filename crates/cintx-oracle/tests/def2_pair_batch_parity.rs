@@ -1393,6 +1393,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         &shells,
         &triples,
         BatchOptions {
+            memory_limit_bytes: None,
             primitive_tolerance: 0.0,
         },
     )
@@ -1412,6 +1413,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         &shells,
         &triples,
         BatchOptions {
+            memory_limit_bytes: None,
             primitive_tolerance: 1e-14,
         },
     )
@@ -1445,6 +1447,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         &atoms,
         &pairs,
         BatchOptions {
+            memory_limit_bytes: None,
             primitive_tolerance: 0.0,
         },
     )
@@ -1465,6 +1468,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         &atoms,
         &pairs,
         BatchOptions {
+            memory_limit_bytes: None,
             primitive_tolerance: 1e-14,
         },
     )

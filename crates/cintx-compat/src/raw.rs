@@ -40,6 +40,15 @@ pub const BAS_SLOTS: usize = 8;
 /// incorrect results for 2e+ integrals that read PTR_RANGE_OMEGA or PTR_EXPCUTOFF.
 pub const PTR_ENV_START: usize = 20;
 
+/// Index of libcint's primitive-pair/quartet screening cutoff in the env array.
+///
+/// libcint defines `PTR_EXPCUTOFF = 0` (`cint_bas.h`) and `g2e.c:57` reads
+/// `env[PTR_EXPCUTOFF]`, falling back to the library default `EXPCUTOFF = 60`
+/// when the slot is zero — which is what every caller who never touches slot 0
+/// gets. Raw callers set `env[0] = cutoff` before calling a 2e-family integral
+/// to override it, exactly as `CINTset_pairdata` (`optimizer.c:288`) does.
+pub const PTR_EXPCUTOFF: usize = 0;
+
 /// Index range in the libcint env array for the common (gauge) origin (x, y, z).
 ///
 /// libcint defines `PTR_COMMON_ORIG = 1` (three consecutive slots 1, 2, 3).
@@ -956,6 +965,18 @@ pub unsafe fn eval_raw(
         plan.descriptor.operator_name(),
         &plan.operator_env_params,
     )?;
+
+    // S1: extract expcutoff from env[PTR_EXPCUTOFF] for 2e-family integrals.
+    // Mirrors g2e.c:57's own check: env[PTR_EXPCUTOFF] == 0 (the default for
+    // every caller who never touches slot 0) means "use libcint's own
+    // EXPCUTOFF", so a zero slot is left as `None` rather than forcing a
+    // cutoff of zero, which would drop every primitive pair.
+    if plan.descriptor.entry.canonical_family == "2e" {
+        let expcutoff = env.get(PTR_EXPCUTOFF).copied().unwrap_or(0.0);
+        if expcutoff != 0.0 {
+            plan.operator_env_params.expcutoff = Some(expcutoff);
+        }
+    }
 
     // Extract f12_zeta from env[PTR_F12_ZETA] for F12/STG/YP integrals (raw compat path).
     // Raw callers are expected to set env[9] = zeta before calling any F12 integral.

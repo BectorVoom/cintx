@@ -226,7 +226,11 @@ fn flush_artifact(run: &str) {
         return;
     }
     let artifact = json!({
-        "schema": "cintx_def2_throughput/1",
+        // Schema 2 adds the per-case `memory` and `primitive_work` blocks that
+        // `def2_speed_memory_optimization_plan.md` G4 makes every memory claim
+        // depend on. Schema 1 rows carry neither, so a reader can tell a
+        // pre-M6 record from a post-M6 one without guessing.
+        "schema": "cintx_def2_throughput/2",
         "run": run,
         "backend": "cpu",
         "reference_engine": "libcint 6.1.3 (C, 1 thread)",
@@ -234,6 +238,10 @@ fn flush_artifact(run: &str) {
         "base_nroots_ceiling": cintx_cubecl::BASE_DEVICE_NROOTS,
         "quartet_cap": quartet_cap(),
         "repeats": bench_repeats(),
+        // Backend residency sampling drains the stream, so it is opt-in and the
+        // artifact says whether the run paid for it: the `bytes_in_use_peak`
+        // fields are `0` and meaningless when this is false.
+        "device_residency_profiled": cintx_cubecl::residency_profiling_enabled(),
         "cases": rows,
     });
     match cintx_oracle::fixtures::write_pretty_json_artifact(
@@ -824,6 +832,50 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
         batched.stats.dispatch_ns as f64 / 1e6,
         batched.stats.host_transform_ns as f64 / 1e6,
     );
+    // M6: the memory the run cost, beside the time it took. `host peak` is the
+    // number G3 caps at 1.25x the spherical output; today it is spherical plus
+    // every group's Cartesian buffer, all retained until the transform ends.
+    let mib = |bytes: usize| bytes as f64 / (1024.0 * 1024.0);
+    println!(
+        "  memory: host output {:.1} MiB + cart {:.1} MiB = peak {:.1} MiB ({:.2}x output)  \
+         device out {:.1} MiB, scratch {:.1} MiB total / {:.1} MiB peak, {} planned allocs",
+        mib(batched.stats.host_output_bytes),
+        mib(batched.stats.host_cart_bytes_peak),
+        mib(batched.stats.host_output_bytes + batched.stats.host_cart_bytes_peak),
+        (batched.stats.host_output_bytes + batched.stats.host_cart_bytes_peak) as f64
+            / batched.stats.host_output_bytes.max(1) as f64,
+        mib(batched.stats.device_out_bytes_peak),
+        mib(batched.stats.device_g_slab_bytes_total),
+        mib(batched.stats.device_g_slab_bytes_peak),
+        batched.stats.device_planned_allocs,
+    );
+    println!(
+        "  readback: {:.1} MiB ({} transform), {:.2}x the {:.1} MiB spherical output",
+        mib(batched.stats.readback_bytes),
+        if cintx_cubecl::device_transform_enabled() {
+            "device"
+        } else {
+            "host"
+        },
+        batched.stats.readback_bytes as f64 / batched.stats.host_output_bytes.max(1) as f64,
+        mib(batched.stats.host_output_bytes),
+    );
+    if cintx_cubecl::residency_profiling_enabled() {
+        println!(
+            "  backend residency: peak bytes-in-use {:.1} MiB, allocations added {}",
+            batched.stats.device_bytes_in_use_peak as f64 / (1024.0 * 1024.0),
+            batched.stats.device_allocs_added,
+        );
+    }
+    println!(
+        "  primitive quartets: {} evaluated of {} in the list ({:.1}% skipped)",
+        batched.stats.primitive_quartets_evaluated,
+        batched.stats.primitive_quartets_total,
+        100.0
+            * (1.0
+                - batched.stats.primitive_quartets_evaluated as f64
+                    / batched.stats.primitive_quartets_total.max(1) as f64),
+    );
     if let Some(split) = cintx_cubecl::transform::profile::format_split(&batched.stats) {
         println!("  {split}");
     }
@@ -906,6 +958,35 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
         "max_abs_diff_vs_vendor": max_diff,
         "mismatched_elements": mismatches,
         "comparable": mismatches == 0,
+        // M6 / G4: no memory claim is admissible outside this block.
+        "chunk_count": batched.stats.chunk_count,
+        "memory": {
+            "host_output_bytes": batched.stats.host_output_bytes,
+            "host_cart_bytes_peak": batched.stats.host_cart_bytes_peak,
+            "host_peak_bytes": batched.stats.host_output_bytes
+                + batched.stats.host_cart_bytes_peak,
+            "host_peak_over_output": (batched.stats.host_output_bytes
+                + batched.stats.host_cart_bytes_peak)
+                as f64
+                / batched.stats.host_output_bytes.max(1) as f64,
+            "device_out_bytes_peak": batched.stats.device_out_bytes_peak,
+            "device_g_slab_bytes_total": batched.stats.device_g_slab_bytes_total,
+            "device_g_slab_bytes_peak": batched.stats.device_g_slab_bytes_peak,
+            "device_table_bytes_total": batched.stats.device_table_bytes_total,
+            "device_planned_allocs": batched.stats.device_planned_allocs,
+            "readback_bytes": batched.stats.readback_bytes,
+            "device_transform": cintx_cubecl::device_transform_enabled(),
+            "device_bytes_in_use_peak": batched.stats.device_bytes_in_use_peak,
+            "device_allocs_added": batched.stats.device_allocs_added,
+            "residency_profiled": cintx_cubecl::residency_profiling_enabled(),
+        },
+        "primitive_work": {
+            "quartets_total": batched.stats.primitive_quartets_total,
+            "quartets_evaluated": batched.stats.primitive_quartets_evaluated,
+            "skipped_fraction": 1.0
+                - batched.stats.primitive_quartets_evaluated as f64
+                    / batched.stats.primitive_quartets_total.max(1) as f64,
+        },
     }));
 }
 

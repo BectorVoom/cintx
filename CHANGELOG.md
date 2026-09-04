@@ -7,6 +7,303 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the Cartesian-to-spherical transform can run on the device (2026-09-03)
+
+A batched run evaluated Cartesian blocks on the device, read them back, and contracted them
+against the `c2s` tables on the host. Cartesian is larger than spherical wherever `l > 1` — an
+f shell carries 10 components against 7 — so on SO2/def2-TZVP 177.9 MiB crossed the bus to
+produce a 99.8 MiB answer, and the transform was another 8-16% of wall clock.
+
+`crates/cintx-cubecl/src/kernels/c2s_device.rs` does it on the device instead, so the readback
+*is* the caller's answer. One quartet per work item, grid-stride, no barriers.
+`CINTX_2E_TRANSFORM=device` selects it; the host transform remains the default.
+
+| workload | readback, host | readback, device | host transform |
+|---|---|---|---|
+| SO2 / def2-SVP | 6.4 MiB (1.30x output) | 4.9 MiB (1.00x) | 2.4 ms → 0 |
+| H2O / def2-TZVP | 6.2 MiB (1.61x output) | 3.9 MiB (1.00x) | 2.0 ms → 0 |
+| SO2 / def2-TZVP | 172.8 MiB (1.79x output) | 96.6 MiB (1.00x) | 44.7 ms → 0 |
+
+**The gate is bit-identity**, not a tolerance: the transform reorders nothing, so walking the
+same axes in the same order must give the same bits. `def2_device_c2s_parity` compares
+1.2 million elements across three fixtures element by element, and on ROCm as well as CPU.
+
+Two things had to be right for that. `l <= 1` axes are **skipped, not applied**: their matrices
+are the identity, but an identity contraction still evaluates `1.0*x + 0.0*y`, and
+`-0.0 + 0.0` is `+0.0` — a sign flip no tolerance-based gate would report. And a
+value-returning `if` on a runtime predicate is not what it looks like inside `#[cube]`; the
+first version selected its ping-pong buffer that way and produced 1 127 wrong values out of
+53 237. Written as statement-level mutation it is exact. The 2e kernel's existing
+`coop`/`punit` arithmetic exists for the same reason.
+
+It is off by default because the backend where it pays is a discrete GPU, and this project has
+none: the CubeCL CPU backend runs the "device" transform on the same cores, and gfx1151's
+memory is unified. On CPU it is roughly a wash — SO2/def2-TZVP's dispatch rose 246.7 → 280.5 ms
+while 44.7 ms left the host side. `ci/colab_t4_verification.sh` is what settles it on a real
+discrete GPU.
+
+### Added — CUDA runtime verification, and a Colab T4 runner (2026-09-03)
+
+`.planning/notes/cuda-metal-verification-gap.md` records the CUDA backend as compile-only: built
+in the feature matrix, never having executed a kernel. `def2_cuda_verification` is what a CUDA
+device runs to change that — the FMA-fusion probe (which decides whether the extended Rys
+ceiling, and so def2-TZVP, is available on NVIDIA), `int2e_sph` against vendored libcint at
+`1e-12`, CUDA against the CPU backend, and the M3 device transform. Gated `#[ignore]` behind
+`CINTX_CUDA_ORACLE=1`, exactly as the ROCm suite is, with a new `cuda` feature on
+`cintx-oracle` to forward the backend.
+
+`ci/colab_t4_verification.sh` and its notebook run it on a Colab T4. **No throughput claim
+should be read off a T4**: its f64 rate is 1/32 of f32, and cintx's public path is f64 by
+contract. It is a correctness target, exactly as gfx1151 is.
+
+### Attempted, then disabled — the G tensor in shared memory (2026-09-03)
+
+The cooperative 2e kernel keeps its Rys recurrence scratch in *global* memory, which on a GPU is
+the slowest resource it touches. Moving it to shared memory is a small change — `Array` and
+`SharedMemory` both yield a `Slice<F, ReadWrite>`, so the recurrences bind whichever they are
+given and are written once.
+
+**On ROCm it produces wrong values, silently.** Bisected on gfx1151, every step re-run under a
+renamed kernel for the reason below:
+
+- **Allocation is innocent** — an unconditional, never-read 48 KiB slab, everything else global,
+  leaves the kernel exactly correct.
+- **Use is the trigger, and one element is enough.** Unit 0 writes a single shared element, one
+  `sync_cube()`, every unit reads it back and multiplies an exactly-1.0 factor by it — G tensor
+  still entirely in global memory. That corrupts 15 598 of 53 237 elements by up to 0.9.
+- Not the size (48 KiB, 4 KiB, 512 bytes all fail against 64 KiB reported), not the tuner (fails
+  with autotuning off), not cross-lane sharing (fails at one lane per cube), not a barrier in
+  divergent control flow (there is none).
+
+It is not the primitive either: the probe exercises the same shape — direct and through
+`to_slice_mut()`, at 48 KiB and 256 lanes, beside a private `Array`, under a read-modify-write
+recurrence — and round-trips exactly on the same device. Shared memory works in a small kernel
+and not in this one, the largest in the project by a wide margin.
+
+### Found while debugging that — compiled kernels are cached by signature, not by body (2026-09-03)
+
+Editing a `#[cube]` kernel's body without changing its parameters or comptime settings can leave
+the **previous compiled kernel running** on ROCm. `~/.cache/comgr` serves it silently; `sync()`
+and `read_one` both return `Ok`.
+
+This is worth more than the S3 result, because it silently invalidates GPU experiments. Three
+iterations of the S3 isolation probe were lost to it — the body was rewritten twice and the
+device kept returning the first version's output — and it surfaced only when a version was
+written whose expected values differed from what the stale kernel produced. An earlier version
+had "passed" by writing and reading back the same array the stale kernel happened to write.
+
+Two rules, now recorded in the probe's own documentation: when changing a kernel body for an
+experiment, **rename the kernel** or clear `~/.cache/comgr` (a signature change also suffices,
+which is why the ordinary S1/S2 work never hit this); and **initialise output buffers with a
+sentinel** rather than using `client.empty`, which hands back recycled device pages that a
+launch which never happened will read back as plausible data.
+
+The integration is kept but **off unless `CINTX_2E_SHARED_G=1`**, since reproducing it is the
+expensive part and it is a few lines from working once the defect is found;
+`def2_batch_rocm_parity` fails loudly when it is set. The probe stays as the reproduction
+harness. Whether NVIDIA shows the same behaviour is the next datum, and the Colab runner asks
+that question behind `CINTX_TRY_SHARED_G=1`.
+
+### Added — the batched 2e path walks libcint's primitive-pair table (2026-09-03)
+
+`CINTset_pairdata` (`optimizer.c:288`) forms each shell pair's `(rij, exp(-eij), cceij)` once,
+and `CINT2e_loop_nopt` (`cint2e.c:192`) runs the **ket pair as the outer loop** so its data is
+formed once per ket primitive pair. cintx did neither: it walked all `nprim^4` primitive
+quartets with the bra outside, rebuilding the ket's product centre, its overlap exponential
+and a division `nprim_i * nprim_j` times over.
+
+It also computed terms libcint does not. The vendor drops a primitive pair when
+`cceij >= expcutoff`, a ket pair when `ccekl > expcutoff`, and a quartet when
+`cceij > expcutoff - ccekl`, with `EXPCUTOFF = 60`. Those contributions were **absent from the
+reference cintx is compared against** — so computing them cost time and moved cintx away from
+the vendor, not towards it.
+
+Both are now the vendor's. A resident `PairTable` carries the compacted pair rows, built with
+libcint's exact expressions including the `rr * ai * aj * aij` association and the
+`ri + wj * (rj - ri)` product centre — the same two choices whose 1e counterparts were worth
+2000-4400x at high angular momentum on 2026-09-03.
+
+Measured against vendored libcint on the def2 benchmark work lists, `mismatched_elements = 0`
+throughout:
+
+| workload | primitive quartets | dropped | max abs diff, before | after |
+|---|---|---|---|---|
+| H2O / def2-SVP | 38 111 | 0.0% | 3.331e-15 | 2.665e-15 |
+| CH4 / def2-SVP | 154 846 | 2.2% | 2.665e-15 | 2.442e-15 |
+| SO2 / def2-SVP | 458 741 | 26.3% | 5.773e-15 | 5.329e-15 |
+| H2O / def2-TZVP | 156 940 | 4.7% | 4.441e-15 | 4.441e-15 |
+| SO2 / def2-TZVP | 1 920 320 | 6.2% | 5.918e-14 | **3.245e-14** |
+
+`def2_pair_cutoff_parity` gates it, and the gate is deliberately not bit-identity against the
+old kernel: the loop nesting changed, so the contraction sum is reassociated. What is asserted
+is that the unscreened setting (`PairTableOptions::unscreened`) dispatches every primitive
+quartet, and that screening never worsens vendor agreement. On all four fixtures the screened
+and unscreened runs differ from each other by at most 6.7e-29 and from the vendor by identical
+amounts.
+
+### Added — a memory budget the batched 2e path actually honours (2026-09-03)
+
+`ExecutionOptions::memory_limit_bytes` has existed since the per-tuple planner and was silently
+ignored by the batch path: a whole-molecule work list allocated its spherical output, every
+launch group's Cartesian buffer and every group's scratch, whatever the caller asked for. On
+SO2/def2-TZVP that is 99.8 MiB of output beside 177.9 MiB of Cartesian intermediate.
+
+The evaluation now runs in chunks of **consecutive quartets**. Consecutive is load-bearing
+twice: only the chunk's buffers are live, and a run of adjacent quartets owns a contiguous span
+of the output, so each chunk's transform streams through its own span once. An earlier
+arrangement released memory per launch group instead, which scattered every group's writes
+across the whole 96 MiB output and cost 3.8x in the transform — the memory won and the time
+given straight back.
+
+With `memory_limit_bytes` set, SO2/def2-TZVP holds 20.0 MiB of Cartesian intermediate instead
+of 177.9, a host peak of 1.20x the output instead of 2.78x, and the values are bit-identical to
+the unbounded run. A budget too small to hold even the chunked shape is refused with
+`MemoryLimitExceeded` before the output buffer is allocated and before any launch.
+
+The default is **unbounded**, and that is measured rather than assumed. In one process against
+one work list (`CINTX_2E_CHUNK_MIB`):
+
+| chunk ceiling | dispatches | dispatch | transform | Cartesian peak |
+|---|---|---|---|---|
+| unlimited | 24 | 194.7 ms | 29.3 ms | 172.8 MiB |
+| 32 MiB | 115 | 225.6 ms | 44.8 ms | 32 MiB |
+| 8 MiB | 337 | 231.7 ms | 77.7 ms | 8 MiB |
+
+A 32 MiB ceiling costs 21% of wall time to save 140 MiB. That is a good trade for a caller who
+needs the memory and a bad one for a caller who does not, and only the caller knows which.
+
+`def2_batch_memory_plan` gates the bit-identity, the refusal and the bound.
+
+### Added — streaming and caller-owned batch surfaces (2026-09-03)
+
+`QuartetBatchRequest::for_each_chunk` hands each chunk's blocks to a consumer as they are
+produced and reuses one buffer, so the host peak is one chunk rather than one molecule — the
+shape a direct-SCF Fock build wants, and the difference between a work list that fits in memory
+and one that does not. `evaluate_into` is the middle case: the caller owns the output buffer
+and reuses it across SCF iterations.
+
+Both reproduce `evaluate` bit for bit, block for block, in order. A consumer's error stops the
+stream and comes back as the consumer's own error rather than a backend paraphrase.
+`def2_streaming_facade` gates all three properties. No CubeCL type crosses the facade.
+
+### Added — a Schwarz table cintx can build itself (2026-09-03)
+
+`build_schwarz_table` takes a `DiagonalEvaluator` the caller supplies, and the throughput
+benchmark supplies vendored libcint — the right choice there, because one engine building the
+table keeps the screened list identical for both. It is not a choice a production caller has.
+
+`cintx_cubecl::schwarz_bounds` builds the table through one streamed batch over the diagonal
+quartets, and `SchwarzTable::from_pair_values` feeds it back to the driver's screening. Against
+vendor-built tables the bounds agree to 7e-16 of table scale, and — the property that actually
+matters — both tables screen to exactly the same quartet set on H2O/def2-SVP, SO2/def2-SVP and
+H2O/def2-TZVP. `def2_batched_schwarz` gates it.
+
+### Changed — launch widths are quantized, so molecules share compiled programs (2026-09-03)
+
+A cube width is part of a kernel's compiled identity, so a launch asking for 13 units and one
+asking for 14 are two programs to the JIT even though nothing about the arithmetic differs.
+H2O/def2-SVP and CH4/def2-SVP share all 15 launch signatures, yet CH4 after H2O in one process
+paid **0.53 s** of fresh compilation because a handful of its classes crossed a unit-count
+boundary.
+
+`per_unit_width` now rounds the work term up to a power of two before the hardware and memory
+clamps. Same process, same order: CH4/def2-SVP now prewarms in **0.0025 s**, a full cache hit.
+Rounding up rather than down keeps every unit that has work and hands spare units an empty
+range of the blocked grid-stride walk, which they already tolerate.
+
+### Changed — device scratch and constant tables are allocated once per run (2026-09-03)
+
+The G-tensor scratch slab was allocated inside `launch()`, so a run allocated one per dispatch
+and — under autotuning — one per candidate width. The extended-Rys constant tables (~4.7 KB)
+were uploaded per dispatch, on a kernel signature that does not vary with `nroots`. Both are
+now once per run. Planned device allocations on SO2/def2-TZVP: 144 → 98.
+
+### Added — memory and primitive-work accounting in the throughput artifact (2026-09-03)
+
+`BatchExecutionStats` gains host and device byte counts, planned allocation counts, and the
+primitive-quartet totals every arithmetic-per-primitive claim divides by. The throughput
+artifact moves to schema `cintx_def2_throughput/2` with a `memory` and a `primitive_work` block
+per case, so a memory claim has somewhere to live besides a console line.
+
+Backend residency (`ComputeClient::memory_usage`) is opt-in under `CINTX_BATCH_MEMORY_PROFILE`,
+because reading it drains the stream — the same reason the host-transform split is opt-in. The
+artifact records whether the run paid for it.
+
+### Added — the 2e contraction sum accumulates privately where it fits (2026-09-03)
+
+The contraction sum landed in `cart_out` — a kernel argument, so a pointer the compiler cannot
+prove unaliased — once per primitive quartet per element. A `(ss|ss)` class on SO2/def2-TZVP
+walks up to 2 401 primitive quartets, so its single output element was loaded and stored 2 401
+times through memory the optimizer had to reload each time.
+
+It now accumulates in a per-work-item array, written out once per quartet. The capacity is
+comptime per decomposition — 256 slots per-unit, 64 cooperative — because a work item is an OS
+thread in the first shape and a *lane* in the second: one ceiling of 256 f64 would be 32 KB
+across a CPU's 16 units and 512 KB of private storage for a 256-wide GPU cube, which would
+spill and cost more occupancy than the read-modify-write it replaced. Wider blocks take that
+path anyway. At 256 the per-unit ceiling covers every `nroots <= 3` class, where 93-98% of all
+primitive work sits.
+
+The summation order is unchanged, so results are **bit-identical**; `def2_accumulator_ab`
+asserts that element by element, which is what makes the timing question separable.
+
+The timing question is answered as well as this host allows — both settings alternated inside
+one process, interleaved, best of seven, three times:
+
+| workload | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| H2O / def2-SVP | 1.008x | 0.997x | 1.044x |
+| CH4 / def2-SVP | 1.036x | 1.036x | 1.059x |
+| SO2 / def2-SVP | 1.032x | 1.070x | 0.962x |
+
+Only CH4/def2-SVP reproduces a positive sign across all three, at 3-6%. It is kept on by
+default because it is bit-identical and costs nothing, and because the pattern it removes is a
+far larger effect where `cart_out` is device memory rather than the cache the kernel is already
+running out of. `CINTX_2E_ACCUMULATE=global` restores the old path.
+
+An earlier cross-*process* comparison of the same two settings reported a 14% win on one
+workload and a 41% loss on another, from the same pair of binaries. That is why the A/B is a
+test that switches inside one process rather than two benchmark runs.
+
+### Changed — def2 throughput on the CPU backend (2026-09-03)
+
+Whole screened work lists against single-threaded vendored libcint, same list for both
+engines, values compared before timing, best of 9, `mismatched_elements = 0` throughout:
+
+| workload | quartets | before | recorded | range over six runs |
+|---|---|---|---|---|
+| H2O / def2-SVP | 3 081 | 1.05x | 1.16x | 0.98 – 1.28x |
+| CH4 / def2-SVP | 14 706 | 1.47x | 1.80x | 1.37 – 1.86x |
+| SO2 / def2-SVP | 21 271 | 1.50x | 1.18x | 1.18 – 1.68x |
+| H2O / def2-TZVP | 18 145 | 1.06x | 1.61x | 0.93 – 1.61x |
+| SO2 / def2-TZVP | 181 070 | 1.40x | 1.28x | 1.20 – 1.54x |
+
+**No single figure here should be quoted on its own.** Absolute times on this host vary by up
+to 2x between processes for identical work — vendored libcint's own H2O/def2-SVP figure ranged
+2.3 ms to 4.9 ms — and the ratios moved by three to four times the improvement the def2 plan's
+speed gate was written to detect. SO2/def2-SVP produced 1.68x in one run and 1.18x in another,
+from the same binary on the same work list. The gate asked for ≥1.5x on both SO2 rows; the
+honest answer is that this machine cannot resolve it.
+
+What *was* resolvable, each by switching a setting inside one process: the pair cutoff drops
+2.2-26.3% of primitive quartets at identical vendor agreement; vendor agreement improved on
+four of five workloads; the private accumulator is worth 3-6% on CH4/def2-SVP; a 32 MiB chunk
+ceiling costs 21% of wall time and saves 140 MiB; and a 0.53 s recompilation became a 0.0025 s
+cache hit.
+
+### Measured, not landed — the asynchronous dispatch pipeline (2026-09-03)
+
+`CINTX_2E_PIPELINE=async` keeps one dispatch in flight while its predecessor is read back and
+transformed. Over the full def2 scope on the CPU backend it moved SO2/def2-TZVP from 0.27404 s
+to 0.27162 s — 0.9%, inside the noise — and made two smaller workloads slower. It stays off by
+default, and off unconditionally when a memory budget is set, since the overlap keeps two
+groups' buffers alive.
+
+That is the expected result on a backend where the "device" is the same cores the transform
+runs on. The switch is kept because on a backend with a real transfer it is a different
+measurement.
+
+
 ### Fixed — the 1e recurrence is built on the shell libcint builds it on (2026-09-03)
 
 `CINTinit_int1e_EnvVars` splits on `ibase = li_ceil > lj_ceil`, and `CINTg1e_ovlp` /

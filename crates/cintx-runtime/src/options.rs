@@ -141,6 +141,15 @@ pub struct ExecutionOptions {
     /// because those raises size the workspace (see
     /// [`crate::validator::validate_range_omega_env_params`]).
     pub range_omega: Option<f64>,
+    /// libcint's primitive-pair/quartet screening cutoff for 2e-family kernels
+    /// (env[0], `PTR_EXPCUTOFF` in the raw API) (S1).
+    ///
+    /// `None`, the default, leaves the kernel at libcint's own
+    /// `EXPCUTOFF = 60`. When set, populates `operator_env_params.expcutoff`
+    /// on the `ExecutionPlan`. Unlike `range_omega` this never changes
+    /// workspace sizing — it only changes which primitive pairs the pair
+    /// table keeps.
+    pub expcutoff: Option<f64>,
     /// AO symmetry packing requested by the caller. Phase 18 implements `S1` only;
     /// every other variant returns `FacadeError::UnsupportedAoSymmetry` from
     /// `SessionRequest::query_workspace`. `None` is the default and is treated as

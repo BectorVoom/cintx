@@ -1,3 +1,5 @@
+/// Device-side Cartesian-to-spherical transform for batched 2e output (M3).
+pub mod c2s_device;
 pub mod center_2c2e;
 pub mod center_3c1e;
 pub mod center_3c2e;
@@ -19,6 +21,8 @@ pub mod ecp;
 // already ungated, so the module compiles cleanly without `with-f12`.
 pub mod f12;
 pub mod one_electron;
+/// Primitive-pair data and libcint's `expcutoff` screen (S1).
+pub mod pair_table;
 // Phase 28 FND-05 (Gap B2): generic σ·p G-tensor assembler (device #[cube]).
 // Emits the four gc_x/gc_y/gc_z/gc_1 component-leading blocks the host
 // spin-included transform `cart_to_spinor_si_2d` reads in order; rank-

@@ -203,9 +203,75 @@ impl CubeClExecutor {
     ) -> Result<kernels::two_electron::TwoEBatchOutput, cintxRsError> {
         let backend = self.backend_cache.resolve(intent)?;
         self.check_f64_capability(&backend)?;
-        let resident = kernels::two_electron::ResidentTwoEBasis::new(&backend, shells)?;
+        let resident = kernels::two_electron::ResidentTwoEBasis::new_with(
+            &backend,
+            shells,
+            kernels::pair_table::PairTableOptions {
+                expcutoff: options
+                    .expcutoff
+                    .unwrap_or(kernels::pair_table::LIBCINT_EXPCUTOFF),
+            },
+        )?;
         kernels::two_electron::evaluate_2e_quartet_batch_with(
             &backend, &resident, quartets, options,
+        )
+    }
+
+    /// [`Self::evaluate_2e_quartets`] into caller-owned storage (M2).
+    ///
+    /// # Errors
+    /// As [`Self::evaluate_2e_quartets`], plus
+    /// [`cintxRsError::BufferTooSmall`] when `values` cannot hold the output.
+    pub fn evaluate_2e_quartets_into(
+        &self,
+        intent: &BackendIntent,
+        shells: &[kernels::two_electron::BatchShell],
+        quartets: &[[u32; 4]],
+        options: kernels::two_electron::TwoEBatchOptions,
+        values: &mut [f64],
+    ) -> Result<(Vec<usize>, kernels::two_electron::BatchExecutionStats), cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        let resident = kernels::two_electron::ResidentTwoEBasis::new_with(
+            &backend,
+            shells,
+            kernels::pair_table::PairTableOptions {
+                expcutoff: options
+                    .expcutoff
+                    .unwrap_or(kernels::pair_table::LIBCINT_EXPCUTOFF),
+            },
+        )?;
+        kernels::two_electron::evaluate_2e_quartet_batch_into(
+            &backend, &resident, quartets, options, values,
+        )
+    }
+
+    /// Evaluate a quartet work list chunk by chunk, without materializing it
+    /// (M2).
+    ///
+    /// # Errors
+    /// As [`Self::evaluate_2e_quartets`], plus any error `on_chunk` returns.
+    pub fn stream_2e_quartets(
+        &self,
+        intent: &BackendIntent,
+        shells: &[kernels::two_electron::BatchShell],
+        quartets: &[[u32; 4]],
+        options: kernels::two_electron::TwoEBatchOptions,
+        on_chunk: &mut dyn FnMut(kernels::two_electron::ChunkView<'_>) -> Result<(), cintxRsError>,
+    ) -> Result<kernels::two_electron::BatchExecutionStats, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        let resident = kernels::two_electron::ResidentTwoEBasis::new_with(
+            &backend,
+            shells,
+            kernels::pair_table::PairTableOptions {
+                expcutoff: options
+                    .expcutoff
+                    .unwrap_or(kernels::pair_table::LIBCINT_EXPCUTOFF),
+            },
+        )?;
+        kernels::two_electron::stream_2e_quartet_batch(
+            &backend, &resident, quartets, options, on_chunk,
         )
     }
 

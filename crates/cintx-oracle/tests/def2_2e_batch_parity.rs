@@ -180,15 +180,38 @@ fn def2_svp_batch_matches_vendor_and_per_quartet() {
     // common factor per merged l-class.
     let table_bytes = list.len() * 6 * std::mem::size_of::<u32>()
         + classes.len() * (13 * std::mem::size_of::<u32>() + std::mem::size_of::<f64>());
+    // The residency also carries the primitive-pair table (S1): five `f64` and
+    // two `u32` per surviving pair, plus `nbas^2 + 1` prefix sums. It is part of
+    // the *basis* upload — built from the shells and the `expcutoff` alone, and
+    // paid for once per residency like the exponents are — so it belongs on this
+    // side of the equality rather than being excused from it.
+    let pair_bytes = cintx_cubecl::kernels::pair_table::PairTable::build(
+        &shells,
+        cintx_cubecl::kernels::pair_table::PairTableOptions::default(),
+    )
+    .upload_bytes();
+    // The device transform (M3) adds two uploads of its own: the frozen `c2s`
+    // coefficient tables, once per residency, and one destination index per
+    // quartet. Both are real transfers and both are counted, so the prediction
+    // gains them rather than the assertion being weakened.
+    let c2s_bytes = if cintx_cubecl::device_transform_enabled() {
+        cintx_cubecl::transform::c2s_data::C2S_TABLE.len() * std::mem::size_of::<f64>()
+            + cintx_cubecl::transform::c2s_data::C2S_OFFSET.len() * std::mem::size_of::<u32>()
+            + list.len() * std::mem::size_of::<u32>()
+    } else {
+        0
+    };
     assert_eq!(
         batched.stats.transfer_bytes,
-        basis_bytes + table_bytes,
-        "transfer must be one basis upload plus the quartet and class tables"
+        basis_bytes + pair_bytes + table_bytes + c2s_bytes,
+        "transfer must be one basis upload, its pair table, the quartet and class tables, \
+         and — under the device transform — the c2s tables and destination indices"
     );
     assert!(
         batched.stats.transfer_bytes
-            < basis_bytes * batched.stats.kernel_launch_count + table_bytes,
-        "basis must not be re-uploaded per launch class"
+            < (basis_bytes + pair_bytes + c2s_bytes) * batched.stats.kernel_launch_count
+                + table_bytes,
+        "basis and pair table must not be re-uploaded per launch class"
     );
     assert!(
         batched.stats.kernel_launch_count < list.len(),
@@ -427,7 +450,9 @@ fn primitive_screening_at_zero_is_the_identity() {
         &resident,
         &list,
         TwoEBatchOptions {
+            memory_limit_bytes: None,
             primitive_tolerance: 0.0,
+            expcutoff: None,
         },
     )
     .expect("tolerance-zero");
@@ -450,7 +475,9 @@ fn primitive_screening_at_zero_is_the_identity() {
         &resident,
         &list,
         TwoEBatchOptions {
+            memory_limit_bytes: None,
             primitive_tolerance: f64::MAX,
+            expcutoff: None,
         },
     )
     .expect("fully screened");

@@ -64,6 +64,14 @@ pub struct OperatorEnvParams {
     /// rejected for every other operator by
     /// [`crate::validator::validate_range_omega_env_params`].
     pub range_omega: Option<f64>,
+    /// PTR_EXPCUTOFF value (env[0]) — libcint's primitive-pair/quartet
+    /// screening cutoff for 2e-family kernels (S1).
+    ///
+    /// `None` (the default) leaves the kernel at libcint's own
+    /// `EXPCUTOFF = 60`. Unlike `range_omega` this never changes workspace
+    /// sizing, so it is not part of `WorkspaceQuery` — it only ever affects
+    /// which primitive pairs the pair table keeps.
+    pub expcutoff: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -229,6 +237,14 @@ pub fn evaluate(
     // first, so by this point `opts.range_omega == plan.workspace.range_omega`.
     if let Some(omega) = opts.range_omega {
         plan.operator_env_params.range_omega = Some(omega);
+    }
+
+    // S1: the safe-API half of expcutoff threading. The raw compat path sets
+    // `plan.operator_env_params.expcutoff` directly from env[PTR_EXPCUTOFF]
+    // before calling here, so `opts.expcutoff` is `None` for raw callers and
+    // this `if let` never overwrites what they already set.
+    if let Some(expcutoff) = opts.expcutoff {
+        plan.operator_env_params.expcutoff = Some(expcutoff);
     }
 
     let _parent = opts.trace_span.as_ref().map(tracing::Span::enter);

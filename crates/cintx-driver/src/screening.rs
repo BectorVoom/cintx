@@ -27,6 +27,70 @@ pub struct SchwarzTable {
 }
 
 impl SchwarzTable {
+    /// Build a table from bounds already computed elsewhere (S6).
+    ///
+    /// `values` must be in compound-index order — the order
+    /// [`crate::enumerate_pairs`] produces, `i` ascending and `j` in `0..=i` —
+    /// so that [`Self::get`] finds each pair where it left it.
+    ///
+    /// This exists so a caller can build the bounds through the batched 2e
+    /// surface (`cintx_cubecl::schwarz_bounds`) instead of one diagonal quartet
+    /// at a time through [`DiagonalEvaluator`], and still screen with the same
+    /// code the benchmark screens with. A production caller has no vendored
+    /// libcint to hand [`build_schwarz_table`], and building the table through
+    /// the per-tuple path would cost more than the screening saves.
+    ///
+    /// # Panics
+    /// If `values`' length is not a triangular number `n(n+1)/2` — the shape a
+    /// compound-index-ordered pair list always has. This is the shape a caller
+    /// gets wrong most often: `cintx_cubecl::schwarz_bounds` returns a *square*
+    /// `nbas*nbas` matrix (every `(i,j)` and its mirror `(j,i)`, so `get` can
+    /// index it directly), not this table's packed triangular layout — passing
+    /// it here unreindexed silently reads the wrong entries instead of failing.
+    /// Reindex it first, or use [`Self::from_square_matrix`], which does that
+    /// reindexing for you.
+    #[must_use]
+    pub fn from_pair_values(values: impl IntoIterator<Item = f64>) -> Self {
+        let values: Vec<f64> = values.into_iter().collect();
+        assert!(
+            is_triangular_number(values.len()),
+            "SchwarzTable::from_pair_values: {} values is not a triangular number \
+             n(n+1)/2 — did you pass a square nbas*nbas matrix (e.g. from \
+             cintx_cubecl::schwarz_bounds) without reindexing it? Use \
+             SchwarzTable::from_square_matrix for that shape instead.",
+            values.len()
+        );
+        let max_q = values.iter().copied().fold(0.0_f64, f64::max);
+        Self { values, max_q }
+    }
+
+    /// Build a table from a square `nbas*nbas` bounds matrix (S6).
+    ///
+    /// This is the shape `cintx_cubecl::schwarz_bounds` returns: `bounds[i *
+    /// nbas + j]` and its mirror `bounds[j * nbas + i]` both hold `Q_ij`. This
+    /// constructor reindexes it into the packed compound-index order
+    /// [`Self::from_pair_values`] expects, so a caller of `schwarz_bounds`
+    /// never has to get that reindexing right by hand.
+    ///
+    /// # Panics
+    /// If `bounds.len() != nbas * nbas`.
+    #[must_use]
+    pub fn from_square_matrix(bounds: &[f64], nbas: usize) -> Self {
+        assert_eq!(
+            bounds.len(),
+            nbas * nbas,
+            "SchwarzTable::from_square_matrix: expected a {nbas}x{nbas} matrix \
+             ({} values), got {}",
+            nbas * nbas,
+            bounds.len()
+        );
+        Self::from_pair_values(
+            (0..nbas as u32)
+                .flat_map(|i| (0..=i).map(move |j| (i, j)))
+                .map(move |(i, j)| bounds[i as usize * nbas + j as usize]),
+        )
+    }
+
     /// `Q_ij` for a canonical pair.
     #[must_use]
     pub fn get(&self, pair: ShellPair) -> f64 {
@@ -49,6 +113,23 @@ impl SchwarzTable {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
+    }
+}
+
+/// Is `len` a triangular number `n(n+1)/2` for some `n >= 0`?
+///
+/// The shape a compound-index-ordered pair list (`nbas` shells, `i` ascending,
+/// `j` in `0..=i`) always has, and so the one thing that catches a caller
+/// handing [`SchwarzTable::from_pair_values`] a square matrix by mistake.
+fn is_triangular_number(len: usize) -> bool {
+    // n(n+1)/2 == len  <=>  n == (isqrt(8*len + 1) - 1) / 2, and that root must
+    // be an exact match (8*len+1 a perfect square) with an odd root (it always
+    // is, when 8*len+1 — odd — is a perfect square at all).
+    let discriminant = 8_u128 * len as u128 + 1;
+    let root = discriminant.isqrt();
+    root * root == discriminant && {
+        let n = (root - 1) / 2;
+        n * (n + 1) / 2 == len as u128
     }
 }
 
@@ -169,6 +250,62 @@ mod tests {
     fn table(values: Vec<f64>) -> SchwarzTable {
         let max_q = values.iter().copied().fold(0.0_f64, f64::max);
         SchwarzTable { values, max_q }
+    }
+
+    #[test]
+    fn triangular_number_check_matches_pair_counts() {
+        for nbas in 0..12_usize {
+            let len = nbas * (nbas + 1) / 2;
+            assert!(is_triangular_number(len), "n={nbas} len={len}");
+        }
+        for len in [2, 4, 5, 8, 9, 11, 13, 14] {
+            assert!(!is_triangular_number(len), "len={len} is not triangular");
+        }
+    }
+
+    /// A caller handing `from_pair_values` a square `nbas*nbas` matrix
+    /// unreindexed must be refused, not silently misread.
+    #[test]
+    #[should_panic(expected = "not a triangular number")]
+    fn from_pair_values_rejects_a_square_matrix() {
+        let nbas = 3;
+        let _ = SchwarzTable::from_pair_values(vec![0.0; nbas * nbas]);
+    }
+
+    /// `from_square_matrix` reindexes the square layout `schwarz_bounds`
+    /// produces into the same packed table `from_pair_values` would, by hand,
+    /// for the compound-index-ordered pair list.
+    #[test]
+    fn from_square_matrix_matches_hand_reindexed_pair_values() {
+        let nbas = 4_usize;
+        // A square, symmetric matrix in the shape `schwarz_bounds` returns.
+        let mut bounds = vec![0.0_f64; nbas * nbas];
+        for i in 0..nbas {
+            for j in 0..nbas {
+                let q = (i.max(j) * 10 + i.min(j)) as f64;
+                bounds[i * nbas + j] = q;
+            }
+        }
+
+        let expected = SchwarzTable::from_pair_values((0..nbas as u32).flat_map(|i| {
+            let bounds = &bounds;
+            (0..=i).map(move |j| bounds[i as usize * nbas + j as usize])
+        }));
+        let got = SchwarzTable::from_square_matrix(&bounds, nbas);
+
+        assert_eq!(got.len(), expected.len());
+        for i in 0..nbas as u32 {
+            for j in 0..=i {
+                let pair = ShellPair { i, j };
+                assert_eq!(got.get(pair), expected.get(pair), "pair ({i},{j})");
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "expected a 3x3 matrix")]
+    fn from_square_matrix_rejects_a_mismatched_length() {
+        let _ = SchwarzTable::from_square_matrix(&[0.0; 5], 3);
     }
 
     /// Tolerance 0 must be the identity — the property the correctness gate

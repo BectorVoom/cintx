@@ -144,6 +144,17 @@ impl<'basis> SessionBuilder<'basis> {
         self
     }
 
+    /// Set libcint's primitive-pair/quartet screening cutoff (env[0],
+    /// `PTR_EXPCUTOFF`) for 2e-family kernels (S1).
+    ///
+    /// Unset (the default) leaves the kernel at libcint's own
+    /// `EXPCUTOFF = 60`. Unlike [`Self::with_range_omega`] this never affects
+    /// workspace sizing, so there is no query/evaluate ordering constraint.
+    pub fn expcutoff(mut self, expcutoff: f64) -> Self {
+        self.options.expcutoff = Some(expcutoff);
+        self
+    }
+
     pub fn build(self) -> SessionRequest<'basis> {
         SessionRequest::new(
             self.operator,

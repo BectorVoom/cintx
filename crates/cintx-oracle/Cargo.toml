@@ -19,6 +19,13 @@ unstable-source-api = ["cintx-compat/unstable-source-api"]
 # #[ignore]` and are only triggered via `xtask rocm-oracle` (which sets
 # `CINTX_ROCM_ORACLE=1`).
 rocm = ["cintx-compat/rocm"]
+# The CUDA sibling of the `rocm` feature above, for the same reason: it forwards
+# `cintx-compat/cuda` so `cargo test -p cintx-oracle --features cuda` activates
+# the cubecl-cuda backend. `.planning/notes/cuda-metal-verification-gap.md`
+# records CUDA as compile-only; `def2_cuda_verification` is what a real device
+# runs to change that, gated `#[ignore]` behind `CINTX_CUDA_ORACLE=1` exactly as
+# the ROCm suite is.
+cuda = ["cintx-compat/cuda"]
 # Task 33-03: unlocks the inline extended Rys entry for the families that
 # have been flipped, so their parity gates can run against it.
 extended-device-rys = [

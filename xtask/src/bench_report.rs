@@ -370,12 +370,17 @@ fn write_phase0_artifacts(
         (
             "memory_report",
             json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "artifact": "cintx_cubecl_memory_report",
                 "provenance": provenance,
                 "metric_kind": "reported workspace and transfer byte counters",
                 "not_device_memory_telemetry": true,
                 "diagnostics": diagnostics_rows,
+                // `def2_speed_memory_optimization_plan.md` M6.3. Schema 1 carried
+                // only the Criterion-derived workspace counters, which say nothing
+                // about a whole-molecule batch's footprint. These rows come from
+                // the def2 throughput artifact when one has been produced.
+                "def2": def2_memory_rows(),
             }),
         ),
         (
@@ -423,6 +428,92 @@ fn write_phase0_artifacts(
     write_jsonl(profile_path, &profile_rows)?;
     writes.push(("profile", PathBuf::from(profile_path)));
     Ok(writes)
+}
+
+/// Per-workload memory rows from the def2 throughput artifact (M6.3).
+///
+/// The bench report's own rows come from Criterion, which measures one shell
+/// tuple at a time and so reports a workspace counter rather than a molecule's
+/// footprint. The number a caller sizing a machine actually needs — how much a
+/// whole screened work list holds at once — is produced by
+/// `def2_throughput_benchmark` and lands in `cintx_def2_throughput.json`.
+///
+/// Read from wherever that artifact is, without running anything: `bench-report`
+/// consumes rows, it does not produce them. A run that has no def2 artifact gets
+/// a `status` saying so rather than an empty list that would read as "measured
+/// and found nothing".
+fn def2_memory_rows() -> Value {
+    const CANDIDATES: [&str; 3] = [
+        "/tmp/cintx_artifacts/cintx_def2_throughput.json",
+        "/mnt/data/cintx_def2_throughput.json",
+        "artifacts/cintx_def2_throughput.json",
+    ];
+
+    let Some((path, artifact)) = CANDIDATES.iter().find_map(|path| {
+        let text = std::fs::read_to_string(path).ok()?;
+        let value: Value = serde_json::from_str(&text).ok()?;
+        Some((*path, value))
+    }) else {
+        return json!({
+            "status": "not_collected",
+            "reason": "no cintx_def2_throughput.json found; run the def2 throughput benchmark first",
+            "searched": CANDIDATES,
+        });
+    };
+
+    // Schema 1 predates the memory block entirely, so a stale artifact is
+    // reported as stale rather than silently yielding empty rows.
+    let schema = artifact
+        .get("schema")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    if schema != "cintx_def2_throughput/2" {
+        return json!({
+            "status": "unsupported_schema",
+            "reason": "the def2 throughput artifact predates the memory block (schema 2)",
+            "source": path,
+            "schema": schema,
+        });
+    }
+
+    let rows: Vec<Value> = artifact
+        .get("cases")
+        .and_then(Value::as_array)
+        .map(|cases| {
+            cases
+                .iter()
+                .filter(|case| case.get("mode").and_then(Value::as_str) == Some("batched"))
+                .filter_map(|case| {
+                    let memory = case.get("memory")?;
+                    Some(json!({
+                        "case": case.get("case"),
+                        "quartets": case.get("quartets_kept"),
+                        "chunks": case.get("chunk_count"),
+                        "host_output_bytes": memory.get("host_output_bytes"),
+                        "host_cart_bytes_peak": memory.get("host_cart_bytes_peak"),
+                        "host_peak_bytes": memory.get("host_peak_bytes"),
+                        "host_peak_over_output": memory.get("host_peak_over_output"),
+                        "device_out_bytes_peak": memory.get("device_out_bytes_peak"),
+                        "device_scratch_bytes_peak": memory.get("device_g_slab_bytes_peak"),
+                        "device_planned_allocs": memory.get("device_planned_allocs"),
+                        "device_bytes_in_use_peak": memory.get("device_bytes_in_use_peak"),
+                        "residency_profiled": memory.get("residency_profiled"),
+                        "primitive_work": case.get("primitive_work"),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    json!({
+        "status": "collected",
+        "source": path,
+        "schema": schema,
+        // Whether the run paid for a `memory_usage` drain. The
+        // `device_bytes_in_use_peak` figures are `0` and meaningless when false.
+        "device_residency_profiled": artifact.get("device_residency_profiled"),
+        "rows": rows,
+    })
 }
 
 fn phase0_provenance(

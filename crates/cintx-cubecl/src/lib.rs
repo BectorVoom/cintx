@@ -14,6 +14,7 @@ pub mod executor;
 #[path = "kernels/mod.rs"]
 pub mod kernels;
 pub mod math;
+pub mod memory_probe;
 pub mod plane;
 pub mod precision_ratio;
 pub mod resident_cache;
@@ -37,6 +38,7 @@ pub use device_rys_ceiling::{
 pub use executor::{
     BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features,
 };
+pub use kernels::c2s_device::device_transform_enabled;
 pub use kernels::center_2c2e::{
     TwoC2eBatchOutput, evaluate_2c2e_pair_batch, evaluate_2c2e_pair_batch_resident,
 };
@@ -55,12 +57,18 @@ pub use kernels::one_electron::{
     evaluate_1e_pair_batch_resident, evaluate_1e_pair_batch_resident_with,
     evaluate_1e_pair_batch_with,
 };
-pub use kernels::two_electron::{
-    BatchExecutionStats as TwoEBatchStats, BatchOptions, BatchShell, PrewarmReport, ResidentBasis,
-    ResidentTwoEBasis, TwoEBatchOptions, TwoEBatchOutput, evaluate_2e_quartet_batch,
-    evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_quartet_classes,
-    prewarm_2e_work_list,
+pub use kernels::pair_table::{
+    LIBCINT_EXPCUTOFF, PAIR_DATA_STRIDE, PAIR_INDEX_STRIDE, PairTable, PairTableOptions,
 };
+pub use kernels::two_electron::{
+    ACC_SLOTS_DEFAULT, BatchExecutionStats as TwoEBatchStats, BatchOptions, BatchShell, ChunkSink,
+    ChunkView, DEFAULT_CHUNK_CART_BYTES, PrewarmReport, ResidentBasis, ResidentTwoEBasis,
+    TwoEBatchOptions, TwoEBatchOutput, accumulator_slots_max, evaluate_2e_quartet_batch,
+    evaluate_2e_quartet_batch_into, evaluate_2e_quartet_batch_resident,
+    evaluate_2e_quartet_batch_with, prewarm_2e_quartet_classes, prewarm_2e_work_list,
+    schwarz_bounds, set_accumulator_slots_max, stream_2e_quartet_batch,
+};
+pub use memory_probe::{DeviceMemoryProbe, residency_profiling_enabled};
 pub use plane::{
     CPU_CUBE_DIM_MAX, DEFAULT_PLANE_DIM, LaunchHardware, STANDARD_PLANE_ALIGNED_CUBE_DIM,
     WORK_PER_CPU_UNIT, adaptive_grid_stride_geometry, backend_plane_cube_dim, cooperative_cube_dim,

@@ -828,6 +828,169 @@ mod tests {
         }
     }
 
+    /// S3 reproduction harness: does shared memory behave in a *small* kernel?
+    ///
+    /// **It does** — at 48 KiB, 256 lanes, reached directly or through
+    /// `to_slice_mut()`, beside a private `Array`, and under a read-modify-write
+    /// recurrence of the shape the Rys VRR/HRR has. All four combinations
+    /// round-trip exactly on gfx1151. That is the point: the same traffic in
+    /// `two_electron_scalar_kernel` does not.
+    ///
+    /// # Read this before trusting any GPU probe in this repository
+    ///
+    /// **Compiled kernels are cached by signature, not by body.** Editing a
+    /// `#[cube]` kernel's body without changing its parameters or comptime
+    /// settings can leave the *previous* compiled kernel running on ROCm —
+    /// `~/.cache/comgr` serves it, silently, and the test reads results the old
+    /// code produced.
+    ///
+    /// Three iterations of this very probe were invalidated that way before it
+    /// was noticed: the body was rewritten twice and the device kept returning
+    /// the first version's output. It only surfaced because a version was
+    /// written whose *expected* values differed from what the stale kernel
+    /// produced — an earlier version had "passed" by writing and reading back
+    /// the same array the stale kernel wrote.
+    ///
+    /// So when changing a kernel body for an experiment, **rename the kernel**
+    /// or clear `~/.cache/comgr`, and prefer a sentinel-initialised output
+    /// buffer over `client.empty`, which hands back recycled pages that a failed
+    /// or absent launch will happily read.
+    ///
+    /// The batched 2e kernel's G tensor moved to shared memory by selecting
+    /// between `SharedMemory::to_slice_mut()` and `Array::to_slice_mut()` at JIT
+    /// time, so that the recurrences could be written once and bind whichever
+    /// they were given. On ROCm that produced garbage. This reduces the question
+    /// to its smallest form: lane 0 fills a slab, the cube synchronizes, every
+    /// lane reads it back.
+    #[cube(launch_unchecked)]
+    fn shared_slice_probe_kernel_v3<F: Float + CubeElement>(
+        global: &mut Array<F>,
+        out: &mut Array<F>,
+        n: u32,
+        #[comptime] use_shared: u32,
+        #[comptime] via_slice: u32,
+    ) {
+        let mut shared = SharedMemory::<F>::new(comptime!(if use_shared == 1u32 {
+            6144usize
+        } else {
+            1usize
+        }));
+        // The 2e kernel also declares per-work-item private arrays.
+        let mut private = Array::<F>::new(8usize);
+        private[0] = F::new(1.0_f32);
+        let _ = via_slice;
+
+        let mut slab = if comptime!(use_shared == 1u32) {
+            shared.to_slice_mut()
+        } else {
+            global.to_slice_mut()
+        };
+
+        if UNIT_POS == 0 {
+            slab[0] = F::new(1.0_f32);
+            slab[1] = F::new(1.0_f32);
+            // A recurrence *within* the slab: every element is read back and
+            // combined into the next. This is the shape the Rys VRR/HRR has and
+            // the shape the write-then-read probe never exercised.
+            let mut i = 2u32;
+            while i < n {
+                slab[i as usize] =
+                    slab[(i - 1u32) as usize] + slab[(i - 2u32) as usize] * F::new(0.0_f32);
+                i += 1u32;
+            }
+        }
+        sync_cube();
+        let mut i = UNIT_POS as u32;
+        while i < n {
+            out[i as usize] = slab[i as usize] * private[0];
+            i += CUBE_DIM as u32;
+        }
+    }
+
+    #[cfg(feature = "rocm")]
+    #[test]
+    #[ignore = "needs a ROCm device; run explicitly"]
+    fn shared_memory_through_a_slice_round_trips() {
+        use crate::backend::ResolvedBackend;
+        use cintx_runtime::{BackendIntent, BackendKind};
+
+        let backend = ResolvedBackend::from_intent(&BackendIntent {
+            backend: BackendKind::Rocm,
+            ..Default::default()
+        })
+        .expect("rocm backend");
+        let ResolvedBackend::Rocm(client) = &backend else {
+            unreachable!()
+        };
+
+        // Sized and shaped like the real cooperative dispatch: a 48 KiB slab and
+        // a 256-wide cube, rather than the 2 KiB and 32 lanes a toy would use.
+        let n = 6144_usize;
+        let expected: Vec<f64> = vec![1.0; n];
+
+        // Control: a buffer written and read back with no kernel in between.
+        // If this does not round-trip, nothing downstream of it means anything.
+        {
+            let probe: Vec<f64> = (0..n).map(|i| 1000.0 + i as f64).collect();
+            let handle = client.create_from_slice(f64::as_bytes(&probe));
+            let raw = client.read_one(handle).expect("control readback");
+            let back = f64::from_bytes(&raw)[..n].to_vec();
+            println!(
+                "control (no kernel): round-trips: {}  first four: {:?}",
+                back == probe,
+                &back[..4]
+            );
+            assert_eq!(back, probe, "create_from_slice/read_one must round-trip");
+        }
+        for (label, use_shared, via_slice) in [
+            ("global, direct", 0u32, 0u32),
+            ("global, slice", 0u32, 1u32),
+            ("shared, direct", 1u32, 0u32),
+            ("shared, slice", 1u32, 1u32),
+        ] {
+            // Both buffers are *initialised to a sentinel* rather than left
+            // uninitialised. Device memory is not zeroed between processes and
+            // the pool recycles pages, so `client.empty` can hand back exactly
+            // what an earlier run wrote — which is how a probe that never
+            // launched can appear to pass.
+            let sentinel = vec![-1.0_f64; n];
+            let global = client.create_from_slice(f64::as_bytes(&sentinel));
+            let out = client.create_from_slice(f64::as_bytes(&sentinel));
+            unsafe {
+                shared_slice_probe_kernel_v3::launch_unchecked::<f64, cubecl_hip::HipRuntime>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(256),
+                    ArrayArg::from_raw_parts(global, n),
+                    ArrayArg::from_raw_parts(out.clone(), n),
+                    n as u32,
+                    use_shared,
+                    via_slice,
+                );
+            }
+            // `read_one_unchecked` hides a failed launch: the pool recycles
+            // pages, so a kernel that never ran reads back as some earlier
+            // buffer's contents rather than as an error. Sync and read
+            // *checked*, so a launch failure is reported as one.
+            match cubecl::future::block_on(client.sync()) {
+                Ok(()) => {}
+                Err(error) => panic!("{label}: sync after launch failed: {error:?}"),
+            }
+            let raw = match client.read_one(out) {
+                Ok(bytes) => bytes,
+                Err(error) => panic!("{label}: readback failed: {error:?}"),
+            };
+            let values = f64::from_bytes(&raw)[..n].to_vec();
+            let ok = values == expected;
+            println!(
+                "{label:<16} round-trips: {ok}  first four: {:?}  last: {:?}",
+                &values[..4],
+                &values[n - 2..]
+            );
+            assert!(ok, "{label}: shared/slice round-trip failed");
+        }
+    }
+
     #[test]
     fn test_shared_layout_creation_and_fit() {
         let layout = SharedLayout::new(

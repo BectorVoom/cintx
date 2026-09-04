@@ -208,6 +208,31 @@ pub struct BatchExecutionStats {
     pub pilot_output_staging_reuses: usize,
     /// Output slots replaced because the current chunk exceeded capacity.
     pub pilot_output_staging_growths: usize,
+
+    // ── Memory accounting (`def2_speed_memory_optimization_plan.md` M6) ─────
+    //
+    // Reported through the safe facade because a memory budget a caller sets is
+    // only meaningful if the caller can see what it bought. No CubeCL type
+    // appears here: these are plain byte and item counts translated from the
+    // backend's own ledger.
+    /// Bytes of caller-visible output this batch materialized on the host.
+    pub host_output_bytes: usize,
+    /// Peak bytes of intermediate Cartesian output held on the host at once.
+    pub host_cart_bytes_peak: usize,
+    /// Largest single device output buffer this batch allocated.
+    pub device_out_bytes_peak: usize,
+    /// Device scratch summed over every dispatch, and its largest single slab.
+    pub device_scratch_bytes_total: usize,
+    /// Largest single device scratch allocation.
+    pub device_scratch_bytes_peak: usize,
+    /// Device allocations this batch requested, counted from the plan.
+    pub device_planned_allocs: u64,
+    /// Peak backend bytes-in-use, `0` unless `CINTX_BATCH_MEMORY_PROFILE` is set.
+    pub device_bytes_in_use_peak: u64,
+    /// Primitive quartets the work list contains.
+    pub primitive_quartets_total: u64,
+    /// Primitive quartets actually dispatched, after any pair-cutoff screen.
+    pub primitive_quartets_evaluated: u64,
 }
 
 impl<'basis> BatchRequest<'basis> {
@@ -302,6 +327,9 @@ impl<'basis> BatchRequest<'basis> {
                 pilot_output_staging_allocations: execution.output_staging_allocations,
                 pilot_output_staging_reuses: execution.output_staging_reuses,
                 pilot_output_staging_growths: execution.output_staging_growths,
+                // The s-s pilot and the multi-request batch plan do not run the
+                // batched 2e path, so they carry no backend memory ledger (M6).
+                ..Default::default()
             };
             let outputs = execution
                 .values
@@ -332,6 +360,9 @@ impl<'basis> BatchRequest<'basis> {
                 pilot_output_staging_allocations: 0,
                 pilot_output_staging_reuses: 0,
                 pilot_output_staging_growths: 0,
+                // The s-s pilot and the multi-request batch plan do not run the
+                // batched 2e path, so they carry no backend memory ledger (M6).
+                ..Default::default()
             };
             let outputs = execution
                 .values
@@ -370,6 +401,9 @@ impl<'basis> BatchRequest<'basis> {
             pilot_output_staging_allocations: 0,
             pilot_output_staging_reuses: 0,
             pilot_output_staging_growths: 0,
+            // The s-s pilot and the multi-request batch plan do not run the
+            // batched 2e path, so they carry no backend memory ledger (M6).
+            ..Default::default()
         };
         Ok(BatchEvaluationOutput {
             plan,
@@ -2882,6 +2916,150 @@ impl<'basis> QuartetBatchRequest<'basis> {
         self.evaluate_in(&EvaluationContext::new())
     }
 
+    /// Evaluate into caller-owned storage, returning the block offsets (M2).
+    ///
+    /// Same values and same layout as [`Self::evaluate`]; the difference is that
+    /// `values` is the caller's buffer, so a repeated Fock build over one basis
+    /// reuses it instead of allocating the whole work list's output each time.
+    ///
+    /// # Errors
+    /// As [`Self::evaluate_in`], plus a validation failure when `values` is
+    /// shorter than the work list's output.
+    pub fn evaluate_into(
+        self,
+        context: &EvaluationContext,
+        values: &mut [f64],
+    ) -> Result<(Vec<usize>, BatchExecutionStats), FacadeError> {
+        let (shells, quartets, options) = self.prepare()?;
+        let planned = quartets.len();
+        let submit_start = Instant::now();
+        let (offsets, backend_stats) = context
+            .executor
+            .evaluate_2e_quartets_into(
+                &self.options.backend_intent,
+                &shells,
+                &quartets,
+                options,
+                values,
+            )
+            .map_err(FacadeError::from)?;
+        let stats = facade_batch_stats(
+            planned,
+            &backend_stats,
+            submit_start.elapsed().as_nanos() as u64,
+        );
+        Ok((offsets, stats))
+    }
+
+    /// Evaluate the list in chunks, handing each to `on_chunk` as it completes.
+    ///
+    /// The peak host footprint is one chunk's output rather than the whole work
+    /// list's, which is what makes a molecule whose dense ERI tensor does not fit
+    /// in memory evaluable at all. Set
+    /// [`ExecutionOptions::memory_limit_bytes`](ExecutionOptions) to size the
+    /// chunks; without it the list is one chunk and nothing is saved.
+    ///
+    /// # Errors
+    /// As [`Self::evaluate_in`], plus any error `on_chunk` returns, which stops
+    /// the evaluation rather than being swallowed.
+    pub fn for_each_chunk(
+        self,
+        context: &EvaluationContext,
+        on_chunk: &mut dyn FnMut(QuartetBatchChunk<'_>) -> Result<(), FacadeError>,
+    ) -> Result<BatchExecutionStats, FacadeError> {
+        let (shells, quartets, options) = self.prepare()?;
+        let planned = quartets.len();
+        let submit_start = Instant::now();
+        // The consumer's error is carried out rather than converted, so a
+        // caller sees its own failure and not a backend paraphrase of it.
+        let mut consumer_error: Option<FacadeError> = None;
+        let backend_stats = context
+            .executor
+            .stream_2e_quartets(
+                &self.options.backend_intent,
+                &shells,
+                &quartets,
+                options,
+                &mut |chunk| {
+                    if consumer_error.is_some() {
+                        return Ok(());
+                    }
+                    match on_chunk(QuartetBatchChunk {
+                        first_quartet: chunk.first_quartet,
+                        quartets: chunk.quartets,
+                        offsets: chunk.offsets,
+                        values: chunk.values,
+                    }) {
+                        Ok(()) => Ok(()),
+                        Err(error) => {
+                            consumer_error = Some(error);
+                            Err(cintx_core::cintxRsError::UnsupportedApi {
+                                requested: "quartet-batch:consumer-refused".to_owned(),
+                            })
+                        }
+                    }
+                },
+            )
+            .map_err(FacadeError::from);
+        if let Some(error) = consumer_error {
+            return Err(error);
+        }
+        let backend_stats = backend_stats?;
+        Ok(facade_batch_stats(
+            planned,
+            &backend_stats,
+            submit_start.elapsed().as_nanos() as u64,
+        ))
+    }
+
+    /// Shared validation for the three batch entry points.
+    fn prepare(
+        &self,
+    ) -> Result<
+        (
+            Vec<cintx_cubecl::BatchShell>,
+            Vec<[u32; 4]>,
+            cintx_cubecl::TwoEBatchOptions,
+        ),
+        FacadeError,
+    > {
+        let descriptor =
+            Resolver::descriptor(self.operator).map_err(|error| FacadeError::UnsupportedApi {
+                requested: error.to_string(),
+            })?;
+        if descriptor.operator_symbol() != "int2e_sph" {
+            return Err(FacadeError::UnsupportedApi {
+                requested: format!(
+                    "quartet-batch:operator:{} (only int2e_sph is batched)",
+                    descriptor.operator_symbol()
+                ),
+            });
+        }
+        check_batch_request_scope(self.representation, &self.options, "quartet-batch")?;
+        let shells = batch_shells_from_basis(self.basis)?;
+        for quartet in &self.quartets {
+            for &index in quartet {
+                if index as usize >= shells.len() {
+                    return Err(FacadeError::Validation {
+                        detail: format!(
+                            "quartet-batch:shell-index {index} out of range (nbas={})",
+                            shells.len()
+                        ),
+                    });
+                }
+            }
+        }
+        Ok((
+            shells,
+            self.quartets.clone(),
+            cintx_cubecl::TwoEBatchOptions {
+                primitive_tolerance: self.tolerance,
+                memory_limit_bytes: self.options.memory_limit_bytes,
+                expcutoff: self.options.expcutoff,
+            },
+        ))
+    }
+
     /// Evaluate with a reusable context, so repeated Fock builds share the
     /// backend client rather than bootstrapping one per call.
     pub fn evaluate_in(
@@ -2928,6 +3106,14 @@ impl<'basis> QuartetBatchRequest<'basis> {
                 &self.quartets,
                 cintx_cubecl::TwoEBatchOptions {
                     primitive_tolerance: self.tolerance,
+                    // M1.5: `ExecutionOptions::memory_limit_bytes` has existed
+                    // since the per-tuple planner and was silently ignored by
+                    // the batch path. It is now honoured: the batch is chunked
+                    // to fit, or refused with `MemoryLimitExceeded` before any
+                    // allocation. Unset stays unbounded, so no existing caller
+                    // changes behaviour.
+                    memory_limit_bytes: self.options.memory_limit_bytes,
+                    expcutoff: self.options.expcutoff,
                 },
             )
             .map_err(FacadeError::from)?;
@@ -2951,6 +3137,15 @@ impl<'basis> QuartetBatchRequest<'basis> {
             pilot_output_staging_allocations: 0,
             pilot_output_staging_reuses: 0,
             pilot_output_staging_growths: 0,
+            host_output_bytes: batch.stats.host_output_bytes,
+            host_cart_bytes_peak: batch.stats.host_cart_bytes_peak,
+            device_out_bytes_peak: batch.stats.device_out_bytes_peak,
+            device_scratch_bytes_total: batch.stats.device_g_slab_bytes_total,
+            device_scratch_bytes_peak: batch.stats.device_g_slab_bytes_peak,
+            device_planned_allocs: batch.stats.device_planned_allocs,
+            device_bytes_in_use_peak: batch.stats.device_bytes_in_use_peak,
+            primitive_quartets_total: batch.stats.primitive_quartets_total,
+            primitive_quartets_evaluated: batch.stats.primitive_quartets_evaluated,
         };
 
         Ok(QuartetBatchOutput {
@@ -2959,6 +3154,28 @@ impl<'basis> QuartetBatchRequest<'basis> {
             stats,
         })
     }
+}
+
+/// One chunk of a streamed quartet batch (M2).
+///
+/// Borrowed: the buffer behind [`Self::values`] is reused for the next chunk, so
+/// a consumer that needs the numbers afterwards copies them. A consumer that
+/// contracts each block into a Fock matrix and moves on does not, and so never
+/// materializes the work list.
+///
+/// No CubeCL type appears here — the blocks are ordinary `f64` and the indices
+/// are into the request's own quartet list.
+#[derive(Debug)]
+pub struct QuartetBatchChunk<'a> {
+    /// Index, in the request's quartet order, of this chunk's first quartet.
+    pub first_quartet: usize,
+    /// Quartets in this chunk.
+    pub quartets: usize,
+    /// `offsets[n]..offsets[n + 1]` locates quartet `first_quartet + n` within
+    /// [`Self::values`]. One entry per quartet plus a trailing total.
+    pub offsets: &'a [usize],
+    /// Spherical AO blocks for this chunk, concatenated in request order.
+    pub values: &'a [f64],
 }
 
 /// What a [`prewarm_quartet_classes`] pass did.
@@ -3229,6 +3446,15 @@ fn facade_batch_stats(
         pilot_output_staging_allocations: 0,
         pilot_output_staging_reuses: 0,
         pilot_output_staging_growths: 0,
+        host_output_bytes: backend.host_output_bytes,
+        host_cart_bytes_peak: backend.host_cart_bytes_peak,
+        device_out_bytes_peak: backend.device_out_bytes_peak,
+        device_scratch_bytes_total: backend.device_g_slab_bytes_total,
+        device_scratch_bytes_peak: backend.device_g_slab_bytes_peak,
+        device_planned_allocs: backend.device_planned_allocs,
+        device_bytes_in_use_peak: backend.device_bytes_in_use_peak,
+        primitive_quartets_total: backend.primitive_quartets_total,
+        primitive_quartets_evaluated: backend.primitive_quartets_evaluated,
     }
 }
 
