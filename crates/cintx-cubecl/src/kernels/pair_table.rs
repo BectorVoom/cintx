@@ -55,6 +55,7 @@
 //! loop order, every primitive quartet evaluated.
 
 use super::two_electron::BatchShell;
+use cintx_runtime::ExecutionPlan;
 
 /// libcint's default `expcutoff` for two-electron integrals.
 ///
@@ -108,6 +109,147 @@ impl PairTableOptions {
     }
 }
 
+/// Per-primitive `ln(max_c |c|)` — libcint's `CINTOpt_log_max_pgto_coeff`
+/// (`optimizer.c:248`), read out of cintx's primitive-major coefficient
+/// layout (`coefficients[p * nctr + c]`). `ln(0)` is `-inf`, which makes a
+/// primitive's `cceij` `+inf` and drops it; that mirrors the vendor, and is
+/// correct — a primitive with zero coefficient in every contraction
+/// contributes nothing.
+pub(crate) fn log_max_abs_coeff(nprim: usize, nctr: usize, coefficients: &[f64]) -> Vec<f64> {
+    (0..nprim)
+        .map(|p| {
+            let maxc = (0..nctr)
+                .map(|c| coefficients[p * nctr + c].abs())
+                .fold(0.0_f64, f64::max);
+            maxc.ln()
+        })
+        .collect()
+}
+
+/// The `expcutoff` screen for one shell pair (`CINTset_pairdata`,
+/// `optimizer.c:288-341`), computed directly from a bra/ket shell's raw
+/// fields rather than through a whole-basis [`PairTable`].
+///
+/// [`PairTable::push_shell_pair`] is the primary consumer — a whole basis,
+/// one shell pair at a time. The derivative and property 2e launchers in
+/// [`crate::kernels::two_electron`] (`int2e_ip1`, `_ip2`, `_hess2e`,
+/// `_gauge2e`, `_giao2e`) are the other one: their primitive loop walks one
+/// shell quartet directly and has no `[BatchShell]` slice to build a table
+/// from, so they use this same formula without a table around it — S1's
+/// follow-up, so a caller-supplied `env[PTR_EXPCUTOFF]` screens those
+/// operators too, not only the plain-Coulomb scalar/batched path.
+pub(crate) struct PairScreen {
+    pub(crate) rr: f64,
+    log_rr: f64,
+}
+
+impl PairScreen {
+    /// # Panics
+    /// Indexes `bra_exponents[bra_nprim - 1]` / `ket_exponents[ket_nprim -
+    /// 1]`, so panics if either `nprim` is `0`. Every shell reaching a
+    /// dispatched quartet has `nprim >= 1` (`cintx_core::Shell::try_new`
+    /// rejects `0` at construction), so this is an invariant of the caller,
+    /// not a validated input.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        bra_l: u8,
+        bra_nprim: usize,
+        bra_exponents: &[f64],
+        bra_center: [f64; 3],
+        ket_l: u8,
+        ket_nprim: usize,
+        ket_exponents: &[f64],
+        ket_center: [f64; 3],
+    ) -> Self {
+        let d = [
+            bra_center[0] - ket_center[0],
+            bra_center[1] - ket_center[1],
+            bra_center[2] - ket_center[2],
+        ];
+        let rr = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+
+        // `aij` from the *last* primitive of each shell — the most diffuse pair,
+        // and so the loosest bound. Verbatim `optimizer.c:301`.
+        let a_last = bra_exponents[bra_nprim - 1] + ket_exponents[ket_nprim - 1];
+        let mut log_rr = 1.7 - 1.5 * a_last.ln();
+        let lij = u32::from(bra_l) + u32::from(ket_l);
+        if lij > 0 {
+            // The `omega >= 0` arm: every caller of this screen is plain
+            // Coulomb, so the range-separated `theta * r_guess` term
+            // (`optimizer.c:311`) does not apply.
+            log_rr += f64::from(lij) * (rr.sqrt() + 1.0).ln();
+        }
+        Self { rr, log_rr }
+    }
+
+    /// `cceij` for bra primitive `p` (exponent `ap`, `ln(max_c |c|)`
+    /// `log_maxc_p`) and ket primitive `q` (exponent `aq`, `log_maxc_q`).
+    pub(crate) fn cceij(&self, ap: f64, aq: f64, log_maxc_p: f64, log_maxc_q: f64) -> f64 {
+        let aij = 1.0 / (ap + aq);
+        let eij = self.rr * ap * aq * aij;
+        eij - self.log_rr - log_maxc_p - log_maxc_q
+    }
+}
+
+/// The `expcutoff` screening state for one shell quartet, shared by the
+/// derivative and property 2e launchers in [`crate::kernels::two_electron`]
+/// (`int2e_ip1`, `_ip2`, `_hess2e`, `_gauge2e`, `_giao2e`): each walks one
+/// shell quartet directly (from a [`ValidatedShellTuple`](cintx_runtime::ValidatedShellTuple),
+/// not a `[BatchShell]`) and has no table to build, so they all build this
+/// same [`PairScreen`] pair (S1's follow-up) instead of duplicating it.
+pub(crate) struct QuartetExpScreen {
+    pub(crate) expcutoff: f64,
+    pub(crate) bra_screen: PairScreen,
+    pub(crate) ket_screen: PairScreen,
+    pub(crate) log_maxc_i: Vec<f64>,
+    pub(crate) log_maxc_j: Vec<f64>,
+    pub(crate) log_maxc_k: Vec<f64>,
+    pub(crate) log_maxc_l: Vec<f64>,
+}
+
+impl QuartetExpScreen {
+    /// `nprim[n]`/`nctr[n]`/`exponents[n]`/`coefficients[n]` describe the same
+    /// shell as `ls[n]`/`centers[n]`, in bra-then-ket `(i, j, k, l)` order.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        plan: &ExecutionPlan<'_>,
+        ls: [u8; 4],
+        nprim: [usize; 4],
+        nctr: [usize; 4],
+        exponents: [&[f64]; 4],
+        coefficients: [&[f64]; 4],
+        centers: [[f64; 3]; 4],
+    ) -> Self {
+        let [li, lj, lk, ll] = ls;
+        let [n_prim_i, n_prim_j, n_prim_k, n_prim_l] = nprim;
+        let [n_ctr_i, n_ctr_j, n_ctr_k, n_ctr_l] = nctr;
+        let [exp_i, exp_j, exp_k, exp_l] = exponents;
+        let [coef_i, coef_j, coef_k, coef_l] = coefficients;
+        let [ri, rj, rk, rl] = centers;
+
+        let expcutoff = plan
+            .operator_env_params
+            .expcutoff
+            .unwrap_or(LIBCINT_EXPCUTOFF);
+        let bra_screen = PairScreen::new(li, n_prim_i, exp_i, ri, lj, n_prim_j, exp_j, rj);
+        let ket_screen = PairScreen::new(lk, n_prim_k, exp_k, rk, ll, n_prim_l, exp_l, rl);
+        let log_maxc_i = log_max_abs_coeff(n_prim_i, n_ctr_i, coef_i);
+        let log_maxc_j = log_max_abs_coeff(n_prim_j, n_ctr_j, coef_j);
+        let log_maxc_k = log_max_abs_coeff(n_prim_k, n_ctr_k, coef_k);
+        let log_maxc_l = log_max_abs_coeff(n_prim_l, n_ctr_l, coef_l);
+
+        Self {
+            expcutoff,
+            bra_screen,
+            ket_screen,
+            log_maxc_i,
+            log_maxc_j,
+            log_maxc_k,
+            log_maxc_l,
+        }
+    }
+}
+
 /// Primitive-pair data for every ordered shell pair of a basis.
 ///
 /// Ordered rather than canonical because a quartet's bra is `(i, j)` and its ket
@@ -146,24 +288,14 @@ impl PairTable {
         let nbas = shells.len();
         assert!(u32::try_from(nbas).is_ok(), "shell count exceeds u32");
 
-        // `ln(max_c |c[p * nctr + c]|)` per primitive, per shell — libcint's
-        // `CINTOpt_log_max_pgto_coeff` (`optimizer.c:248`), read out of cintx's
-        // primitive-major coefficient layout rather than its contraction-major
-        // one. `ln(0)` is `-inf`, which makes `cceij` `+inf` and drops the pair;
-        // that is the vendor's behaviour too, and it is correct: a primitive
-        // with zero coefficient in every contraction contributes nothing.
         let log_maxc: Vec<Vec<f64>> = shells
             .iter()
             .map(|shell| {
-                let nctr = shell.nctr as usize;
-                (0..shell.nprim as usize)
-                    .map(|p| {
-                        let maxc = (0..nctr)
-                            .map(|c| shell.coefficients[p * nctr + c].abs())
-                            .fold(0.0_f64, f64::max);
-                        maxc.ln()
-                    })
-                    .collect()
+                log_max_abs_coeff(
+                    shell.nprim as usize,
+                    shell.nctr as usize,
+                    &shell.coefficients,
+                )
             })
             .collect();
 
@@ -175,9 +307,9 @@ impl PairTable {
         };
         table.offset.push(0);
 
-        for bra in shells {
-            for ket in shells {
-                table.push_shell_pair(bra, ket, &log_maxc, shells, options);
+        for (bra_index, bra) in shells.iter().enumerate() {
+            for (ket_index, ket) in shells.iter().enumerate() {
+                table.push_shell_pair(bra, ket, bra_index, ket_index, &log_maxc, options);
                 table
                     .offset
                     .push((table.index.len() / PAIR_INDEX_STRIDE) as u32);
@@ -192,47 +324,46 @@ impl PairTable {
     /// iteration order — `for jp { for ip { } }`, so the ket primitive is the
     /// outer index — because the kernel walks these rows in the order they are
     /// written and the accumulation order is what libcint's rounding is.
+    ///
+    /// A shell with `nprim == 0` contributes no pairs; returning early avoids
+    /// the `nprim - 1` underflow the vendor's "last primitive" bound would
+    /// otherwise hit (empty shells are rejected upstream by
+    /// `cintx_core::Shell::try_new`, but `BatchShell` is public and unvalidated,
+    /// so this stays a typed no-op rather than a panic for callers who bypass
+    /// that layer).
     fn push_shell_pair(
         &mut self,
         bra: &BatchShell,
         ket: &BatchShell,
+        bra_index: usize,
+        ket_index: usize,
         log_maxc: &[Vec<f64>],
-        shells: &[BatchShell],
         options: PairTableOptions,
     ) {
-        let bra_index = shell_index(shells, bra);
-        let ket_index = shell_index(shells, ket);
-        let (log_maxc_bra, log_maxc_ket) = (&log_maxc[bra_index], &log_maxc[ket_index]);
-
-        let d = [
-            bra.center[0] - ket.center[0],
-            bra.center[1] - ket.center[1],
-            bra.center[2] - ket.center[2],
-        ];
-        let rr = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-
-        // `aij` from the *last* primitive of each shell — the most diffuse pair,
-        // and so the loosest bound. Verbatim `optimizer.c:301`.
-        let a_last = bra.exponents[bra.nprim as usize - 1] + ket.exponents[ket.nprim as usize - 1];
-        let mut log_rr = 1.7 - 1.5 * a_last.ln();
-        let lij = u32::from(bra.l) + u32::from(ket.l);
-        if lij > 0 {
-            // The `omega >= 0` arm: the batched path is plain Coulomb, so the
-            // range-separated `theta * r_guess` term (`optimizer.c:311`) does
-            // not apply. A range-separated batch would need that arm and does
-            // not have one; `int2e_sph` is the only operator this path accepts.
-            log_rr += f64::from(lij) * (rr.sqrt() + 1.0).ln();
+        if bra.nprim == 0 || ket.nprim == 0 {
+            return;
         }
+        let (log_maxc_bra, log_maxc_ket) = (&log_maxc[bra_index], &log_maxc[ket_index]);
+        let screen = PairScreen::new(
+            bra.l,
+            bra.nprim as usize,
+            &bra.exponents,
+            bra.center,
+            ket.l,
+            ket.nprim as usize,
+            &ket.exponents,
+            ket.center,
+        );
 
         for (q, &aq) in ket.exponents[..ket.nprim as usize].iter().enumerate() {
             for (p, &ap) in bra.exponents[..bra.nprim as usize].iter().enumerate() {
-                let aij = 1.0 / (ap + aq);
-                let eij = rr * ap * aq * aij;
-                let cceij = eij - log_rr - log_maxc_bra[p] - log_maxc_ket[q];
+                let cceij = screen.cceij(ap, aq, log_maxc_bra[p], log_maxc_ket[q]);
                 if !(cceij < options.expcutoff) {
                     self.pairs_dropped += 1;
                     continue;
                 }
+                let aij = 1.0 / (ap + aq);
+                let eij = screen.rr * ap * aq * aij;
                 let wq = aq * aij;
                 self.data.extend_from_slice(&[
                     bra.center[0] + wq * (ket.center[0] - bra.center[0]),
@@ -277,17 +408,6 @@ impl PairTable {
             })
             .sum()
     }
-}
-
-/// Position of `shell` within `shells`, by identity.
-///
-/// The table is built by walking `shells` twice, so the address is the identity:
-/// this avoids threading two index counters through the builder and cannot go
-/// wrong, because both loops iterate the same slice.
-fn shell_index(shells: &[BatchShell], shell: &BatchShell) -> usize {
-    let base = shells.as_ptr() as usize;
-    let here = std::ptr::from_ref(shell) as usize;
-    (here - base) / std::mem::size_of::<BatchShell>()
 }
 
 #[cfg(test)]
@@ -399,5 +519,29 @@ mod tests {
         assert_eq!(table.primitive_quartets_in(&[[0, 0, 1, 1]]), 9);
         assert_eq!(table.primitive_quartets_in(&[[0, 1, 0, 1]]), 9);
         assert_eq!(table.primitive_quartets_in(&[[1, 1, 1, 1]]), 1);
+    }
+
+    /// A `nprim == 0` `BatchShell` (unreachable through `cintx_core::Shell`, but
+    /// `BatchShell` is a public, unvalidated cubecl-crate type) must not panic —
+    /// it contributes zero pairs rather than underflowing the "last primitive"
+    /// index.
+    #[test]
+    fn zero_nprim_shell_contributes_no_pairs_and_does_not_panic() {
+        let shells = vec![
+            BatchShell {
+                l: 0,
+                nprim: 0,
+                nctr: 0,
+                exponents: Vec::new(),
+                coefficients: Vec::new(),
+                center: [0.0, 0.0, 0.0],
+            },
+            shell(0, &[1.0], &[1.0], [0.0, 0.0, 1.4]),
+        ];
+        let table = PairTable::build(&shells, PairTableOptions::unscreened());
+        assert_eq!(table.pair_count(0, 0), 0);
+        assert_eq!(table.pair_count(0, 1), 0);
+        assert_eq!(table.pair_count(1, 0), 0);
+        assert_eq!(table.pair_count(1, 1), 1);
     }
 }

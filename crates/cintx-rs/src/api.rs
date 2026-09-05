@@ -2938,7 +2938,7 @@ impl<'basis> QuartetBatchRequest<'basis> {
             .evaluate_2e_quartets_into(
                 &self.options.backend_intent,
                 &shells,
-                &quartets,
+                quartets,
                 options,
                 values,
             )
@@ -2978,7 +2978,7 @@ impl<'basis> QuartetBatchRequest<'basis> {
             .stream_2e_quartets(
                 &self.options.backend_intent,
                 &shells,
-                &quartets,
+                quartets,
                 options,
                 &mut |chunk| {
                     if consumer_error.is_some() {
@@ -3013,12 +3013,18 @@ impl<'basis> QuartetBatchRequest<'basis> {
     }
 
     /// Shared validation for the three batch entry points.
+    ///
+    /// Returns the quartet list by reference rather than cloning it: every
+    /// caller only ever borrows it back out (`&quartets`) to hand to the
+    /// executor, so cloning the whole `Vec<[u32; 4]>` here would double its
+    /// peak host footprint and copy time for no reader that needs ownership —
+    /// directly against the streaming path's bounded-memory goal.
     fn prepare(
         &self,
     ) -> Result<
         (
             Vec<cintx_cubecl::BatchShell>,
-            Vec<[u32; 4]>,
+            &[[u32; 4]],
             cintx_cubecl::TwoEBatchOptions,
         ),
         FacadeError,
@@ -3051,7 +3057,7 @@ impl<'basis> QuartetBatchRequest<'basis> {
         }
         Ok((
             shells,
-            self.quartets.clone(),
+            &self.quartets,
             cintx_cubecl::TwoEBatchOptions {
                 primitive_tolerance: self.tolerance,
                 memory_limit_bytes: self.options.memory_limit_bytes,

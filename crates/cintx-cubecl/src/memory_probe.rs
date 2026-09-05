@@ -135,7 +135,14 @@ impl DeviceMemoryProbe {
     /// A batch is evaluated chunk by chunk (M1) and each chunk carries its own
     /// ledger, so the run's numbers are these combined: peaks take the maximum
     /// because chunks do not coexist, totals add because every chunk's
-    /// allocation really happened.
+    /// allocation really happened. `allocs_added` is a peak, not a total: each
+    /// chunk's probe is freshly baselined (`sample`'s first call) against
+    /// whatever the backend is holding at that point, and under the current
+    /// serial pipeline a chunk's device allocations are read back and dropped
+    /// before the next chunk's baseline is sampled. So every chunk's delta
+    /// measures the same repeating per-chunk churn, not cumulative growth;
+    /// summing it would inflate `device_allocs_added` with the chunk count
+    /// instead of reporting the largest concurrent growth any chunk held.
     pub fn merge(&mut self, other: &Self) {
         self.out_bytes_peak = self.out_bytes_peak.max(other.out_bytes_peak);
         self.g_slab_bytes_total += other.g_slab_bytes_total;
@@ -181,6 +188,27 @@ mod tests {
         assert_eq!(stats.device_g_slab_bytes_peak, 3_000);
         assert_eq!(stats.device_table_bytes_total, 64);
         assert_eq!(stats.device_planned_allocs, 2 + 2 + 3);
+    }
+
+    /// `merge` must take the maximum of `allocs_added` across chunks, not sum
+    /// it: each chunk's probe is freshly baselined against whatever the
+    /// backend already holds, and a chunk's allocations are freed before the
+    /// next chunk's baseline is sampled, so every chunk's delta re-measures
+    /// the same repeating churn rather than adding genuinely new growth.
+    #[test]
+    fn merge_takes_the_peak_of_allocs_added_across_chunks() {
+        let mut run = DeviceMemoryProbe::new();
+        let mut chunk_a = DeviceMemoryProbe::new();
+        chunk_a.allocs_added = 5;
+        let mut chunk_b = DeviceMemoryProbe::new();
+        chunk_b.allocs_added = 7;
+
+        run.merge(&chunk_a);
+        run.merge(&chunk_b);
+
+        let mut stats = crate::kernels::two_electron::BatchExecutionStats::default();
+        run.store_into(&mut stats);
+        assert_eq!(stats.device_allocs_added, 7);
     }
 
     /// Residency stays zero without the env var, whatever else was charged —

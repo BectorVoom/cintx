@@ -2337,6 +2337,28 @@ impl TwoELaunchGroup {
     }
 }
 
+/// Widest device c2s-transform scratch length any group in `groups` needs
+/// (M4.3), shared by [`run_2e_batches`] (which allocates it) and
+/// [`plan_c2s_scratch_bytes`] (which pre-flights its byte cost) so the two
+/// cannot drift apart independently.
+fn c2s_scratch_widest_len<R: Runtime>(
+    client: &ComputeClient<R>,
+    groups: &[TwoELaunchGroup],
+) -> usize {
+    let mut len = 0_usize;
+    for group in groups {
+        if group.len() == 0 {
+            continue;
+        }
+        len = len.max(crate::kernels::c2s_device::c2s_scratch_len(
+            client,
+            group.len(),
+            group.max_block_len,
+        ));
+    }
+    len
+}
+
 /// Dispatch every launch group of a batched 2e run on one backend client,
 /// uploading the flattened basis **once** (Tasks 34-B / 34-C / 34-E / 35-M1).
 ///
@@ -2427,17 +2449,7 @@ fn run_2e_batches<R: Runtime>(
     // slab above. Only the device-transform path (`c2s.is_some()`) ever binds
     // this, so it costs nothing when the host transform is in use.
     let c2s_scratch = c2s.map(|_| {
-        let mut len = 0_usize;
-        for group in groups {
-            if group.len() == 0 {
-                continue;
-            }
-            len = len.max(crate::kernels::c2s_device::c2s_scratch_len(
-                client,
-                group.len(),
-                group.max_block_len,
-            ));
-        }
+        let len = c2s_scratch_widest_len(client, groups);
         client.empty(len.max(1) * std::mem::size_of::<f64>())
     });
 
@@ -3208,16 +3220,61 @@ fn launch_two_electron_ip1<F: CintFloat>(
 
     let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
 
+    // S1 follow-up (`def2_speed_memory_optimization_plan.md`): the same
+    // `env[PTR_EXPCUTOFF]` cutoff the scalar/batched 2e path applies
+    // (`crate::kernels::pair_table`) screens this derivative operator's
+    // primitive quartets too, via the same `QuartetExpScreen` every
+    // derivative launcher in this module builds.
+    let crate::kernels::pair_table::QuartetExpScreen {
+        expcutoff,
+        bra_screen,
+        ket_screen,
+        log_maxc_i,
+        log_maxc_j,
+        log_maxc_k,
+        log_maxc_l,
+    } = crate::kernels::pair_table::QuartetExpScreen::new(
+        plan,
+        [li, lj, lk, ll],
+        [n_prim_i, n_prim_j, n_prim_k, n_prim_l],
+        [n_ctr_i, n_ctr_j, n_ctr_k, n_ctr_l],
+        [
+            &shell_i.exponents,
+            &shell_j.exponents,
+            &shell_k.exponents,
+            &shell_l.exponents,
+        ],
+        [
+            &shell_i.coefficients,
+            &shell_j.coefficients,
+            &shell_k.coefficients,
+            &shell_l.coefficients,
+        ],
+        [ri, rj, rk, rl],
+    );
+
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
+            let cceij = bra_screen.cceij(ai, aj, log_maxc_i[pi], log_maxc_j[pj]);
+            if !(cceij < expcutoff) {
+                continue;
+            }
             let pdata_ij =
                 compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
                     let al = shell_l.exponents[pl];
+                    let ccekl = ket_screen.cceij(ak, al, log_maxc_k[pk], log_maxc_l[pl]);
+                    if !(ccekl < expcutoff) {
+                        continue;
+                    }
+                    let eijcutoff = expcutoff - ccekl;
+                    if !(cceij <= eijcutoff) {
+                        continue;
+                    }
                     let pdata_kl = compute_pdata_host(
                         ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                     );
@@ -3483,16 +3540,61 @@ fn launch_two_electron_ip2<F: CintFloat>(
 
     let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
 
+    // S1 follow-up (`def2_speed_memory_optimization_plan.md`): the same
+    // `env[PTR_EXPCUTOFF]` cutoff the scalar/batched 2e path applies
+    // (`crate::kernels::pair_table`) screens this derivative operator's
+    // primitive quartets too, via the same `QuartetExpScreen` every
+    // derivative launcher in this module builds.
+    let crate::kernels::pair_table::QuartetExpScreen {
+        expcutoff,
+        bra_screen,
+        ket_screen,
+        log_maxc_i,
+        log_maxc_j,
+        log_maxc_k,
+        log_maxc_l,
+    } = crate::kernels::pair_table::QuartetExpScreen::new(
+        plan,
+        [li, lj, lk, ll],
+        [n_prim_i, n_prim_j, n_prim_k, n_prim_l],
+        [n_ctr_i, n_ctr_j, n_ctr_k, n_ctr_l],
+        [
+            &shell_i.exponents,
+            &shell_j.exponents,
+            &shell_k.exponents,
+            &shell_l.exponents,
+        ],
+        [
+            &shell_i.coefficients,
+            &shell_j.coefficients,
+            &shell_k.coefficients,
+            &shell_l.coefficients,
+        ],
+        [ri, rj, rk, rl],
+    );
+
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
+            let cceij = bra_screen.cceij(ai, aj, log_maxc_i[pi], log_maxc_j[pj]);
+            if !(cceij < expcutoff) {
+                continue;
+            }
             let pdata_ij =
                 compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
                     let al = shell_l.exponents[pl];
+                    let ccekl = ket_screen.cceij(ak, al, log_maxc_k[pk], log_maxc_l[pl]);
+                    if !(ccekl < expcutoff) {
+                        continue;
+                    }
+                    let eijcutoff = expcutoff - ccekl;
+                    if !(cceij <= eijcutoff) {
+                        continue;
+                    }
                     let pdata_kl = compute_pdata_host(
                         ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                     );
@@ -3798,16 +3900,61 @@ fn launch_two_electron_hess2e<F: CintFloat>(
 
     let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
 
+    // S1 follow-up (`def2_speed_memory_optimization_plan.md`): the same
+    // `env[PTR_EXPCUTOFF]` cutoff the scalar/batched 2e path applies
+    // (`crate::kernels::pair_table`) screens this derivative operator's
+    // primitive quartets too, via the same `QuartetExpScreen` every
+    // derivative launcher in this module builds.
+    let crate::kernels::pair_table::QuartetExpScreen {
+        expcutoff,
+        bra_screen,
+        ket_screen,
+        log_maxc_i,
+        log_maxc_j,
+        log_maxc_k,
+        log_maxc_l,
+    } = crate::kernels::pair_table::QuartetExpScreen::new(
+        plan,
+        [li, lj, lk, ll],
+        [n_prim_i, n_prim_j, n_prim_k, n_prim_l],
+        [n_ctr_i, n_ctr_j, n_ctr_k, n_ctr_l],
+        [
+            &shell_i.exponents,
+            &shell_j.exponents,
+            &shell_k.exponents,
+            &shell_l.exponents,
+        ],
+        [
+            &shell_i.coefficients,
+            &shell_j.coefficients,
+            &shell_k.coefficients,
+            &shell_l.coefficients,
+        ],
+        [ri, rj, rk, rl],
+    );
+
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
+            let cceij = bra_screen.cceij(ai, aj, log_maxc_i[pi], log_maxc_j[pj]);
+            if !(cceij < expcutoff) {
+                continue;
+            }
             let pdata_ij =
                 compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
                     let al = shell_l.exponents[pl];
+                    let ccekl = ket_screen.cceij(ak, al, log_maxc_k[pk], log_maxc_l[pl]);
+                    if !(ccekl < expcutoff) {
+                        continue;
+                    }
+                    let eijcutoff = expcutoff - ccekl;
+                    if !(cceij <= eijcutoff) {
+                        continue;
+                    }
                     let pdata_kl = compute_pdata_host(
                         ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                     );
@@ -4121,16 +4268,61 @@ fn launch_two_electron_gauge2e<F: CintFloat>(
     // libcint applies the per-family `envs.common_factor *= ...` BEFORE the quartet loop.
     let common_factor = common_factor * kind.common_factor_scale();
 
+    // S1 follow-up (`def2_speed_memory_optimization_plan.md`): the same
+    // `env[PTR_EXPCUTOFF]` cutoff the scalar/batched 2e path applies
+    // (`crate::kernels::pair_table`) screens this derivative operator's
+    // primitive quartets too, via the same `QuartetExpScreen` every
+    // derivative launcher in this module builds.
+    let crate::kernels::pair_table::QuartetExpScreen {
+        expcutoff,
+        bra_screen,
+        ket_screen,
+        log_maxc_i,
+        log_maxc_j,
+        log_maxc_k,
+        log_maxc_l,
+    } = crate::kernels::pair_table::QuartetExpScreen::new(
+        plan,
+        [li, lj, lk, ll],
+        [n_prim_i, n_prim_j, n_prim_k, n_prim_l],
+        [n_ctr_i, n_ctr_j, n_ctr_k, n_ctr_l],
+        [
+            &shell_i.exponents,
+            &shell_j.exponents,
+            &shell_k.exponents,
+            &shell_l.exponents,
+        ],
+        [
+            &shell_i.coefficients,
+            &shell_j.coefficients,
+            &shell_k.coefficients,
+            &shell_l.coefficients,
+        ],
+        [ri, rj, rk, rl],
+    );
+
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
+            let cceij = bra_screen.cceij(ai, aj, log_maxc_i[pi], log_maxc_j[pj]);
+            if !(cceij < expcutoff) {
+                continue;
+            }
             let pdata_ij =
                 compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
                     let al = shell_l.exponents[pl];
+                    let ccekl = ket_screen.cceij(ak, al, log_maxc_k[pk], log_maxc_l[pl]);
+                    if !(ccekl < expcutoff) {
+                        continue;
+                    }
+                    let eijcutoff = expcutoff - ccekl;
+                    if !(cceij <= eijcutoff) {
+                        continue;
+                    }
                     let pdata_kl = compute_pdata_host(
                         ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                     );
@@ -4517,16 +4709,61 @@ fn launch_two_electron_giao2e<F: CintFloat>(
 
     let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
 
+    // S1 follow-up (`def2_speed_memory_optimization_plan.md`): the same
+    // `env[PTR_EXPCUTOFF]` cutoff the scalar/batched 2e path applies
+    // (`crate::kernels::pair_table`) screens this derivative operator's
+    // primitive quartets too, via the same `QuartetExpScreen` every
+    // derivative launcher in this module builds.
+    let crate::kernels::pair_table::QuartetExpScreen {
+        expcutoff,
+        bra_screen,
+        ket_screen,
+        log_maxc_i,
+        log_maxc_j,
+        log_maxc_k,
+        log_maxc_l,
+    } = crate::kernels::pair_table::QuartetExpScreen::new(
+        plan,
+        [li, lj, lk, ll],
+        [n_prim_i, n_prim_j, n_prim_k, n_prim_l],
+        [n_ctr_i, n_ctr_j, n_ctr_k, n_ctr_l],
+        [
+            &shell_i.exponents,
+            &shell_j.exponents,
+            &shell_k.exponents,
+            &shell_l.exponents,
+        ],
+        [
+            &shell_i.coefficients,
+            &shell_j.coefficients,
+            &shell_k.coefficients,
+            &shell_l.coefficients,
+        ],
+        [ri, rj, rk, rl],
+    );
+
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
+            let cceij = bra_screen.cceij(ai, aj, log_maxc_i[pi], log_maxc_j[pj]);
+            if !(cceij < expcutoff) {
+                continue;
+            }
             let pdata_ij =
                 compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
                     let al = shell_l.exponents[pl];
+                    let ccekl = ket_screen.cceij(ak, al, log_maxc_k[pk], log_maxc_l[pl]);
+                    if !(ccekl < expcutoff) {
+                        continue;
+                    }
+                    let eijcutoff = expcutoff - ccekl;
+                    if !(cceij <= eijcutoff) {
+                        continue;
+                    }
                     let pdata_kl = compute_pdata_host(
                         ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                     );
@@ -8446,7 +8683,16 @@ fn plan_2e_stream(
         // leaves nothing partially written or streamed, regardless of which
         // chunk in the list it was.
         if let Some(limit) = options.memory_limit_bytes {
-            let plan = plan_batch_bytes(&groups, planned_output_len);
+            // M4.3: the pre-flight budget must charge the same c2s scratch
+            // buffer `run_2e_batches` allocates when the device transform is
+            // on, or a chunk near the caller's limit can be approved here and
+            // still exceed it at dispatch time.
+            let c2s_scratch_bytes = if device_transform {
+                plan_c2s_scratch_bytes(backend, &groups)
+            } else {
+                0
+            };
+            let plan = plan_batch_bytes(&groups, planned_output_len, c2s_scratch_bytes);
             if plan.peak_bytes > limit {
                 return Err(cintxRsError::MemoryLimitExceeded {
                     requested: plan.peak_bytes,
@@ -9028,6 +9274,10 @@ struct BatchMemoryPlan {
     table_bytes: usize,
     /// The shared G-tensor scratch slab.
     scratch_bytes: usize,
+    /// The device-side c2s transform's ping-pong scratch, sized to the
+    /// widest group exactly as [`run_2e_batches`]'s own `c2s_scratch`
+    /// allocation is. `0` when the device transform is not in use.
+    c2s_scratch_bytes: usize,
     /// The sum of the above — what the run needs at once.
     peak_bytes: usize,
 }
@@ -9050,7 +9300,17 @@ struct BatchMemoryPlan {
 /// `output_len` is elements, not bytes, and is the caller's chosen
 /// [`StreamFootprint`] applied to this run — the whole list for a whole-list
 /// sink, the largest chunk for a streaming one.
-fn plan_batch_bytes(groups: &[TwoELaunchGroup], output_len: usize) -> BatchMemoryPlan {
+///
+/// `c2s_scratch_bytes` is the caller's pre-computed
+/// [`plan_c2s_scratch_bytes`] result (`0` when the device transform is not in
+/// use) — computing it here would need a concrete backend client this
+/// function does not have, so the caller supplies it instead of this plan
+/// silently omitting a buffer `run_2e_batches` actually allocates.
+fn plan_batch_bytes(
+    groups: &[TwoELaunchGroup],
+    output_len: usize,
+    c2s_scratch_bytes: usize,
+) -> BatchMemoryPlan {
     let group_cart_bytes = groups
         .iter()
         .map(TwoELaunchGroup::output_bytes)
@@ -9068,8 +9328,45 @@ fn plan_batch_bytes(groups: &[TwoELaunchGroup], output_len: usize) -> BatchMemor
         group_cart_bytes,
         table_bytes,
         scratch_bytes,
-        peak_bytes: host_output_bytes + 2 * group_cart_bytes + table_bytes + scratch_bytes,
+        c2s_scratch_bytes,
+        peak_bytes: host_output_bytes
+            + 2 * group_cart_bytes
+            + table_bytes
+            + scratch_bytes
+            + c2s_scratch_bytes,
     }
+}
+
+/// Predict the device c2s transform's scratch buffer for the widest group in
+/// `groups`, matching [`run_2e_batches`]'s own `c2s_scratch` allocation
+/// (M4.3) via the same [`c2s_scratch_widest_len`], so this plan and the real
+/// allocation cannot drift apart independently. Only meaningful — and only
+/// called by [`plan_2e_stream`] — when the device transform is enabled; the
+/// host transform allocates no such buffer.
+fn plan_c2s_scratch_bytes(backend: &ResolvedBackend, groups: &[TwoELaunchGroup]) -> usize {
+    let len = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => {
+            c2s_scratch_widest_len::<cubecl::cpu::CpuRuntime>(client, groups)
+        }
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            c2s_scratch_widest_len::<cubecl_wgpu::WgpuRuntime>(client, groups)
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => {
+            c2s_scratch_widest_len::<cubecl_cuda::CudaRuntime>(client, groups)
+        }
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => {
+            c2s_scratch_widest_len::<cubecl_hip::HipRuntime>(client, groups)
+        }
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            c2s_scratch_widest_len::<cubecl_wgpu::WgpuRuntime>(client, groups)
+        }
+    };
+    len.max(1) * std::mem::size_of::<f64>()
 }
 
 /// Transform one dispatch group's Cartesian buffer into the caller's blocks.

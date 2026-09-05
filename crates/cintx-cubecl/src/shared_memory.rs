@@ -878,32 +878,75 @@ mod tests {
         // The 2e kernel also declares per-work-item private arrays.
         let mut private = Array::<F>::new(8usize);
         private[0] = F::new(1.0_f32);
-        let _ = via_slice;
 
-        let mut slab = if comptime!(use_shared == 1u32) {
-            shared.to_slice_mut()
-        } else {
-            global.to_slice_mut()
-        };
+        // `via_slice == 1` normalizes `shared`/`global` to the same `Slice`
+        // type through `to_slice_mut()` — the pattern the real 2e kernel uses
+        // so one recurrence body can bind either backing store. `via_slice ==
+        // 0` indexes `shared`/`global` directly, with no `Slice` in between.
+        // The two are genuinely different code paths (a `SharedMemory<F>` and
+        // an `Array<F>` do not unify into one variable), so each of the four
+        // `(use_shared, via_slice)` combinations must be its own arm rather
+        // than a shared body with an unread flag.
+        if comptime!(via_slice == 1u32) {
+            let mut slab = if comptime!(use_shared == 1u32) {
+                shared.to_slice_mut()
+            } else {
+                global.to_slice_mut()
+            };
 
-        if UNIT_POS == 0 {
-            slab[0] = F::new(1.0_f32);
-            slab[1] = F::new(1.0_f32);
-            // A recurrence *within* the slab: every element is read back and
-            // combined into the next. This is the shape the Rys VRR/HRR has and
-            // the shape the write-then-read probe never exercised.
-            let mut i = 2u32;
-            while i < n {
-                slab[i as usize] =
-                    slab[(i - 1u32) as usize] + slab[(i - 2u32) as usize] * F::new(0.0_f32);
-                i += 1u32;
+            if UNIT_POS == 0 {
+                slab[0] = F::new(1.0_f32);
+                slab[1] = F::new(1.0_f32);
+                // A recurrence *within* the slab: every element is read back and
+                // combined into the next. This is the shape the Rys VRR/HRR has and
+                // the shape the write-then-read probe never exercised.
+                let mut i = 2u32;
+                while i < n {
+                    slab[i as usize] =
+                        slab[(i - 1u32) as usize] + slab[(i - 2u32) as usize] * F::new(0.0_f32);
+                    i += 1u32;
+                }
             }
-        }
-        sync_cube();
-        let mut i = UNIT_POS as u32;
-        while i < n {
-            out[i as usize] = slab[i as usize] * private[0];
-            i += CUBE_DIM as u32;
+            sync_cube();
+            let mut i = UNIT_POS as u32;
+            while i < n {
+                out[i as usize] = slab[i as usize] * private[0];
+                i += CUBE_DIM as u32;
+            }
+        } else if comptime!(use_shared == 1u32) {
+            if UNIT_POS == 0 {
+                shared[0] = F::new(1.0_f32);
+                shared[1] = F::new(1.0_f32);
+                let mut i = 2u32;
+                while i < n {
+                    shared[i as usize] =
+                        shared[(i - 1u32) as usize] + shared[(i - 2u32) as usize] * F::new(0.0_f32);
+                    i += 1u32;
+                }
+            }
+            sync_cube();
+            let mut i = UNIT_POS as u32;
+            while i < n {
+                out[i as usize] = shared[i as usize] * private[0];
+                i += CUBE_DIM as u32;
+            }
+        } else {
+            if UNIT_POS == 0 {
+                global[0] = F::new(1.0_f32);
+                global[1] = F::new(1.0_f32);
+                let mut i = 2u32;
+                while i < n {
+                    global[i as usize] =
+                        global[(i - 1u32) as usize] + global[(i - 2u32) as usize] * F::new(0.0_f32);
+                    i += 1u32;
+                }
+            }
+            sync_cube();
+            let mut i = UNIT_POS as u32;
+            while i < n {
+                out[i as usize] = global[i as usize] * private[0];
+                i += CUBE_DIM as u32;
+            }
         }
     }
 
