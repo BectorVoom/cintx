@@ -1,5 +1,9 @@
 # Vendored basis-set data — provenance and terms
 
+> The `gth/` subdirectory holds a separate vendored basis library under its
+> own (GPLv2) license — see `gth/README.md`. Everything below is scoped to
+> the five files listed here, which remain CC-BY-4.0.
+
 The five `.nwchem` files in this directory are **verbatim, unmodified**
 exports from the [Basis Set Exchange](https://www.basissetexchange.org)
 (BSE). They are data inputs to `cintx-basis`, not source code, and are

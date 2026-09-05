@@ -6,6 +6,8 @@
 //! milliseconds, but it should not happen per molecule.
 
 use crate::error::BasisError;
+#[cfg(feature = "gth")]
+use crate::format::parse_cp2k_basis;
 use crate::format::{BasisTable, EcpTable, parse_basis, parse_ecp};
 use std::sync::OnceLock;
 
@@ -14,6 +16,10 @@ const DEF2_TZVP_TEXT: &str = include_str!("../data/def2-tzvp.nwchem");
 const DEF2_ECP_TEXT: &str = include_str!("../data/def2-ecp.nwchem");
 const DEF2_JFIT_TEXT: &str = include_str!("../data/def2-universal-jfit.nwchem");
 const DEF2_JKFIT_TEXT: &str = include_str!("../data/def2-universal-jkfit.nwchem");
+// GPLv2-licensed (see data/gth/README.md), unlike the rest of this crate —
+// embedded only when the `gth` feature is enabled.
+#[cfg(feature = "gth")]
+const GTH_MOLOPT_TEXT: &str = include_str!("../data/gth/BASIS_MOLOPT");
 
 /// A standard basis set available from the embedded catalog.
 ///
@@ -132,6 +138,98 @@ pub fn def2_ecp_table() -> &'static EcpTable {
     CACHE.get_or_init(|| parse_ecp(DEF2_ECP_TEXT).expect("embedded def2-ECP data must parse"))
 }
 
+/// A GTH-MOLOPT orbital basis set from the embedded CP2K catalog.
+///
+/// Gated behind the `gth` Cargo feature (off by default): the vendored data
+/// backing it is GPLv2-licensed, unlike the rest of this crate — see
+/// `data/gth/README.md`. Enabling `gth` opts a build into carrying that data.
+///
+/// **Basis data only — no pseudopotential support.** GTH-MOLOPT basis sets
+/// are designed to pair with GTH-type pseudopotentials, a separable
+/// local+nonlocal form unrelated to the semi-local ECP formalism
+/// `cintx-core::ecp` implements for def2-ECP. cintx does not implement GTH
+/// pseudopotential integrals, so — unlike [`StandardBasis`] — `GthBasis` is
+/// deliberately **not** wired into [`crate::build::Molecule`]: there is no
+/// `core_electrons`/ECP-shell handling for it, and using these shells for
+/// anything beyond overlap/kinetic-type integrals on light elements requires
+/// supplying and applying the matching GTH pseudopotential yourself. See
+/// `data/gth/README.md` for the full scoping rationale and provenance.
+#[cfg(feature = "gth")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GthBasis {
+    /// `DZVP-MOLOPT-SR-GTH`: short-range double-zeta-valence-plus-polarization,
+    /// covering 71 elements. There is no published short-range triple-zeta
+    /// (`TZVP-MOLOPT-SR-GTH`) variant upstream.
+    DzvpMoloptSr,
+    /// `TZVP-MOLOPT-GTH`: full-range triple-zeta-valence-plus-polarization,
+    /// covering the 9 elements (H, C, N, O, F, Si, P, S, Cl) from the
+    /// original VandeVondele & Hutter paper.
+    TzvpMolopt,
+}
+
+#[cfg(feature = "gth")]
+impl GthBasis {
+    /// The canonical name as CP2K's own `BASIS_MOLOPT` file writes it.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::DzvpMoloptSr => "DZVP-MOLOPT-SR-GTH",
+            Self::TzvpMolopt => "TZVP-MOLOPT-GTH",
+        }
+    }
+
+    /// Resolve a basis-set name, case- and separator-insensitive.
+    ///
+    /// Accepts both the literature/common spelling (`gth-dzvp-molopt-sr`)
+    /// and CP2K's own file spelling (`dzvp-molopt-sr-gth`); the
+    /// separator-stripping key below maps both onto one entry.
+    ///
+    /// # Errors
+    /// Returns [`BasisError::UnknownBasis`] when the name is not in the
+    /// catalog — including `gth-tzvp-molopt-sr`, which does not exist
+    /// upstream.
+    pub fn from_name(name: &str) -> Result<Self, BasisError> {
+        let key: String = name
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .map(|ch| ch.to_ascii_lowercase())
+            .collect();
+        match key.as_str() {
+            "gthdzvpmoloptsr" | "dzvpmoloptsrgth" => Ok(Self::DzvpMoloptSr),
+            "gthtzvpmolopt" | "tzvpmoloptgth" => Ok(Self::TzvpMolopt),
+            _ => Err(BasisError::UnknownBasis {
+                name: name.to_owned(),
+            }),
+        }
+    }
+
+    /// The parsed orbital-basis table for this basis set.
+    ///
+    /// # Panics
+    /// Panics if the vendored data file fails to parse. That is a build-time
+    /// data-integrity failure, not a runtime condition, and is covered by
+    /// `catalog_parses_every_embedded_gth_table`.
+    #[must_use]
+    pub fn table(self) -> &'static BasisTable {
+        match self {
+            Self::DzvpMoloptSr => {
+                static CACHE: OnceLock<BasisTable> = OnceLock::new();
+                CACHE.get_or_init(|| {
+                    parse_cp2k_basis(GTH_MOLOPT_TEXT, "DZVP-MOLOPT-SR-GTH")
+                        .expect("embedded DZVP-MOLOPT-SR-GTH data must parse")
+                })
+            }
+            Self::TzvpMolopt => {
+                static CACHE: OnceLock<BasisTable> = OnceLock::new();
+                CACHE.get_or_init(|| {
+                    parse_cp2k_basis(GTH_MOLOPT_TEXT, "TZVP-MOLOPT-GTH")
+                        .expect("embedded TZVP-MOLOPT-GTH data must parse")
+                })
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +328,95 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    #[cfg(feature = "gth")]
+    fn catalog_parses_every_embedded_gth_table() {
+        for basis in [GthBasis::DzvpMoloptSr, GthBasis::TzvpMolopt] {
+            let table = basis.table();
+            assert!(
+                !table.is_empty(),
+                "{} parsed to zero elements",
+                basis.name()
+            );
+            for (z, blocks) in table {
+                assert!(
+                    !blocks.is_empty(),
+                    "{} Z={z} parsed to zero blocks",
+                    basis.name()
+                );
+                for block in blocks {
+                    assert_eq!(
+                        block.coefficients.len(),
+                        block.nprim() * block.nctr,
+                        "{} Z={z} l={} coefficient length mismatch",
+                        basis.name(),
+                        block.ang_momentum
+                    );
+                    assert!(block.exponents.iter().all(|e| e.is_finite() && *e > 0.0));
+                }
+            }
+        }
+        assert_eq!(
+            GthBasis::DzvpMoloptSr.table().len(),
+            71,
+            "DZVP-MOLOPT-SR-GTH covers 71 elements upstream"
+        );
+        assert_eq!(
+            GthBasis::TzvpMolopt.table().len(),
+            9,
+            "TZVP-MOLOPT-GTH covers the 9 elements from the original paper"
+        );
+    }
+
+    /// The published `DZVP-MOLOPT-SR-GTH` composition for hydrogen is 5
+    /// primitives shared by [2s,1p] — one exponent set feeding both angular
+    /// momenta, unlike def2's per-`l` exponent lists.
+    #[test]
+    #[cfg(feature = "gth")]
+    fn gth_dzvp_molopt_sr_hydrogen_matches_published_composition() {
+        let blocks = &GthBasis::DzvpMoloptSr.table()[&1];
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].ang_momentum, 0);
+        assert_eq!(blocks[0].nctr, 2);
+        assert_eq!(blocks[0].nprim(), 5);
+        assert_eq!(blocks[1].ang_momentum, 1);
+        assert_eq!(blocks[1].nctr, 1);
+        assert_eq!(blocks[1].exponents, blocks[0].exponents);
+    }
+
+    #[test]
+    #[cfg(feature = "gth")]
+    fn resolves_gth_basis_names_loosely() {
+        for name in [
+            "gth-dzvp-molopt-sr",
+            "GTH_DZVP_MOLOPT_SR",
+            "dzvp-molopt-sr-gth",
+        ] {
+            assert_eq!(
+                GthBasis::from_name(name).unwrap(),
+                GthBasis::DzvpMoloptSr,
+                "{name}"
+            );
+        }
+        for name in ["gth-tzvp-molopt", "tzvp-molopt-gth"] {
+            assert_eq!(
+                GthBasis::from_name(name).unwrap(),
+                GthBasis::TzvpMolopt,
+                "{name}"
+            );
+        }
+    }
+
+    /// `gth-tzvp-molopt-sr` does not exist upstream — CP2K's MOLOPT library
+    /// only ships short-range variants at SZV and DZVP quality — so it must
+    /// not silently resolve to anything.
+    #[test]
+    #[cfg(feature = "gth")]
+    fn gth_tzvp_molopt_sr_is_not_a_real_basis() {
+        assert!(GthBasis::from_name("gth-tzvp-molopt-sr").is_err());
+        assert!(GthBasis::from_name("tzvp-molopt-sr-gth").is_err());
     }
 
     /// The auxiliary tables are flagged as auxiliary and the orbital ones are

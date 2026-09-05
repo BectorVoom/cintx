@@ -21,6 +21,12 @@
 //!
 //! A block with more than one coefficient column is a general contraction
 //! (`nctr > 1`); def2 uses these, so the parser must not assume `nctr == 1`.
+//!
+//! [`parse_cp2k_basis`] handles a second, unrelated dialect: CP2K's
+//! `BASIS_MOLOPT` format, used for the vendored GTH-MOLOPT basis sets. It has
+//! no block terminators and packs several named basis families into one
+//! document, so it is parsed by fixed-position counts rather than by line
+//! keywords — see that function's doc comment for the exact grammar.
 
 use crate::element::atomic_number;
 use crate::error::BasisError;
@@ -182,6 +188,25 @@ pub fn parse_basis(text: &str) -> Result<BasisTable, BasisError> {
     Ok(table)
 }
 
+/// Transpose row-major primitive rows into contraction-major coefficient
+/// storage: `rows[ip][col_offset + ic]` -> `coeff[ic * nprim + ip]`, the
+/// layout `ContractionBlock` and libcint's `env` both use.
+///
+/// `col_offset` selects a sub-range of each row's columns, which is what
+/// lets [`parse_cp2k_basis`] pull one angular momentum's `nctr` columns out
+/// of a row shared across several `l` blocks; NWChem's single-`l`-per-block
+/// [`flush_block`] always passes `col_offset = 0`.
+fn transpose_to_contraction_major(rows: &[Vec<f64>], col_offset: usize, nctr: usize) -> Vec<f64> {
+    let nprim = rows.len();
+    let mut coefficients = vec![0.0_f64; nprim * nctr];
+    for (ip, row) in rows.iter().enumerate() {
+        for ic in 0..nctr {
+            coefficients[ic * nprim + ip] = row[col_offset + ic];
+        }
+    }
+    coefficients
+}
+
 /// Convert an accumulated row-major block into contraction-major storage and
 /// append it to the table.
 fn flush_block(table: &mut BasisTable, block: Option<PendingBlock>) -> Result<(), BasisError> {
@@ -202,14 +227,7 @@ fn flush_block(table: &mut BasisTable, block: Option<PendingBlock>) -> Result<()
         });
     }
 
-    // Row-major (prim-major) -> contraction-major `coeff[ic * nprim + ip]`.
-    let nprim = exponents.len();
-    let mut coefficients = vec![0.0_f64; nprim * nctr];
-    for (ip, row) in rows.iter().enumerate() {
-        for (ic, &value) in row.iter().enumerate() {
-            coefficients[ic * nprim + ip] = value;
-        }
-    }
+    let coefficients = transpose_to_contraction_major(&rows, 0, nctr);
 
     table.entry(z).or_default().push(ContractionBlock {
         ang_momentum: l,
@@ -218,6 +236,139 @@ fn flush_block(table: &mut BasisTable, block: Option<PendingBlock>) -> Result<()
         nctr,
     });
     Ok(())
+}
+
+/// Parse one named basis set out of a CP2K GTO-basis library document.
+///
+/// CP2K's dialect (used by `data/BASIS_MOLOPT`) has no block terminators;
+/// structure comes entirely from fixed-position counts:
+///
+/// ```text
+/// <Element> <Name> [<Alias> ...]   <- one or more names; any may match `name`
+/// <nset>
+///   <n> <lmin> <lmax> <nexp> <nshell(lmin)> ... <nshell(lmax)> [trailing labels]
+///   <exponent> <coeff(lmin,1)> ... <coeff(lmin,nshell(lmin))> <coeff(lmin+1,1)> ...
+///   ...                              <- nexp rows
+/// ```
+///
+/// repeated `nset` times per element. A header line's trailing tokens beyond
+/// the `nshell` list (upstream sometimes appends human-readable orbital
+/// labels there) are ignored. Every element block in the document is walked
+/// structurally regardless of name, so the file's position stays in sync;
+/// only blocks whose name list contains `name` (case-insensitive) are kept.
+///
+/// # Errors
+/// Returns [`BasisError`] on an unknown element symbol, a malformed number, a
+/// header or data line that is missing required fields, or a data row whose
+/// column count disagrees with its header. Returns
+/// [`BasisError::UnknownBasis`] if `name` matches no block in the document.
+pub fn parse_cp2k_basis(text: &str, name: &str) -> Result<BasisTable, BasisError> {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(strip_comment)
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    let mut table: BasisTable = BTreeMap::new();
+    let mut pos = 0usize;
+    let next_line = |pos: &mut usize| -> Result<&str, BasisError> {
+        let line = lines
+            .get(*pos)
+            .copied()
+            .ok_or_else(|| BasisError::MalformedBlock {
+                detail: "CP2K basis document ends mid-block".to_owned(),
+            })?;
+        *pos += 1;
+        Ok(line)
+    };
+
+    while pos < lines.len() {
+        let element_line = next_line(&mut pos)?;
+        let mut tokens = element_line.split_whitespace();
+        let symbol = tokens.next().ok_or_else(|| BasisError::MalformedBlock {
+            detail: "empty element line".to_owned(),
+        })?;
+        let z = atomic_number(symbol).ok_or_else(|| BasisError::UnknownElement {
+            symbol: symbol.to_owned(),
+        })?;
+        let wanted = tokens.any(|candidate| candidate.eq_ignore_ascii_case(name));
+
+        let nset: usize = next_line(&mut pos)?
+            .parse()
+            .map_err(|_| BasisError::MalformedBlock {
+                detail: format!("Z={z}: expected a set count"),
+            })?;
+
+        for _ in 0..nset {
+            let header = next_line(&mut pos)?;
+            let mut htoks = header.split_whitespace();
+            let mut next_usize = |field: &str| -> Result<usize, BasisError> {
+                htoks
+                    .next()
+                    .ok_or_else(|| BasisError::MalformedBlock {
+                        detail: format!("Z={z}: set header missing `{field}`"),
+                    })?
+                    .parse()
+                    .map_err(|_| BasisError::MalformedBlock {
+                        detail: format!("Z={z}: set header has a malformed `{field}`"),
+                    })
+            };
+            let _n = next_usize("n")?;
+            let lmin = next_usize("lmin")?;
+            let lmax = next_usize("lmax")?;
+            let nexp = next_usize("nexp")?;
+            let nshell: Vec<usize> = (lmin..=lmax)
+                .map(|_| next_usize("nshell"))
+                .collect::<Result<_, _>>()?;
+            let total_cols: usize = nshell.iter().sum();
+
+            let mut exponents = Vec::with_capacity(nexp);
+            let mut rows: Vec<Vec<f64>> = Vec::with_capacity(nexp);
+            for _ in 0..nexp {
+                let row = next_line(&mut pos)?;
+                let values = row
+                    .split_whitespace()
+                    .map(parse_float)
+                    .collect::<Result<Vec<f64>, _>>()?;
+                if values.len() != 1 + total_cols {
+                    return Err(BasisError::MalformedBlock {
+                        detail: format!(
+                            "Z={z}: data row has {} columns, expected {} (1 exponent + {total_cols} coefficients)",
+                            values.len(),
+                            1 + total_cols
+                        ),
+                    });
+                }
+                exponents.push(values[0]);
+                rows.push(values[1..].to_vec());
+            }
+
+            if wanted {
+                let mut col_offset = 0;
+                for (li, &nctr) in nshell.iter().enumerate() {
+                    let l = u8::try_from(lmin + li).map_err(|_| BasisError::MalformedBlock {
+                        detail: format!("Z={z}: angular momentum {} exceeds u8", lmin + li),
+                    })?;
+                    let coefficients = transpose_to_contraction_major(&rows, col_offset, nctr);
+                    table.entry(z).or_default().push(ContractionBlock {
+                        ang_momentum: l,
+                        exponents: exponents.clone(),
+                        coefficients,
+                        nctr,
+                    });
+                    col_offset += nctr;
+                }
+            }
+        }
+    }
+
+    if table.is_empty() {
+        return Err(BasisError::UnknownBasis {
+            name: name.to_owned(),
+        });
+    }
+    Ok(table)
 }
 
 /// Parse an NWChem ECP document into a per-element table.
@@ -432,5 +583,118 @@ END
         assert_eq!(record.blocks[0].radial_powers, vec![2]);
         assert_eq!(record.blocks[1].projector, Some(0));
         assert_eq!(record.blocks[1].exponents.len(), 2);
+    }
+
+    /// The exact upstream `H DZVP-MOLOPT-SR-GTH` block: one set, `lmin=0`,
+    /// `lmax=1`, 5 primitives shared by 2 s-shells and 1 p-shell, packed
+    /// row-major with the s columns before the p column per the format's
+    /// `l = lmin..lmax` column order.
+    const CP2K_H_DZVP_SR: &str = r#"
+ H  DZVP-MOLOPT-SR-GTH DZVP-MOLOPT-SR-GTH-q1
+ 1
+ 2 0 1 5 2 1
+     10.068468228533 -0.033917444900  0.059193775500  0.009905134400
+      2.680222868089 -0.122202212100  0.843318328900  0.122449566500
+      0.791501539122 -0.443818861200 -1.155707115500  0.477183240900
+      0.239116150487 -0.453182186600  0.049479621200  0.547919678200
+      0.082193184441 -0.131612861500  0.522708738000  0.869031854000
+"#;
+
+    #[test]
+    fn parses_cp2k_shared_exponent_set_into_per_l_blocks() {
+        let table = parse_cp2k_basis(CP2K_H_DZVP_SR, "DZVP-MOLOPT-SR-GTH").expect("parse");
+        let blocks = &table[&1];
+        assert_eq!(
+            blocks.len(),
+            2,
+            "one block for l=0 (nctr=2), one for l=1 (nctr=1)"
+        );
+
+        assert_eq!(blocks[0].ang_momentum, 0);
+        assert_eq!(blocks[0].nctr, 2);
+        assert_eq!(blocks[0].nprim(), 5);
+        assert_eq!(
+            blocks[0].exponents,
+            vec![
+                10.068468228533,
+                2.680222868089,
+                0.791501539122,
+                0.239116150487,
+                0.082193184441
+            ]
+        );
+        // Contraction-major: first column, then second column.
+        assert_eq!(
+            blocks[0].coefficients,
+            vec![
+                -0.033917444900,
+                -0.122202212100,
+                -0.443818861200,
+                -0.453182186600,
+                -0.131612861500,
+                0.059193775500,
+                0.843318328900,
+                -1.155707115500,
+                0.049479621200,
+                0.522708738000,
+            ]
+        );
+
+        assert_eq!(blocks[1].ang_momentum, 1);
+        assert_eq!(blocks[1].nctr, 1);
+        // The p shell shares the same 5 exponents as the s shells.
+        assert_eq!(blocks[1].exponents, blocks[0].exponents);
+        assert_eq!(
+            blocks[1].coefficients,
+            vec![
+                0.009905134400,
+                0.122449566500,
+                0.477183240900,
+                0.547919678200,
+                0.869031854000
+            ]
+        );
+    }
+
+    /// A multi-basis document must skip unrelated blocks structurally
+    /// (consuming their nset/header/rows) without storing them.
+    #[test]
+    fn parse_cp2k_basis_skips_non_matching_blocks() {
+        let text = format!(
+            "{CP2K_H_DZVP_SR}\n H  SZV-MOLOPT-GTH SZV-MOLOPT-GTH-q1\n 1\n 2 0 0 2 1\n 1.0 0.5\n 0.3 0.6\n"
+        );
+        let table = parse_cp2k_basis(&text, "DZVP-MOLOPT-SR-GTH").expect("parse");
+        assert_eq!(
+            table[&1].len(),
+            2,
+            "only the requested name's blocks are kept"
+        );
+    }
+
+    /// Upstream sometimes appends human-readable orbital-label tokens after
+    /// the numeric `nshell` fields on a header line; they must be ignored
+    /// rather than rejected as malformed numbers.
+    #[test]
+    fn parse_cp2k_basis_ignores_trailing_header_labels() {
+        let text = " U DZVP-MOLOPT-GTH-q14\n 1\n 6 0 1 2 1 1       6s              6p\n 1.0 0.5 0.25\n 0.3 0.6 0.35\n";
+        let table = parse_cp2k_basis(text, "DZVP-MOLOPT-GTH-q14").expect("parse");
+        let blocks = &table[&92];
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].nprim(), 2);
+    }
+
+    #[test]
+    fn parse_cp2k_basis_rejects_unknown_name() {
+        let err = parse_cp2k_basis(CP2K_H_DZVP_SR, "does-not-exist").unwrap_err();
+        assert!(matches!(err, BasisError::UnknownBasis { .. }));
+    }
+
+    #[test]
+    fn parse_cp2k_basis_rejects_ragged_data_row() {
+        let text = " H  DZVP-MOLOPT-SR-GTH DZVP-MOLOPT-SR-GTH-q1\n 1\n 2 0 1 2 2 1\n 1.0 0.1 0.2 0.3\n 0.5 0.4\n";
+        assert!(matches!(
+            parse_cp2k_basis(text, "DZVP-MOLOPT-SR-GTH"),
+            Err(BasisError::MalformedBlock { .. })
+        ));
     }
 }

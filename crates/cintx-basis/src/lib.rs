@@ -22,6 +22,15 @@
 //!
 //! Normalization follows libcint/PySCF exactly; see [`normalize`] for the two
 //! stages and why both are required.
+//!
+//! The `gth` Cargo feature (off by default) additionally exposes
+//! `catalog::GthBasis`: two vendored GTH-MOLOPT orbital basis sets
+//! (`DZVP-MOLOPT-SR-GTH`, `TZVP-MOLOPT-GTH`) as parsed tables. Unlike
+//! [`StandardBasis`], it is **not** wired into [`build::Molecule`]: cintx has
+//! no GTH pseudopotential integral support, so there is no automatic
+//! core-electron or ECP-shell handling for it. The feature is opt-in because
+//! its vendored data is GPLv2-licensed, unlike the rest of this crate — see
+//! `data/gth/README.md`.
 
 pub mod build;
 pub mod catalog;
@@ -32,6 +41,8 @@ pub mod normalize;
 pub mod raw;
 
 pub use build::{AtomSpec, BOHR_PER_ANGSTROM, Molecule};
+#[cfg(feature = "gth")]
+pub use catalog::GthBasis;
 pub use catalog::{StandardBasis, def2_ecp_table};
 pub use error::BasisError;
 pub use format::{ContractionBlock, EcpBlock, EcpRecord, parse_basis, parse_ecp};

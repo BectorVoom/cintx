@@ -2,7 +2,15 @@
 name = "cintx-basis"
 version = "0.1.0"
 edition = "2024"
-description = "Standard Gaussian basis-set catalog (def2-SVP / def2-TZVP / def2-ECP) for cintx"
+description = "Standard Gaussian basis-set catalog (def2-SVP / def2-TZVP / def2-ECP; optional GTH-MOLOPT via the `gth` feature) for cintx"
+
+[features]
+default = []
+# Embeds the vendored CP2K GTH-MOLOPT basis library (`GthBasis`,
+# crates/cintx-basis/data/gth/BASIS_MOLOPT) into the compiled artifact. That
+# file is GPLv2-licensed, unlike the rest of this MIT-licensed crate — see
+# data/gth/README.md — so it is opt-in rather than part of the default build.
+gth = []
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }
