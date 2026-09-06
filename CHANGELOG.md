@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — generally contracted quartets contract in libcint's four stages (2026-09-06)
+
+Every def2 workload cintx had been tuned on is segmented (`max_nctr_product == 1` in every
+bucket), so the batched 2e kernel's `nctr > 1` arm had been covered for correctness and never
+timed. GTH-MOLOPT is the opposite shape — a family basis with two (`DZVP-MOLOPT-SR-GTH`) or
+three (`TZVP-MOLOPT-GTH`) contractions on every s and p shell — and on it the arm was the whole
+cost: for every primitive quartet and every Cartesian element the kernel walked a four-deep
+`nctr` loop and did a global read-modify-write into every contraction block, 15.8 million of
+them for one TZVP `(pp|pp)` quartet. Batched cintx on 16 threads was 1.4–2.7x **slower** than
+single-threaded libcint on every TZVP-MOLOPT fixture.
+
+The kernel now does what `CINT2e_loop_nopt` does (`cint2e.c:193-262`): one contraction stage
+per primitive index, `gout → gctri → gctrj → gctrk → out`, with a segmented shell's coefficient
+folded into the primitive weight rather than given a stage. The three intermediates live in a
+per-slot scratch slab allocated once per run and reused like the G slab, and charged to the
+pre-flight memory plan from the same expression. Every stage touches only a lane's own
+elements, so the cooperative (GPU) arm needs no new barrier. `CINTX_2E_CONTRACT=naive` and
+`set_staged_contraction` switch it at runtime; both settings are one compiled program.
+
+Measured in one process, alternated repeat by repeat (`gth_contraction_ab`), CPU backend:
+
+| workload | quartets | naive (ms) | staged (ms) | speedup | vs vendor, naive → staged |
+|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 406 | 43.1 | 30.7 | 1.41x | 3.3e-15 → 3.3e-15 |
+| CH4 / DZVP-MOLOPT-SR | 2 211 | 123.9 | 106.0 | 1.17x | 1.9e-15 → 3.1e-15 |
+| SO2 / DZVP-MOLOPT-SR | 1 035 | 174.4 | 128.9 | 1.35x | 7.9e-15 → 6.4e-15 |
+| H2O / TZVP-MOLOPT | 406 | 208.7 | 130.4 | 1.60x | 3.1e-13 → 2.6e-13 |
+| CH4 / TZVP-MOLOPT | 2 211 | 634.6 | 397.2 | 1.60x | 6.9e-14 → 4.1e-14 |
+| SO2 / TZVP-MOLOPT | 1 035 | 1 068.1 | 517.6 | 2.06x | 3.1e-13 → 2.6e-13 |
+
+The two schemes are not bit-identical and are not asked to be: the staged one sums in the
+vendor's own association, which is why every TZVP row lands *closer* to libcint than before.
+The gate is vendor agreement at `1e-12` under both settings. The segmented path is untouched
+(`is_uncontracted` short-circuits the new arm); `def2_2e_batch_parity` and the ROCm `int2e_sph`
+case reproduce their previous numbers exactly.
+
+On ROCm (gfx1151, cooperative decomposition, same test, best of 3) the picture is the same and
+the TZVP gain larger: H2O/DZVP-MOLOPT-SR 1.33x, H2O/TZVP-MOLOPT 2.45x, CH4/DZVP-MOLOPT-SR 1.28x,
+CH4/TZVP-MOLOPT 1.88x — every setting within 4e-13 of the vendor (the SO2 fixture's GPU run
+was not completed: on the display GPU its dispatches exceed amdgpu's gfx job timeout, the
+GPU is reset and the desktop session dies with it — the plan's §8.6 reconstructs the day's
+journals. `CINTX_2E_CHUNK_QUARTETS` now caps quartets per dispatch for exactly that case). The def2
+suite's 8-eps-of-block-scale CPU-vs-ROCm bar does not survive a `7^4`-deep general contraction
+(measured up to 606 eps with both backends 3e-13 from the vendor: the AMD compiler fuses the
+multiply-adds the CPU one does not), so the GTH test holds the two backends to the absolute
+bound the two vendor gates imply and records the eps figure.
+
+Also in this change: `cintx_basis::to_raw_arrays_gth` (bare-`Z` charges, no ECP — cintx has
+no GTH pseudopotential), a `gth` feature on `cintx-oracle`, GTH fixtures (H2O, CH4, SO2, C6H6
+in both bases) in the throughput benchmark writing to their own `cintx_gth_throughput.json`,
+and the plan at `docs/design/gth_molopt_speed_memory_plan.md`, whose §4 records the next
+lever — a family-quartet kernel that builds one G tensor per *atom* quartet for all of its
+`l` classes — and why it was not taken here.
+
+The `shared_g_enabled` doc comment no longer calls S3 a backend defect;
+`.planning/notes/rocm-shared-memory-miscompile.md` found the fault in cintx and fixed it.
+
 ### Added — the Cartesian-to-spherical transform can run on the device (2026-09-03)
 
 A batched run evaluated Cartesian blocks on the device, read them back, and contracted them

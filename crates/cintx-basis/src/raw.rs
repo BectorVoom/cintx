@@ -81,28 +81,15 @@ impl RawArrays {
 /// # Errors
 /// Returns [`BasisError`] if an element is absent from the basis table.
 pub fn to_raw_arrays(molecule: &Molecule) -> Result<RawArrays, BasisError> {
-    let natm = molecule.atoms.len();
-    let mut env = vec![0.0_f64; PTR_ENV_START];
-    let mut atm = vec![0_i32; natm * ATM_SLOTS];
-
-    // A single shared zero `zeta` slot: every atom uses the point-nucleus
-    // model, so the value is never read, but the pointer must still be valid.
-    let zeta_ptr = env.len() as i32;
-    env.push(0.0);
-
-    for (index, spec) in molecule.atoms.iter().enumerate() {
-        let coord_ptr = env.len() as i32;
-        env.extend_from_slice(&spec.coord_bohr);
-
-        let slot = index * ATM_SLOTS;
-        atm[slot + CHARGE_OF] = molecule.effective_charge(spec);
-        atm[slot + PTR_COORD] = coord_ptr;
-        atm[slot + NUC_MOD_OF] = POINT_NUC;
-        atm[slot + PTR_ZETA] = zeta_ptr;
-    }
-
+    let (atm, mut env) = emit_atoms(&molecule.atoms, |spec| molecule.effective_charge(spec));
     let mut bas: Vec<i32> = Vec::new();
-    append_basis_shells(molecule, molecule.basis, &mut bas, &mut env)?;
+    append_table_shells(
+        &molecule.atoms,
+        molecule.basis.table(),
+        molecule.basis.name(),
+        &mut bas,
+        &mut env,
+    )?;
     let n_orbital_shells = bas.len() / BAS_SLOTS;
 
     Ok(RawArrays {
@@ -111,6 +98,69 @@ pub fn to_raw_arrays(molecule: &Molecule) -> Result<RawArrays, BasisError> {
         env,
         n_orbital_shells,
     })
+}
+
+/// Emit `atm`/`bas`/`env` for `atoms` in a GTH-MOLOPT orbital basis.
+///
+/// The same layout as [`to_raw_arrays`], with two deliberate differences that
+/// follow from what `GthBasis` is (see `data/gth/README.md`):
+///
+/// - `atm[CHARGE_OF]` carries the **bare** `Z`. A GTH basis pairs with a GTH
+///   pseudopotential cintx does not implement, so there is no core-electron
+///   reduction to apply and none is invented; the operators these arrays are
+///   meant for (`int2e`, overlap, kinetic) do not read the charge at all.
+/// - There are no ECP shells.
+///
+/// Coefficients are normalized by the same libcint/PySCF rule as every other
+/// basis, so a raw call and a vendored-libcint call over these arrays agree.
+///
+/// # Errors
+/// Returns [`BasisError::MissingElement`] if an atom's element is absent from
+/// the chosen table — `TZVP-MOLOPT-GTH` covers nine elements only.
+#[cfg(feature = "gth")]
+pub fn to_raw_arrays_gth(
+    atoms: &[crate::build::AtomSpec],
+    basis: crate::catalog::GthBasis,
+) -> Result<RawArrays, BasisError> {
+    let (atm, mut env) = emit_atoms(atoms, |spec| i32::from(spec.atomic_number));
+    let mut bas: Vec<i32> = Vec::new();
+    append_table_shells(atoms, basis.table(), basis.name(), &mut bas, &mut env)?;
+    let n_orbital_shells = bas.len() / BAS_SLOTS;
+    Ok(RawArrays {
+        atm,
+        bas,
+        env,
+        n_orbital_shells,
+    })
+}
+
+/// Write the atom block: `PTR_ENV_START` reserved slots, one shared zero
+/// `zeta`, then every coordinate triple, with `charge_of` deciding what
+/// `atm[CHARGE_OF]` carries.
+fn emit_atoms(
+    atoms: &[crate::build::AtomSpec],
+    charge_of: impl Fn(&crate::build::AtomSpec) -> i32,
+) -> (Vec<i32>, Vec<f64>) {
+    let natm = atoms.len();
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+    let mut atm = vec![0_i32; natm * ATM_SLOTS];
+
+    // A single shared zero `zeta` slot: every atom uses the point-nucleus
+    // model, so the value is never read, but the pointer must still be valid.
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    for (index, spec) in atoms.iter().enumerate() {
+        let coord_ptr = env.len() as i32;
+        env.extend_from_slice(&spec.coord_bohr);
+
+        let slot = index * ATM_SLOTS;
+        atm[slot + CHARGE_OF] = charge_of(spec);
+        atm[slot + PTR_COORD] = coord_ptr;
+        atm[slot + NUC_MOD_OF] = POINT_NUC;
+        atm[slot + PTR_ZETA] = zeta_ptr;
+    }
+    (atm, env)
 }
 
 /// Emit `atm`/`bas`/`env` for a molecule with a density-fitting auxiliary basis
@@ -140,24 +190,31 @@ pub fn to_raw_arrays_with_auxiliary(
     }
 
     let mut arrays = to_raw_arrays(molecule)?;
-    append_basis_shells(molecule, auxiliary, &mut arrays.bas, &mut arrays.env)?;
+    append_table_shells(
+        &molecule.atoms,
+        auxiliary.table(),
+        auxiliary.name(),
+        &mut arrays.bas,
+        &mut arrays.env,
+    )?;
     Ok(arrays)
 }
 
-/// Append every atom's shells from `basis`, writing exponents and coefficients
-/// into `env` and one `bas` row per contracted shell.
-fn append_basis_shells(
-    molecule: &Molecule,
-    basis: crate::catalog::StandardBasis,
+/// Append every atom's shells from `table`, writing exponents and coefficients
+/// into `env` and one `bas` row per contracted shell. `name` labels the table
+/// in a [`BasisError::MissingElement`].
+fn append_table_shells(
+    atoms: &[crate::build::AtomSpec],
+    table: &crate::format::BasisTable,
+    name: &'static str,
     bas: &mut Vec<i32>,
     env: &mut Vec<f64>,
 ) -> Result<(), BasisError> {
-    for (atom_index, spec) in molecule.atoms.iter().enumerate() {
-        let blocks = basis
-            .table()
+    for (atom_index, spec) in atoms.iter().enumerate() {
+        let blocks = table
             .get(&spec.atomic_number)
             .ok_or(BasisError::MissingElement {
-                basis: basis.name(),
+                basis: name,
                 atomic_number: spec.atomic_number,
             })?;
 

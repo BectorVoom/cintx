@@ -747,6 +747,127 @@ pub(crate) fn two_e_shape_as_f12(shape: &TwoEShape) -> crate::kernels::f12::F12S
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Single-work-item scalar 2e kernel. See module note above.
+/// One stage of the staged general contraction (GTH plan, C1).
+///
+/// libcint contracts a generally contracted quartet in four stages
+/// (`cint2e.c:193-262`, `PRIM2CTR`): the primitive block is folded into
+/// `gctri[ci]` once per primitive quartet, `gctri` into `gctrj[cj][ci]` once
+/// per `j` primitive, `gctrj` into `gctrk[ck][cj][ci]` once per `k` primitive
+/// and `gctrk` into the output once per `l` primitive. The cost is
+/// `nprim^4·nctr_i + nprim^3·nctr_i·nctr_j + …` multiply-adds per element
+/// instead of `nprim^4·nctr_i·nctr_j·nctr_k·nctr_l` — a 16x reduction for a
+/// TZVP-MOLOPT `(pp|pp)` quartet — and, more to the point on any backend, it
+/// removes the read-modify-write of every contraction block per primitive
+/// quartet.
+///
+/// This helper is the middle two stages, which share one shape: `inner`
+/// consecutive blocks of `block_len` at `src_off` are scaled by this
+/// primitive's `nctr` coefficients and written to `dst_off + (c*inner +
+/// inner_idx)*block_len`. `assign == 1` is libcint's `CINTprim_to_ctr_0`
+/// (first write since the stage was emptied), otherwise `_1` (accumulate).
+///
+/// A shell with `nctr == 1` had its coefficient folded into the primitive
+/// weight, exactly as libcint folds it into `fac1{l,k,j,i}`, so its stage
+/// multiplies by one. Only the lane's own elements (`q % lanes == lane`) are
+/// touched in every stage, so no barrier separates the stages in the
+/// cooperative decomposition.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn stage_contract<F: Float>(
+    ctr: &mut Array<F>,
+    src_off: u32,
+    dst_off: u32,
+    inner: u32,
+    coeffs: &Array<F>,
+    coff: u32,
+    p: u32,
+    nctr: u32,
+    block_len: u32,
+    lane: u32,
+    lanes: u32,
+    assign: u32,
+) {
+    let mut c = 0u32;
+    while c < nctr {
+        let mut cv = F::new(1.0_f32);
+        if nctr > 1u32 {
+            cv = coeffs[(coff + p * nctr + c) as usize];
+        }
+        let mut inner_idx = 0u32;
+        while inner_idx < inner {
+            let src = src_off + inner_idx * block_len;
+            let dst = dst_off + (c * inner + inner_idx) * block_len;
+            let mut q = lane;
+            while q < block_len {
+                let term = cv * ctr[(src + q) as usize];
+                if assign == 1u32 {
+                    ctr[(dst + q) as usize] = term;
+                } else {
+                    ctr[(dst + q) as usize] += term;
+                }
+                q += lanes;
+            }
+            inner_idx += 1u32;
+        }
+        c += 1u32;
+    }
+}
+
+/// The last stage of [`stage_contract`]'s scheme: `gctrk[ck][cj][ci]` scaled
+/// by this `l` primitive's coefficients, accumulated into the quartet's
+/// output blocks in the batch layout
+/// `(((ci*nctr_j+cj)*nctr_k+ck)*nctr_l+cl)*block_len` (`i` slowest among the
+/// contractions, the layout the host and device transforms both read).
+/// `cart_out` was zeroed at the top of the quartet, so this always
+/// accumulates.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn stage_contract_out<F: Float>(
+    ctr: &Array<F>,
+    cart_out: &mut Array<F>,
+    src_off: u32,
+    out_off: u32,
+    coeffs: &Array<F>,
+    coff_l: u32,
+    pl: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    nctr_k: u32,
+    nctr_l: u32,
+    block_len: u32,
+    lane: u32,
+    lanes: u32,
+) {
+    let mut cl = 0u32;
+    while cl < nctr_l {
+        let mut cvl = F::new(1.0_f32);
+        if nctr_l > 1u32 {
+            cvl = coeffs[(coff_l + pl * nctr_l + cl) as usize];
+        }
+        let mut ck = 0u32;
+        while ck < nctr_k {
+            let mut cj = 0u32;
+            while cj < nctr_j {
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let src = src_off + ((ck * nctr_j + cj) * nctr_i + ci) * block_len;
+                    let dst =
+                        out_off + (((ci * nctr_j + cj) * nctr_k + ck) * nctr_l + cl) * block_len;
+                    let mut q = lane;
+                    while q < block_len {
+                        cart_out[(dst + q) as usize] += cvl * ctr[(src + q) as usize];
+                        q += lanes;
+                    }
+                    ci += 1u32;
+                }
+                cj += 1u32;
+            }
+            ck += 1u32;
+        }
+        cl += 1u32;
+    }
+}
+
 /// Batched scalar 2e kernel — one cube per shell quartet (Task 34-B).
 ///
 /// The kernel evaluates a whole **launch group** in one dispatch. A group is
@@ -806,6 +927,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     pair_index: &Array<u32>,
     pair_offset: &Array<u32>,
     g: &mut Array<F>,
+    ctr: &mut Array<F>,
     cart_out: &mut Array<F>,
     pie4: F,
     prim_tol: F,
@@ -815,6 +937,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     n_quartets: u32,
     n_cubes: u32,
     g_stride: u32,
+    ctr_stride: u32,
+    ctr_mode: u32,
     #[comptime] ibase: u32,
     #[comptime] kbase: u32,
     #[comptime] nroots: u32,
@@ -1049,6 +1173,42 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         let is_uncontracted =
             (nctr_i == 1u32) && (nctr_j == 1u32) && (nctr_k == 1u32) && (nctr_l == 1u32);
 
+        // ── Staged general contraction (GTH plan, C1) ─────────────────────
+        //
+        // A generally contracted quartet used to fold every primitive quartet
+        // into every one of its `nctr_i·nctr_j·nctr_k·nctr_l` output blocks —
+        // 81 read-modify-writes of `cart_out` per element per primitive
+        // quartet on a TZVP-MOLOPT `(pp|pp)`. libcint's staging
+        // (`cint2e.c:193-262`) is reproduced instead: see [`stage_contract`].
+        // The three intermediates live in this slot's `ctr` slab, laid out
+        // `gctri[ci][q]`, `gctrj[cj][ci][q]`, `gctrk[ck][cj][ci][q]`, `q` the
+        // Cartesian element. `ctr_mode` is a runtime scalar so both settings
+        // are one compiled program (`CINTX_2E_CONTRACT=naive` is the A/B).
+        //
+        // The `*empty` flags and `prev_p*` are libcint's own: a stage is
+        // *assigned* on its first write after being emptied and accumulated
+        // after, and a stage is flushed when the primitive that owns it
+        // changes. The pair rows are ordered `(pl, pk)` and `(pj, pi)` by
+        // `PairTable::push_shell_pair`, which is what makes "the primitive
+        // changed" detectable on a compacted list. Every quantity here is
+        // cube-uniform (every lane walks the same rows), so the branches stay
+        // convergent.
+        let use_staged = (!is_uncontracted) && (ctr_mode == 1u32);
+        // `lane`/`lanes` carry the builtin's `NativeExpand` type, which does
+        // not unify with a cube helper's `u32` parameter; rebased onto plain
+        // values here, once per quartet.
+        let mut lane_u = 0u32;
+        lane_u += lane;
+        let mut lanes_u = 0u32;
+        lanes_u += lanes;
+        let leni = nctr_i * block_len;
+        let lenj = leni * nctr_j;
+        let ctr_i_off = slot * ctr_stride;
+        let ctr_j_off = ctr_i_off + leni;
+        let ctr_k_off = ctr_j_off + lenj;
+        let mut kempty = 1u32;
+        let mut prev_pl = 0xFFFF_FFFFu32;
+
         // ── S2: accumulate this quartet in private storage where it fits ──
         //
         // The contraction sum used to land in `cart_out` — a kernel argument,
@@ -1138,6 +1298,21 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                 let kl_i = kl_row * comptime!(PAIR_INDEX_STRIDE as u32);
                 let pk = pair_index[kl_i as usize];
                 let pl = pair_index[(kl_i + 1u32) as usize];
+                // A new `l` primitive: fold the finished `gctrk` into the
+                // output with the previous one's coefficients.
+                if use_staged && pl != prev_pl {
+                    if kempty == 0u32 {
+                        stage_contract_out::<F>(
+                            ctr, cart_out, ctr_k_off, out_off, coeffs, coff_l, prev_pl, nctr_i,
+                            nctr_j, nctr_k, nctr_l, block_len, lane_u, lanes_u,
+                        );
+                        kempty = 1u32;
+                    }
+                    prev_pl = pl;
+                }
+                let mut jempty = 1u32;
+                let mut iempty: u32 = 1u32;
+                let mut prev_pj = 0xFFFF_FFFFu32;
                 let ak = exps[(eoff_k + pk) as usize];
                 let al = exps[(eoff_l + pl) as usize];
                 let akl = ak + al;
@@ -1157,6 +1332,18 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                         let ij_i = ij_row * comptime!(PAIR_INDEX_STRIDE as u32);
                         let pi = pair_index[ij_i as usize];
                         let pj = pair_index[(ij_i + 1u32) as usize];
+                        // A new `j` primitive: fold `gctri` into `gctrj`.
+                        if use_staged && pj != prev_pj {
+                            if iempty == 0u32 {
+                                stage_contract::<F>(
+                                    ctr, ctr_i_off, ctr_j_off, nctr_i, coeffs, coff_j, prev_pj,
+                                    nctr_j, block_len, lane_u, lanes_u, jempty,
+                                );
+                                jempty = 0u32;
+                                iempty = 1u32;
+                            }
+                            prev_pj = pj;
+                        }
                         let ai = exps[(eoff_i + pi) as usize];
                         let aj = exps[(eoff_j + pj) as usize];
                         let aij = ai + aj;
@@ -1622,6 +1809,26 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             } else {
                                 F::new(0.0_f32)
                             };
+                            // The staged path's primitive weight: the
+                            // coefficients of the *segmented* shells only,
+                            // folded the way libcint folds them into `fac1`
+                            // when `x_ctr == 1`; a generally contracted
+                            // shell's coefficients are applied by its stage.
+                            let mut fold = F::new(1.0_f32);
+                            if use_staged {
+                                if nctr_i == 1u32 {
+                                    fold *= coeffs[(coff_i + pi) as usize];
+                                }
+                                if nctr_j == 1u32 {
+                                    fold *= coeffs[(coff_j + pj) as usize];
+                                }
+                                if nctr_k == 1u32 {
+                                    fold *= coeffs[(coff_k + pk) as usize];
+                                }
+                                if nctr_l == 1u32 {
+                                    fold *= coeffs[(coff_l + pl) as usize];
+                                }
+                            }
 
                             // ── Contract into per-quad Cartesian blocks cooperatively ───────────
                             // Descending cart_comps over (l,k,j,i); i fastest.
@@ -1709,6 +1916,33 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                                     cart_out[(out_off + q_elem)
                                                                         as usize] +=
                                                                         prim_weight * sum;
+                                                                } else if use_staged {
+                                                                    // The `i` stage: this
+                                                                    // primitive quartet into
+                                                                    // `gctri[ci][q]`.
+                                                                    let w = fold * sum;
+                                                                    let mut ci = 0u32;
+                                                                    while ci < nctr_i {
+                                                                        let mut cvi =
+                                                                            F::new(1.0_f32);
+                                                                        if nctr_i > 1u32 {
+                                                                            cvi = coeffs[(coff_i
+                                                                                + pi * nctr_i
+                                                                                + ci)
+                                                                                as usize];
+                                                                        }
+                                                                        let idx = ctr_i_off
+                                                                            + ci * block_len
+                                                                            + q_elem;
+                                                                        if iempty == 1u32 {
+                                                                            ctr[idx as usize] =
+                                                                                cvi * w;
+                                                                        } else {
+                                                                            ctr[idx as usize] +=
+                                                                                cvi * w;
+                                                                        }
+                                                                        ci += 1u32;
+                                                                    }
                                                                 } else {
                                                                     // Accumulate into every
                                                                     // contraction quad block.
@@ -1789,6 +2023,9 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 }
                                 la += 1u32;
                             }
+                            if use_staged {
+                                iempty = 0u32;
+                            }
                             if comptime!(per_unit == 0u32) {
                                 sync_cube();
                             }
@@ -1796,8 +2033,44 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                     } // end bra `cceij` cutoff
                     ij_row += 1u32;
                 }
+                // End of this ket primitive pair's bra loop: the last `j`
+                // primitive's `gctri`, then this `k` primitive's `gctrj`.
+                if use_staged {
+                    if iempty == 0u32 {
+                        stage_contract::<F>(
+                            ctr, ctr_i_off, ctr_j_off, nctr_i, coeffs, coff_j, prev_pj, nctr_j,
+                            block_len, lane_u, lanes_u, jempty,
+                        );
+                        jempty = 0u32;
+                    }
+                    if jempty == 0u32 {
+                        stage_contract::<F>(
+                            ctr,
+                            ctr_j_off,
+                            ctr_k_off,
+                            nctr_i * nctr_j,
+                            coeffs,
+                            coff_k,
+                            pk,
+                            nctr_k,
+                            block_len,
+                            lane_u,
+                            lanes_u,
+                            kempty,
+                        );
+                        kempty = 0u32;
+                    }
+                }
             } // end ket `ccekl` cutoff
             kl_row += 1u32;
+        }
+
+        // The last `l` primitive's `gctrk` (staged path).
+        if use_staged && kempty == 0u32 {
+            stage_contract_out::<F>(
+                ctr, cart_out, ctr_k_off, out_off, coeffs, coff_l, prev_pl, nctr_i, nctr_j, nctr_k,
+                nctr_l, block_len, lane_u, lanes_u,
+            );
         }
 
         // S2: one write per element this lane owns, replacing one
@@ -1858,51 +2131,68 @@ pub fn set_accumulator_slots_max(slots: u32) {
     ACCUMULATOR_SLOTS_MAX.store(slots, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The staged-contraction switch, with `CINTX_2E_CONTRACT` applied.
+///
+/// `1` (the default) contracts a generally contracted quartet in libcint's
+/// four stages (`stage_contract`); `naive`, i.e. `0`, restores the
+/// per-primitive-quartet fold into every contraction block. A segmented
+/// quartet (`nctr == 1` on all four shells) is unaffected by either setting.
+///
+/// A runtime scalar rather than a comptime one, for the reason
+/// [`accumulator_slots_max`] gives: the A/B must be one compiled program.
+pub fn contraction_mode() -> u32 {
+    let current = CONTRACTION_MODE.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env = if std::env::var("CINTX_2E_CONTRACT")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("naive"))
+    {
+        0
+    } else {
+        1
+    };
+    CONTRACTION_MODE.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`contraction_mode`] resolves the environment.
+static CONTRACTION_MODE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Override the contraction mode for the rest of this process: `true` is the
+/// staged scheme, `false` the naive fold. For in-process A/B measurement, as
+/// [`set_accumulator_slots_max`] is.
+pub fn set_staged_contraction(staged: bool) {
+    CONTRACTION_MODE.store(u32::from(staged), std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Is the shared-memory G tensor enabled (S3)?
 ///
-/// **Off by default, because it is broken on the ROCm backend**, and the failure
-/// mode is silent: `int2e_sph` comes back as uninitialized memory rather than as
-/// an error. `CINTX_2E_SHARED_G=1` opts in, for investigation only.
+/// Off by default; `CINTX_2E_SHARED_G=1` opts in. The cooperative arm keeps
+/// its G slab in `SharedMemory` when the dispatch's widest class fits
+/// [`SHARED_G_SLOTS`] and the backend reports room.
 ///
-/// # What is known
+/// # History, and why the default has not moved
 ///
-/// Bisected on gfx1151 with cubecl 0.10. **Every step below was re-run with the
-/// kernel renamed**, because compiled kernels are cached by signature and not by
-/// body — see the note at the end, and
-/// `shared_memory::tests::shared_memory_through_a_slice_round_trips`. An earlier
-/// pass of this bisect reached the opposite conclusion from stale kernels.
+/// This was first recorded as a ROCm backend defect: with the shared slab
+/// selected, `int2e_sph` came back as uninitialised memory. The bisect is in
+/// `.planning/notes/rocm-shared-memory-miscompile.md`, and its conclusion was
+/// wrong. The fault was in cintx — the S3 edit rebound 6 of the 46 G-tensor
+/// accesses to `g_slab` and left the whole VRR/HRR indexing the raw `g`
+/// parameter, so under `g_in_shared` the recurrence ran across two buffers.
+/// Every access now goes through `g_slab` (the invariant is stated at its
+/// declaration), and `def2_batch_rocm_parity` passes with the switch set,
+/// with the same numbers as the global-slab control.
 ///
-/// - **Allocation is innocent.** An unconditional, never-read 48 KiB
-///   `SharedMemory` declaration, with the global slab and global offset
-///   otherwise unchanged, leaves the kernel exactly correct.
-/// - **Use is the trigger, and one element is enough.** Unit 0 writing a single
-///   shared element, one `sync_cube()`, then every unit reading it back and
-///   multiplying an exactly-1.0 factor by it — with the G tensor still entirely
-///   in global memory — corrupts the output: 15 598 of 53 237 elements wrong,
-///   by up to 0.9 absolute. Some work items read something other than what unit
-///   0 wrote.
-/// - It is not the size: 48 KiB, 4 KiB and 512 bytes all fail, against a
-///   device-reported 64 KiB.
-/// - It is not the tuner: it fails with `CINTX_AUTOTUNE=off`.
-/// - It is not cross-lane sharing: it fails at `CINTX_2E_CUBE_DIM=1`, where a
-///   cube is one lane and nothing is shared between lanes.
-/// - It is not a barrier in divergent control flow: no `sync_cube()` in this
-///   kernel sits inside a `lane == 0` region.
+/// Two things the bisect *did* establish and are worth keeping: compiled
+/// kernels are cached by `KernelId`, which hashes no body or source, so a
+/// body-only edit can run the previous binary (`rm -rf crates/*/target/hip
+/// target/hip`, or change the signature); and an output buffer from
+/// `client.empty` can read back as an earlier launch's data, so a probe must
+/// seed it with a sentinel.
 ///
-/// And what is *not* the cause: the primitive. The probe named above exercises
-/// the same shape — direct and through `to_slice_mut()`, at the same 48 KiB and
-/// 256 lanes, beside a private `Array`, under a read-modify-write recurrence of
-/// the shape the VRR/HRR has — and round-trips exactly on the same device.
-///
-/// So: shared memory works in a small kernel and does not work in this one,
-/// which is the largest in the project by a wide margin. That shape of evidence
-/// points at the compiler rather than at the code, and is what a report upstream
-/// should lead with.
-///
-/// The integration is kept rather than deleted because reproducing it is the
-/// expensive part and it is a few lines from working if the backend defect is
-/// found. It cannot fire by accident: this returns `false` unless the variable
-/// is set, and `def2_batch_rocm_parity` fails loudly when it is.
+/// The speed case for the shared slab has not been measured since the fix,
+/// which is why the default is unchanged.
 fn shared_g_enabled() -> bool {
     use std::sync::OnceLock;
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -1976,6 +2266,7 @@ fn two_e_cube_dim<R: Runtime>(
     block_len: u32,
     n_quartets: usize,
     g_size: usize,
+    ctr_len: usize,
 ) -> CubeDim {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
@@ -1984,7 +2275,7 @@ fn two_e_cube_dim<R: Runtime>(
         return CubeDim::new_1d(dim);
     }
     if two_e_per_unit::<R>(client) {
-        return CubeDim::new_1d(per_unit_cube_dim(client, n_quartets, g_size));
+        return CubeDim::new_1d(per_unit_cube_dim(client, n_quartets, g_size, ctr_len));
     }
     crate::plane::cooperative_cube_dim(client, block_len)
 }
@@ -1998,8 +2289,9 @@ fn per_unit_cube_dim<R: Runtime>(
     client: &ComputeClient<R>,
     n_quartets: usize,
     g_size: usize,
+    ctr_len: usize,
 ) -> u32 {
-    let per_slab = g_slab_stride(g_size) * std::mem::size_of::<f64>();
+    let per_slab = slot_scratch_bytes(g_size, ctr_len);
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
     // One quartet is `nprim^4` primitive quartets through the full VRR/HRR build —
     // far more than the ~2 us it costs to wake a unit, so every available unit is
@@ -2017,6 +2309,32 @@ fn g_slab_stride(g_size: usize) -> usize {
     /// f64 elements per 64-byte cache line.
     const LINE: usize = 8;
     (3 * g_size).div_ceil(LINE) * LINE
+}
+
+/// Stride, in `f64` elements, between one slot's staged-contraction scratch
+/// and the next (GTH plan, C1); `0` when no quartet in the dispatch is
+/// generally contracted. Padded to a cache line for the reason
+/// [`g_slab_stride`] is.
+fn ctr_slab_stride(ctr_len: usize) -> usize {
+    const LINE: usize = 8;
+    ctr_len.div_ceil(LINE) * LINE
+}
+
+/// `f64` elements of staged-contraction scratch one quartet needs: the three
+/// intermediates `gctri`, `gctrj`, `gctrk` of [`stage_contract`], or `0` for
+/// a segmented quartet, which never enters the staged path.
+fn staged_ctr_len(nctr: [u32; 4], cart_block: usize) -> usize {
+    let [ni, nj, nk, _] = nctr;
+    if nctr.iter().all(|&n| n == 1) {
+        return 0;
+    }
+    let (ni, nj, nk) = (ni as usize, nj as usize, nk as usize);
+    (ni + ni * nj + ni * nj * nk) * cart_block
+}
+
+/// Bytes of scratch one slot owns: its G slab plus its contraction slab.
+fn slot_scratch_bytes(g_size: usize, ctr_len: usize) -> usize {
+    (g_slab_stride(g_size) + ctr_slab_stride(ctr_len)) * std::mem::size_of::<f64>()
 }
 
 /// Ceiling on the per-launch G-tensor scratch slab, shared by both
@@ -2089,13 +2407,14 @@ fn two_e_cube_count<R: Runtime>(
     client: &ComputeClient<R>,
     n_quartets: usize,
     g_size: usize,
+    ctr_len: usize,
 ) -> u32 {
     if two_e_per_unit::<R>(client) {
         // The units carry the parallelism; `cube_count` on the CPU runtime is a
         // sequential loop, so a second cube would only duplicate G slabs.
         return 1;
     }
-    let per_cube = g_slab_stride(g_size) * std::mem::size_of::<f64>();
+    let per_cube = slot_scratch_bytes(g_size, ctr_len);
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_cube.max(1)).max(1);
     crate::plane::grid_cube_count(client, n_quartets.min(by_memory))
 }
@@ -2244,6 +2563,9 @@ pub struct TwoELaunchGroup {
     pub max_g_size: u32,
     /// Widest Cartesian contraction block — the cooperative cube's parallel width.
     pub max_block_len: u32,
+    /// Widest staged-contraction scratch any quartet here needs
+    /// ([`staged_ctr_len`]); `0` when every quartet is segmented.
+    pub max_ctr_len: u32,
 }
 
 impl TwoELaunchGroup {
@@ -2258,6 +2580,7 @@ impl TwoELaunchGroup {
             out_len: 0,
             max_g_size: 0,
             max_block_len: 0,
+            max_ctr_len: 0,
         }
     }
 
@@ -2334,6 +2657,14 @@ impl TwoELaunchGroup {
     #[must_use]
     pub fn g_slab_bytes(&self) -> usize {
         g_slab_stride(self.max_g_size as usize) * std::mem::size_of::<f64>()
+    }
+
+    /// Bytes of one slot's staged-contraction scratch for this group — `0`
+    /// unless a quartet here is generally contracted. Shared by the
+    /// pre-flight plan and the real allocation, like [`Self::g_slab_bytes`].
+    #[must_use]
+    pub fn ctr_slab_bytes(&self) -> usize {
+        ctr_slab_stride(self.max_ctr_len as usize) * std::mem::size_of::<f64>()
     }
 }
 
@@ -2422,26 +2753,42 @@ fn run_2e_batches<R: Runtime>(
     // is on, so a slab carrying another group's leftovers is as good as a fresh
     // one — which is already true today across a group's own grid-stride walk.
     let mut shared_g_len = 0_usize;
+    // The staged-contraction scratch (GTH plan, C1) is sized and reused the
+    // same way, and stays a one-element placeholder for a segmented list.
+    let mut shared_ctr_len = 0_usize;
     for group in groups {
         if group.len() == 0 {
             continue;
         }
         let g_size_u = group.max_g_size as usize;
-        let cube_dim = two_e_cube_dim::<R>(client, group.max_block_len, group.len(), g_size_u);
-        let n_cubes = two_e_cube_count::<R>(client, group.len(), g_size_u);
+        let ctr_len_u = group.max_ctr_len as usize;
+        let cube_dim = two_e_cube_dim::<R>(
+            client,
+            group.max_block_len,
+            group.len(),
+            g_size_u,
+            ctr_len_u,
+        );
+        let n_cubes = two_e_cube_count::<R>(client, group.len(), g_size_u, ctr_len_u);
         let slots = if two_e_per_unit::<R>(client) {
             n_cubes as usize * cube_dim.num_elems() as usize
         } else {
             n_cubes as usize
         };
         shared_g_len = shared_g_len.max(slots * g_slab_stride(g_size_u));
+        shared_ctr_len = shared_ctr_len.max(slots * ctr_slab_stride(ctr_len_u));
     }
     let shared_g_bytes = shared_g_len * std::mem::size_of::<f64>();
     let shared_g = client.empty(shared_g_bytes.max(1));
-    probe
-        .lock()
-        .expect("device memory probe poisoned")
-        .charge_g_slab(shared_g_bytes);
+    let shared_ctr_bytes = shared_ctr_len * std::mem::size_of::<f64>();
+    let shared_ctr = client.empty(shared_ctr_bytes.max(1));
+    {
+        let mut ledger = probe.lock().expect("device memory probe poisoned");
+        ledger.charge_g_slab(shared_g_bytes);
+        if shared_ctr_bytes > 0 {
+            ledger.charge_g_slab(shared_ctr_bytes);
+        }
+    }
 
     // M4.3: one c2s transform scratch slab for the whole chunk, sized to the
     // widest group's need, instead of one allocation per group inside
@@ -2514,6 +2861,10 @@ fn run_2e_batches<R: Runtime>(
             rys_tables: rys_tab_h.clone(),
             shared_g: shared_g.clone(),
             shared_g_len,
+            shared_ctr: shared_ctr.clone(),
+            shared_ctr_len,
+            ctr_len: group.max_ctr_len as usize,
+            ctr_mode: contraction_mode(),
             pair_data: pairs.data.clone(),
             pair_index: pairs.index.clone(),
             pair_offset: pairs.offset.clone(),
@@ -2530,7 +2881,12 @@ fn run_2e_batches<R: Runtime>(
             g_in_shared: use_shared_g,
             out_len: group.out_len,
             n_quartets: n_quartets as u32,
-            n_cubes: two_e_cube_count::<R>(client, n_quartets, g_size_u),
+            n_cubes: two_e_cube_count::<R>(
+                client,
+                n_quartets,
+                g_size_u,
+                group.max_ctr_len as usize,
+            ),
             g_size: g_size_u,
             per_unit,
             block_len: group.max_block_len,
@@ -2541,6 +2897,7 @@ fn run_2e_batches<R: Runtime>(
                 group.max_block_len,
                 n_quartets,
                 g_size_u,
+                group.max_ctr_len as usize,
             ),
             probe: Arc::clone(&probe),
         };
@@ -2749,6 +3106,16 @@ struct TwoEGroupDispatch<R: Runtime> {
     shared_g: cubecl::server::Handle,
     /// `f64` capacity of [`Self::shared_g`].
     shared_g_len: usize,
+    /// The run's shared staged-contraction scratch (GTH plan, C1), sized and
+    /// reused exactly as [`Self::shared_g`] is.
+    shared_ctr: cubecl::server::Handle,
+    /// `f64` capacity of [`Self::shared_ctr`].
+    shared_ctr_len: usize,
+    /// One slot's staged-contraction scratch length for this group
+    /// (`TwoELaunchGroup::max_ctr_len`); `0` for a segmented group.
+    ctr_len: usize,
+    /// `1` for the staged general contraction, `0` for the naive fold.
+    ctr_mode: u32,
     pair_data: cubecl::server::Handle,
     pair_index: cubecl::server::Handle,
     pair_offset: cubecl::server::Handle,
@@ -2819,6 +3186,20 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 .charge_g_slab(g_bytes);
             (self.client.empty(g_bytes), g_len)
         };
+        // The contraction scratch follows the same rule; a segmented group
+        // binds the one-element placeholder and never indexes it.
+        let ctr_stride = ctr_slab_stride(self.ctr_len);
+        let ctr_total = n_slots * ctr_stride;
+        let (ctr_h, ctr_capacity) = if ctr_total <= self.shared_ctr_len {
+            (self.shared_ctr.clone(), self.shared_ctr_len.max(1))
+        } else {
+            let ctr_bytes = ctr_total * std::mem::size_of::<f64>();
+            self.probe
+                .lock()
+                .expect("device memory probe poisoned")
+                .charge_g_slab(ctr_bytes);
+            (self.client.empty(ctr_bytes), ctr_total)
+        };
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -2843,6 +3224,7 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 ArrayArg::from_raw_parts(self.pair_index.clone(), self.pair_index_len),
                 ArrayArg::from_raw_parts(self.pair_offset.clone(), self.pair_offset_len),
                 ArrayArg::from_raw_parts(g_h, g_capacity),
+                ArrayArg::from_raw_parts(ctr_h, ctr_capacity),
                 ArrayArg::from_raw_parts(self.out.clone(), self.out_len),
                 PIE4,
                 self.primitive_tolerance,
@@ -2852,6 +3234,8 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 self.n_quartets,
                 self.n_cubes,
                 g_stride as u32,
+                ctr_stride as u32,
+                self.ctr_mode,
                 self.signature.ibase,
                 self.signature.kbase,
                 self.signature.nroots,
@@ -2875,7 +3259,7 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
             self.signature.nroots,
             self.n_quartets as usize,
             self.block_len,
-            g_slab_stride(self.g_size) * std::mem::size_of::<f64>(),
+            slot_scratch_bytes(self.g_size, self.ctr_len),
         )
     }
 
@@ -2897,7 +3281,8 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
             crate::tuning::tune_sample_items(self.n_quartets as usize, self.g_size.max(1));
         let mut truncated = self.clone();
         truncated.n_quartets = n_quartets as u32;
-        truncated.n_cubes = two_e_cube_count::<R>(&self.client, n_quartets, self.g_size);
+        truncated.n_cubes =
+            two_e_cube_count::<R>(&self.client, n_quartets, self.g_size, self.ctr_len);
         truncated
     }
 }
@@ -3069,6 +3454,10 @@ fn run_2e_scalar_device<R: Runtime>(
         .extend_from_slice(&[0, 1, 2, 3, 0, class_index]);
     group.out_len = out_len;
     group.max_block_len = (out_len / ((nctr_i * nctr_j * nctr_k * nctr_l) as usize).max(1)) as u32;
+    group.max_ctr_len = staged_ctr_len(
+        [nctr_i, nctr_j, nctr_k, nctr_l],
+        group.max_block_len as usize,
+    ) as u32;
 
     // The per-tuple compatibility path builds a one-quartet residency, so its
     // pair table covers exactly these four shells, with `(0,1)` the bra and
@@ -7325,6 +7714,7 @@ mod device_tests {
         let pair_data_h = client.create_from_slice(f32::as_bytes(&pair_data));
         let pair_index_h = client.create_from_slice(u32::as_bytes(&pairs.index));
         let pair_offset_h = client.create_from_slice(u32::as_bytes(&pairs.offset));
+        let ctr_h = client.create_from_slice(f32::as_bytes(&[0.0_f32]));
 
         two_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -7342,6 +7732,10 @@ mod device_tests {
             unsafe { ArrayArg::from_raw_parts(pair_index_h, pairs.index.len()) },
             unsafe { ArrayArg::from_raw_parts(pair_offset_h, pairs.offset.len()) },
             unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
+            // Four segmented shells: the staged-contraction scratch is never
+            // indexed, so the one-element placeholder is what a real dispatch
+            // would bind too.
+            unsafe { ArrayArg::from_raw_parts(ctr_h, 1) },
             unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
             PIE4 as f32,
             // No primitive screening: this test asserts the exact arithmetic.
@@ -7354,6 +7748,8 @@ mod device_tests {
             1u32,
             1u32,
             (3 * shape.g_size) as u32,
+            0u32,
+            1u32,
             shape.ibase as u32,
             shape.kbase as u32,
             1u32,
@@ -8985,6 +9381,40 @@ fn plan_quartet_chunks(
     shells: &[BatchShell],
     budget: usize,
 ) -> Vec<std::ops::Range<usize>> {
+    plan_quartet_chunks_capped(quartets, shells, budget, chunk_quartet_cap())
+}
+
+/// Ceiling on quartets per chunk, from `CINTX_2E_CHUNK_QUARTETS`; `None`
+/// (unset or `0`) leaves chunking to the byte budget alone.
+///
+/// This exists for one reason, and it is not memory. On a GPU that is also the
+/// display device, a dispatch is a compute job the compositor's frame work
+/// queues behind; a dispatch that runs longer than the driver's job timeout
+/// (amdgpu: seconds) resets the GPU and takes the desktop session down with it.
+/// A dispatch's length scales with the quartets it carries, so capping them per
+/// chunk — and so per dispatch — bounds it independently of the byte budget,
+/// which on a small generally contracted list never splits at all
+/// (`gth_molopt_speed_memory_plan.md` §8.6). The cost is the launch count the
+/// def2 plan measured for chunking; the arithmetic is unchanged.
+fn chunk_quartet_cap() -> Option<usize> {
+    use std::sync::OnceLock;
+    static CAP: OnceLock<Option<usize>> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("CINTX_2E_CHUNK_QUARTETS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+    })
+}
+
+/// [`plan_quartet_chunks`] with an explicit quartet cap, so the cap is testable
+/// without the environment.
+fn plan_quartet_chunks_capped(
+    quartets: &[[u32; 4]],
+    shells: &[BatchShell],
+    budget: usize,
+    max_quartets: Option<usize>,
+) -> Vec<std::ops::Range<usize>> {
     let mut chunks = Vec::new();
     let mut start = 0_usize;
     let mut bytes = 0_usize;
@@ -8997,7 +9427,8 @@ fn plan_quartet_chunks(
             })
             .product::<usize>()
             * std::mem::size_of::<f64>();
-        if index > start && bytes + block > budget {
+        let over_count = max_quartets.is_some_and(|cap| index - start >= cap);
+        if index > start && (bytes + block > budget || over_count) {
             chunks.push(start..index);
             start = index;
             bytes = 0;
@@ -9109,15 +9540,21 @@ fn build_launch_groups(
 
         for &index in &members {
             let q = quartets[index];
-            let nctr_product: usize = q
-                .iter()
-                .map(|&s| shells[s as usize].nctr as usize)
-                .product();
+            let nctr = [
+                shells[q[0] as usize].nctr,
+                shells[q[1] as usize].nctr,
+                shells[q[2] as usize].nctr,
+                shells[q[3] as usize].nctr,
+            ];
+            let nctr_product: usize = nctr.iter().map(|&n| n as usize).product();
             let block = nctr_product * cart_block;
 
             row_owner[group_index].push(index as u32);
             let group = &mut groups[group_index];
             group.max_block_len = group.max_block_len.max(cart_block as u32);
+            group.max_ctr_len = group
+                .max_ctr_len
+                .max(staged_ctr_len(nctr, cart_block) as u32);
             placement[index] = QuartetPlacement {
                 group: group_index,
                 class: class_index,
@@ -9317,11 +9754,18 @@ fn plan_batch_bytes(
         .max()
         .unwrap_or(0);
     let table_bytes = groups.iter().map(TwoELaunchGroup::upload_bytes).sum();
+    // One slot's G slab plus its contraction slab, at the widest group; the
+    // run allocates both once and reuses them across groups (M4.1, C1).
     let scratch_bytes = groups
         .iter()
         .map(TwoELaunchGroup::g_slab_bytes)
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        + groups
+            .iter()
+            .map(TwoELaunchGroup::ctr_slab_bytes)
+            .max()
+            .unwrap_or(0);
     let host_output_bytes = output_len * std::mem::size_of::<f64>();
     BatchMemoryPlan {
         host_output_bytes,
@@ -10107,4 +10551,36 @@ pub fn prewarm_2e_quartet_classes(
         }
     }
     prewarm_2e_work_list(backend, shells, &list)
+}
+
+#[cfg(test)]
+mod chunk_cap_tests {
+    use super::*;
+
+    fn s_shell() -> BatchShell {
+        BatchShell {
+            l: 0,
+            nprim: 1,
+            nctr: 1,
+            exponents: vec![1.0],
+            coefficients: vec![1.0],
+            center: [0.0; 3],
+        }
+    }
+
+    /// The quartet cap splits a list the byte budget would keep whole, and the
+    /// chunks tile the list exactly.
+    #[test]
+    fn quartet_cap_bounds_every_chunk() {
+        let shells = vec![s_shell()];
+        let quartets = vec![[0_u32, 0, 0, 0]; 10];
+        let whole = plan_quartet_chunks_capped(&quartets, &shells, usize::MAX, None);
+        assert_eq!(whole, vec![0..10]);
+        let capped = plan_quartet_chunks_capped(&quartets, &shells, usize::MAX, Some(4));
+        assert_eq!(capped, vec![0..4, 4..8, 8..10]);
+        assert!(capped.iter().all(|r| r.len() <= 4));
+        // The byte budget still applies underneath the cap.
+        let tight = plan_quartet_chunks_capped(&quartets, &shells, 8, Some(4));
+        assert_eq!(tight.len(), 10);
+    }
 }

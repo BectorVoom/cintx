@@ -19,33 +19,70 @@ use cintx_basis::raw::{
 use cintx_basis::{AtomSpec, Molecule, RawArrays, StandardBasis};
 use cintx_cubecl::{BatchAtom, BatchShell};
 
+/// The def2 fixture geometries as bare atom lists, so the GTH-MOLOPT arms of
+/// the benchmark run the *same* molecules — a second geometry under the same
+/// name would be a second workload, and every number is quoted per workload.
+pub fn water_atoms() -> Vec<AtomSpec> {
+    vec![
+        AtomSpec::from_angstrom("O", [0.0, 0.0, 0.0]).unwrap(),
+        AtomSpec::from_angstrom("H", [0.0, 0.757, 0.587]).unwrap(),
+        AtomSpec::from_angstrom("H", [0.0, -0.757, 0.587]).unwrap(),
+    ]
+}
+
+pub fn methane_atoms() -> Vec<AtomSpec> {
+    let d = 0.629;
+    vec![
+        AtomSpec::from_angstrom("C", [0.0, 0.0, 0.0]).unwrap(),
+        AtomSpec::from_angstrom("H", [d, d, d]).unwrap(),
+        AtomSpec::from_angstrom("H", [-d, -d, d]).unwrap(),
+        AtomSpec::from_angstrom("H", [-d, d, -d]).unwrap(),
+        AtomSpec::from_angstrom("H", [d, -d, -d]).unwrap(),
+    ]
+}
+
+pub fn sulfur_dioxide_atoms() -> Vec<AtomSpec> {
+    let (r, half) = (1.4308_f64, 59.665_f64.to_radians());
+    let (y, z) = (r * half.sin(), r * half.cos());
+    vec![
+        AtomSpec::from_angstrom("S", [0.0, 0.0, 0.0]).unwrap(),
+        AtomSpec::from_angstrom("O", [0.0, y, z]).unwrap(),
+        AtomSpec::from_angstrom("O", [0.0, -y, z]).unwrap(),
+    ]
+}
+
+/// Benzene, D6h, in the xy plane: r(C-C) = 1.397 A, r(C-H) = 1.084 A.
+///
+/// The many-shell GTH fixture. A GTH-MOLOPT atom carries two or three
+/// shells, so H2O is 7 shells and 406 quartets — too few to load a device
+/// grid or to time. Benzene is 30 shells and ~108 k canonical quartets, every
+/// one of them generally contracted.
+pub fn benzene_atoms() -> Vec<AtomSpec> {
+    let (rc, rh) = (1.397_f64, 1.397_f64 + 1.084_f64);
+    let mut atoms = Vec::with_capacity(12);
+    for k in 0..6 {
+        let theta = f64::from(k) * std::f64::consts::PI / 3.0;
+        let (s, c) = theta.sin_cos();
+        atoms.push(AtomSpec::from_angstrom("C", [rc * c, rc * s, 0.0]).unwrap());
+    }
+    for k in 0..6 {
+        let theta = f64::from(k) * std::f64::consts::PI / 3.0;
+        let (s, c) = theta.sin_cos();
+        atoms.push(AtomSpec::from_angstrom("H", [rh * c, rh * s, 0.0]).unwrap());
+    }
+    atoms
+}
+
 /// H2O at the plan's reference geometry. 12 shells / 24 spherical AOs in
 /// def2-SVP; 19 / 43 in def2-TZVP (pinned in `cintx-basis`'s `raw.rs` tests).
 pub fn water(basis: StandardBasis) -> Molecule {
-    Molecule::new(
-        vec![
-            AtomSpec::from_angstrom("O", [0.0, 0.0, 0.0]).unwrap(),
-            AtomSpec::from_angstrom("H", [0.0, 0.757, 0.587]).unwrap(),
-            AtomSpec::from_angstrom("H", [0.0, -0.757, 0.587]).unwrap(),
-        ],
-        basis,
-    )
+    Molecule::new(water_atoms(), basis)
 }
 
 /// CH4, tetrahedral. Five centres in a light basis: the fixture that loads the
 /// *many-pair* end of the work list rather than the high-`l` end.
 pub fn methane(basis: StandardBasis) -> Molecule {
-    let d = 0.629;
-    Molecule::new(
-        vec![
-            AtomSpec::from_angstrom("C", [0.0, 0.0, 0.0]).unwrap(),
-            AtomSpec::from_angstrom("H", [d, d, d]).unwrap(),
-            AtomSpec::from_angstrom("H", [-d, -d, d]).unwrap(),
-            AtomSpec::from_angstrom("H", [-d, d, -d]).unwrap(),
-            AtomSpec::from_angstrom("H", [d, -d, -d]).unwrap(),
-        ],
-        basis,
-    )
+    Molecule::new(methane_atoms(), basis)
 }
 
 /// SO2 at its experimental geometry (r(S-O) = 1.4308 A, angle 119.33 deg).
@@ -57,16 +94,31 @@ pub fn methane(basis: StandardBasis) -> Molecule {
 /// TZVP timing are too thin to weigh anything.
 pub fn sulfur_dioxide(basis: StandardBasis) -> Molecule {
     // Half-angle 59.665 deg; y = r sin, z = r cos, S at the origin.
-    let (r, half) = (1.4308_f64, 59.665_f64.to_radians());
-    let (y, z) = (r * half.sin(), r * half.cos());
-    Molecule::new(
-        vec![
-            AtomSpec::from_angstrom("S", [0.0, 0.0, 0.0]).unwrap(),
-            AtomSpec::from_angstrom("O", [0.0, y, z]).unwrap(),
-            AtomSpec::from_angstrom("O", [0.0, -y, z]).unwrap(),
-        ],
-        basis,
-    )
+    Molecule::new(sulfur_dioxide_atoms(), basis)
+}
+
+/// The GTH-MOLOPT workloads, as raw arrays (`GthBasis` is not wired into
+/// `Molecule`; see `cintx-basis/data/gth/README.md`).
+///
+/// One entry per `(molecule, basis)` the GTH benchmark and parity tests run,
+/// so the two describe the same work lists. `TZVP-MOLOPT-GTH` covers the nine
+/// elements of the original paper, which includes every atom here.
+#[cfg(feature = "gth")]
+pub fn gth_workloads() -> Vec<(String, RawArrays)> {
+    use cintx_basis::{GthBasis, to_raw_arrays_gth};
+    let mut out = Vec::new();
+    for basis in [GthBasis::DzvpMoloptSr, GthBasis::TzvpMolopt] {
+        for (name, atoms) in [
+            ("H2O", water_atoms()),
+            ("CH4", methane_atoms()),
+            ("SO2", sulfur_dioxide_atoms()),
+            ("C6H6", benzene_atoms()),
+        ] {
+            let arrays = to_raw_arrays_gth(&atoms, basis).expect("GTH raw arrays");
+            out.push((format!("{name} / {}", basis.name()), arrays));
+        }
+    }
+    out
 }
 
 pub fn shell_l(arrays: &RawArrays, shell: usize) -> usize {

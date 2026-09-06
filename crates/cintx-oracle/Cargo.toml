@@ -26,6 +26,10 @@ rocm = ["cintx-compat/rocm"]
 # runs to change that, gated `#[ignore]` behind `CINTX_CUDA_ORACLE=1` exactly as
 # the ROCm suite is.
 cuda = ["cintx-compat/cuda"]
+# The GTH-MOLOPT fixtures (`gth_*` tests and the GTH rows of the throughput
+# benchmark). Opt-in for the same reason `cintx-basis/gth` is: the vendored
+# CP2K data is GPLv2 and a default build must not embed it.
+gth = ["cintx-basis/gth"]
 # Task 33-03: unlocks the inline extended Rys entry for the families that
 # have been flipped, so their parity gates can run against it.
 extended-device-rys = [

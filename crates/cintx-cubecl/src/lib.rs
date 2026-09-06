@@ -63,10 +63,10 @@ pub use kernels::pair_table::{
 pub use kernels::two_electron::{
     ACC_SLOTS_DEFAULT, BatchExecutionStats as TwoEBatchStats, BatchOptions, BatchShell, ChunkSink,
     ChunkView, DEFAULT_CHUNK_CART_BYTES, PrewarmReport, ResidentBasis, ResidentTwoEBasis,
-    TwoEBatchOptions, TwoEBatchOutput, accumulator_slots_max, evaluate_2e_quartet_batch,
-    evaluate_2e_quartet_batch_into, evaluate_2e_quartet_batch_resident,
+    TwoEBatchOptions, TwoEBatchOutput, accumulator_slots_max, contraction_mode,
+    evaluate_2e_quartet_batch, evaluate_2e_quartet_batch_into, evaluate_2e_quartet_batch_resident,
     evaluate_2e_quartet_batch_with, prewarm_2e_quartet_classes, prewarm_2e_work_list,
-    schwarz_bounds, set_accumulator_slots_max, stream_2e_quartet_batch,
+    schwarz_bounds, set_accumulator_slots_max, set_staged_contraction, stream_2e_quartet_batch,
 };
 pub use memory_probe::{DeviceMemoryProbe, residency_profiling_enabled};
 pub use plane::{

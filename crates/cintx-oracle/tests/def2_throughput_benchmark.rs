@@ -244,11 +244,20 @@ fn flush_artifact(run: &str) {
         "device_residency_profiled": cintx_cubecl::residency_profiling_enabled(),
         "cases": rows,
     });
-    match cintx_oracle::fixtures::write_pretty_json_artifact(
-        "/mnt/data/cintx_def2_throughput.json",
-        "cintx_def2_throughput.json",
-        &artifact,
-    ) {
+    // The GTH rows are a separate record — same schema, different basis family —
+    // so a GTH run must not overwrite the def2 artifact it is compared against.
+    let (required, fallback) = if run.starts_with("gth") {
+        (
+            "/mnt/data/cintx_gth_throughput.json",
+            "cintx_gth_throughput.json",
+        )
+    } else {
+        (
+            "/mnt/data/cintx_def2_throughput.json",
+            "cintx_def2_throughput.json",
+        )
+    };
+    match cintx_oracle::fixtures::write_pretty_json_artifact(required, fallback, &artifact) {
         Ok(written) => println!("\nthroughput artifact: {}", written.actual_path.display()),
         Err(error) => eprintln!("\nthroughput artifact NOT written: {error}"),
     }
@@ -707,16 +716,22 @@ fn batch_shells(arrays: &RawArrays) -> Vec<cintx_cubecl::kernels::two_electron::
 }
 
 fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
+    let arrays = to_raw_arrays(molecule).expect("raw arrays");
+    run_batch_case_arrays(label, &arrays, tolerance);
+}
+
+/// [`run_batch_case`] over arrays the caller built — the GTH fixtures come
+/// from `to_raw_arrays_gth` rather than a `Molecule`.
+fn run_batch_case_arrays(label: &str, arrays: &RawArrays, tolerance: f64) {
     use cintx_cubecl::backend::ResolvedBackend;
     use cintx_cubecl::kernels::two_electron::evaluate_2e_quartet_batch;
     use cintx_runtime::{BackendIntent, BackendKind};
 
-    let arrays = to_raw_arrays(molecule).expect("raw arrays");
     let basis = BasisView::new(&arrays.atm, &arrays.bas, &arrays.env);
     let pairs = enumerate_pairs(&basis);
     let quartets = enumerate_quartets(&pairs);
 
-    let mut vendor = VendorEngine { arrays: &arrays };
+    let mut vendor = VendorEngine { arrays };
     let table = build_schwarz_table(&basis, &pairs, &mut vendor).expect("schwarz table");
     let (kept, _) = screen_quartets(&quartets, &table, tolerance);
 
@@ -755,7 +770,7 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
         ref_secs = ref_secs.min(ref_start.elapsed().as_secs_f64());
     }
 
-    let shells = batch_shells(&arrays);
+    let shells = batch_shells(arrays);
     let list: Vec<[u32; 4]> = kept
         .iter()
         .map(|q| [q.i as u32, q.j as u32, q.k as u32, q.l as u32])
@@ -1033,4 +1048,32 @@ fn def2_batched_throughput() {
     }
 
     flush_artifact("def2_batched_throughput");
+}
+
+/// The GTH-MOLOPT rows: the same molecules under a *generally contracted*
+/// family basis, where every shell of an atom shares one exponent set and
+/// carries two or three contractions. def2 is fully segmented
+/// (`max_nctr_product == 1` everywhere), so this is the first workload to
+/// exercise the kernel's `nctr > 1` arm at all, let alone time it.
+///
+/// ```text
+/// CINTX_ORACLE_BUILD_VENDOR=1 cargo test --release -p cintx-oracle \
+///   --features cpu,extended-device-rys,gth --test def2_throughput_benchmark \
+///   -- --ignored --nocapture gth_batched_throughput
+/// ```
+#[cfg(feature = "gth")]
+#[test]
+#[ignore = "throughput benchmark; run explicitly in release with --ignored"]
+fn gth_batched_throughput() {
+    let scope = std::env::var("CINTX_BENCH_SCOPE").unwrap_or_else(|_| "svp".to_owned());
+    for (label, arrays) in def2_fixtures::gth_workloads() {
+        // Benzene is the heavy fixture; TZVP benzene is ~108 k quartets at
+        // 7^4 primitive quartets and up to 81 contraction blocks each.
+        if label.starts_with("C6H6") && scope != "full" {
+            println!("\n({label} skipped; set CINTX_BENCH_SCOPE=full.)");
+            continue;
+        }
+        run_batch_case_arrays(&format!("{label} (screened 1e-10)"), &arrays, 1e-10);
+    }
+    flush_artifact("gth_batched_throughput");
 }
