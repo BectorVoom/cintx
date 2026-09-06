@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the cooperative G build runs on the whole cube, not on lane 0 (2026-09-07)
+
+`two_electron_scalar_kernel`'s cooperative arm — the shape every GPU backend runs — built the
+whole G tensor inside a `lane == 0` region. Every other lane idled through the Rys roots, the
+VRR and the HRR and joined only for the contraction, so on a 32-lane wavefront 1/32 of the
+machine did the arithmetic-heavy half of the kernel.
+
+The build now splits across the cube, and it splits cleanly. `build_2e_shape` lays the G tensor
+out root-fastest with every stride a multiple of `nroots` (`di = nroots`, `dk = nroots·dli`, and
+so the VRR's `g2d_ijmax`/`g2d_klmax` too), so a recurrence at one `(axis, root)` pair never
+leaves that pair's slice: `3 · nroots` independent tasks, handed out `task % lanes == lane`,
+with no reduction. Each lane computes the Rys roots itself (a pure function of `x_rys` into
+private storage — free on lanes that were idle) and writes its own slice's seed, so **no barrier
+was added**; the only one is the pre-existing barrier before the contraction, which does read
+every axis.
+
+**Every element is still computed by exactly the expression that computed it before, on a
+different lane, so the gate is bit-identity** rather than a divergence budget — which is what
+the original sketch (distribute primitive quartets, reduce across planes) would have cost.
+`CINTX_2E_COOP_BUILD=lane0` restores the old shape as a runtime scalar for the A/B.
+
+Measured on ROCm (gfx1151, best of 3, interleaved in one process, two independent runs):
+
+| workload | quartets | lane-0 (ms) | split (ms) | speedup |
+|---|---|---|---|---|
+| H2O / def2-SVP | 3 081 | 133.3 | 119.2 | 1.12x (1.10x) |
+| H2O / DZVP-MOLOPT-SR | 406 | 1 669.0 | 1 310.3 | 1.27x (1.28x) |
+| H2O / TZVP-MOLOPT | 406 | 6 481.4 | 5 084.0 | 1.27x (1.27x) |
+
+Verified without a GPU: `two_e_cooperative_arm` pins the decomposition and cube width in-process
+and holds the per-unit, split-cooperative and lane-0-cooperative arms to bit-identity, all three
+against vendored libcint, over one quartet from every launch class of three bases — five seconds
+on the CPU backend, no device needed. The CPU default path is untouched (the per-unit shape
+collapses the ownership map to the original loop) and reproduces its GTH numbers within noise.
+
+The same change timed S3's other half, the shared-memory G slab, for the first time: 1.01x /
+0.98x / 0.96x against the split global slab, bit-identical. **It stays off by default, now on a
+measurement rather than on the defect report it used to rest on.** The reason is structural —
+`SharedMemory::new` takes a comptime extent, so the kernel reserves the full 48 KiB per cube
+whatever class it runs, and against gfx1151's 64 KiB LDS that is one workgroup per compute unit.
+
+### Not done — the family-quartet kernel (F1), and the measurement that refuses it
+
+F1 would have served all 81 shell classes of a family-basis atom quartet from one G build. It
+fails on three independent grounds, recorded in full at
+`docs/design/gth_molopt_speed_memory_plan.md` §9.3: the G tensor's layout key is the whole
+`(li,lj,lk,ll)` and not `nroots` (`(1,1,1,1)` and `(2,2,0,0)` share `nroots = 3` with `g_size`
+108 against 45); `nroots` itself differs per class, so the Rys roots are not shared and sharing
+them means re-quadraturing low-`l` classes away from libcint; and, decisively, S3 parallelised
+the G build and nothing else, so its speedup inverts to that build's share of the kernel — 13-16%
+on def2-SVP, 23-27% on GTH TZVP. S3 has already taken most of the resulting ceiling, and F1's
+mechanism would pay for the remainder by multiplying the contraction's root loop, the other
+73-87%, by up to 5x. The lever the measurement actually points at is the contraction's memory
+traffic, not another G-build optimisation.
+
 ### Changed — generally contracted quartets contract in libcint's four stages (2026-09-06)
 
 Every def2 workload cintx had been tuned on is segmented (`max_nctr_product == 1` in every

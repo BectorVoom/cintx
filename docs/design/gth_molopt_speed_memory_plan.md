@@ -145,7 +145,9 @@ One expression for the plan and the allocation, as the G slab already had.
 
 ### F — Not taken, recorded for the next pass
 
-- **F1, the family-quartet kernel.** The largest remaining lever and a redesign.
+- **F1, the family-quartet kernel. Attempted, and refused on the evidence — §9.3.**
+  What follows is the case as it was written before S3 measured it; §9.3 is why
+  it does not survive, on three independent grounds.
   In a family basis every shell of an atom shares its exponents, so for one atom
   quartet the primitive pair data, the Rys argument and the Rys roots are identical
   across all `3^4 = 81` `(l_i, l_j, l_k, l_l)` classes (TZVP: s, p, d per atom).
@@ -380,3 +382,152 @@ So there were two different failures under one name:
 - Long GPU jobs on this host should run from a session that does not die with
   the compositor (a TTY, `systemd-run --user --scope`, or a separate login), and
   with `rust-analyzer` not indexing this workspace beside a build.
+
+## 9. S3, and what it settles about F1 (2026-09-07)
+
+### 9.1 S3: the cooperative G build, split across the cube
+
+Until now `two_electron_scalar_kernel`'s cooperative arm — the shape every GPU
+backend runs — built the whole G tensor inside a `lane == 0` region. Every
+other lane in the cube idled from the Rys roots through the VRR and the HRR,
+and joined only for the contraction. On a 32-lane wavefront that is 1/32 of the
+machine doing the part of the kernel that is pure arithmetic.
+
+**The build parallelises with no reduction and no new barrier.** The unit is
+the `(axis, root)` pair. `build_2e_shape` lays the G tensor out root-fastest
+with `di = nroots`, `dk = nroots·dli`, `dl = nroots·dli·dlk`,
+`dj = nroots·dli·dlk·dll`, so *every* stride — including the VRR's
+`g2d_ijmax ∈ {di, dj}` and `g2d_klmax ∈ {dk, dl}` — is a multiple of `nroots`.
+A VRR at `(axis, root)` therefore touches only `off + root + n·dn + m·dm`,
+which never leaves that root's residue class, and `off = gx_off + axis·g_size`
+keeps the axes apart. The HRR at `(axis, root)` reads and writes the same
+slice. So there are `3 · nroots` independent tasks, handed out
+`task % lanes == lane`.
+
+Three consequences, and the third is the one that matters:
+
+- The Rys roots are computed by **every** lane rather than broadcast. They are
+  a pure function of `x_rys` into per-work-item private arrays, so this needs
+  no barrier and no shared storage, and the redundancy is free precisely where
+  it is paid — those lanes were idle.
+- The seed moves inside the task. The lane that owns `(axis, root)` writes that
+  slice's seed and is the only lane that reads it, so no barrier separates the
+  seed from the VRR, or the VRR from the HRR. The one barrier that remains is
+  the pre-existing one before the contraction, which genuinely does read every
+  axis.
+- **Each element is still computed by exactly the expression that computed it
+  before, on a different lane. The result is bit-identical**, so the gate is
+  bit-identity rather than a divergence budget — which is what the plan's
+  original S3 sketch (distribute *primitive quartets*, reduce across planes)
+  would have cost.
+
+`CINTX_2E_COOP_BUILD=lane0` restores the old shape as a runtime scalar, so the
+A/B is one compiled program.
+
+**Verified without a GPU.** `two_e_cooperative_arm.rs` pins the decomposition
+and the cube width in-process (`set_two_e_per_unit`, `set_two_e_cube_dim`) and
+holds the per-unit arm, the split cooperative arm and the lane-0 cooperative
+arm to bit-identity, with all three checked against vendored libcint. It runs
+on the CPU backend in five seconds, over one quartet from each launch class of
+H2O in def2-SVP, DZVP-MOLOPT-SR and TZVP-MOLOPT — so all four comptime HRR
+branches and several Rys orders. That a GPU is where S3 *pays* does not make it
+where S3 has to be *checked*, which matters on a host whose display GPU cannot
+survive a long dispatch (§8.6).
+
+**Measured on ROCm** (gfx1151, cooperative arm, best of 3, interleaved in one
+process, `CINTX_2E_CHUNK_QUARTETS=128`, two independent runs):
+
+| workload | quartets | lane-0 (ms) | split (ms) | speedup | run 2 |
+|---|---|---|---|---|---|
+| H2O / def2-SVP | 3 081 | 133.3 | 119.2 | **1.12x** | 1.10x |
+| H2O / DZVP-MOLOPT-SR | 406 | 1 669.0 | 1 310.3 | **1.27x** | 1.28x |
+| H2O / TZVP-MOLOPT | 406 | 6 481.4 | 5 084.0 | **1.27x** | 1.27x |
+
+Bit-identical in every row. The CPU default path is untouched: the per-unit
+shape collapses the ownership map to `r_first == 0` and a step of one, which is
+the loop that was there before, and the GTH CPU A/B reproduces its §8.2 numbers
+within noise (30.3/106.6/126.0/127.0/401.1/519.0 ms against
+30.7/106.0/128.9/130.4/397.2/517.6).
+
+### 9.2 S3's other half: the shared-memory G slab does not pay here
+
+The plan's S3 also asked for the cooperative G slab in shared memory. That
+integration existed already and was believed broken by a backend defect; the
+defect was cintx's own (§8 of the def2 plan's note, corrected 2026-09-06), and
+with it fixed the slab is correct. It had never been *timed*.
+
+Timed now, in the same interleaved A/B, against the split global slab:
+
+| workload | split, global (ms) | shared (ms) | ratio |
+|---|---|---|---|
+| H2O / def2-SVP | 119.2 | 118.4 | 1.01x |
+| H2O / DZVP-MOLOPT-SR | 1 310.3 | 1 338.2 | 0.98x |
+| H2O / TZVP-MOLOPT | 5 084.0 | 5 282.8 | 0.96x |
+
+Bit-identical, and a wash to a small loss. **It stays off by default, now on a
+measurement rather than on a defect report.** The likely reason is occupancy
+and it is structural: `SharedMemory::new` takes a *comptime* extent, so the
+kernel allocates the full `SHARED_G_SLOTS` (6 144 f64 = 48 KiB) per cube
+whatever class it is running, and against gfx1151's 64 KiB of LDS that admits
+one workgroup per compute unit. The traffic saved is real; the latency hiding
+lost is worth about as much. Sizing the allocation to the class instead would
+mean one compiled program per `g_size`, which is exactly the launch-class merge
+(Task 35-M1) that took def2-SVP from 69 dispatches to 16 — so it is a trade
+against a measured win, not a free improvement.
+
+### 9.3 F1 is refused, on three independent grounds
+
+F1 proposed walking *atom* quartets and serving all `3^4 = 81` shell classes of
+a family-basis atom quartet from one G build. It does not survive contact with
+`build_2e_shape` or with §9.1's measurement, and the third ground alone settles
+it.
+
+**(a) The G tensor's layout key is the full `(li, lj, lk, ll)`, not `nroots`.**
+`g2d_ijmax` is `di` when `ibase` and `dj` otherwise; `g2d_klmax` is `dk` when
+`kbase` and `dl` otherwise; and `dli`/`dlj`/`dlk`/`dll` depend on all four
+angular momenta and on which side of the strict-`>` branch the pair falls.
+`(1,1,1,1)` and `(2,2,0,0)` share `nroots = 3` and have `g_size` 108 against 45,
+with different VRR strides. `(2,0,0,0)` and `(0,2,0,0)` share `nroots = 2` *and*
+`g_size = 6` and still differ, because `ibase` flips. So "one tensor at the
+atom quartet's `l_max` contains every lower class's entries" is false as
+stated: the *values* exist but at offsets no lower class can address, and
+recovering them costs a restride copy of about what the build costs.
+
+**(b) The Rys roots are not shared either.** `nroots = (li+lj+lk+ll)/2 + 1`, so
+the 81 classes of a TZVP-MOLOPT atom quartet span `nroots` 1 through 5, and a
+5-point rule's nodes are not a superset of a 1-point rule's. Sharing means
+evaluating every class at the atom quartet's maximum order. That is
+mathematically valid and numerically *different* — a different quadrature order
+rounds differently — so it would move exactly the low-`l` classes that cintx's
+oracle gates are tightest on away from libcint, to buy speed.
+
+**(c) The measurement leaves it nothing to win.** S3 parallelised the G build
+and nothing else, so its speedup inverts to the G build's share of the
+cooperative kernel. At `3 · nroots` tasks, the parallel factor is 3 to 15
+across the classes present; over that range Amdahl puts the G build at
+
+| workload | S3 speedup | G-build share of the kernel | ceiling for *any* G-build optimisation |
+|---|---|---|---|
+| H2O / def2-SVP | 1.12x | 13 – 16 % | 1.15 – 1.19x |
+| H2O / TZVP-MOLOPT | 1.27x | 23 – 27 % | 1.30 – 1.37x |
+
+**S3 has already taken most of that ceiling.** What is left for F1 is a few
+percent — and F1's mechanism pays for it by multiplying the contraction's root
+loop, which is the other 73–87 %, by `nroots_max / nroots_class`: up to 5x on
+an `(ss|ss)` class, roughly 2x averaged over a TZVP-MOLOPT atom quartet. It
+trades at most a few percent for tens of percent, in the wrong direction.
+
+**What the same measurement does point at.** Three quarters of the cooperative
+kernel is the contraction, and its inner statement is
+`sum += gx * gy * gz` over `block_len · nroots` triples — three loads per two
+flops, against a G tensor in global memory. That is a memory-bound loop, which
+is why §9.2 tried the obvious fix and why the reason it failed (a comptime
+shared-memory extent forcing 48 KiB per cube) is the thing to attack. The
+honest next lever is **not** a family-quartet kernel; it is either a
+class-sized shared allocation bought at the cost of the launch merge, or
+vectorising the contraction's root loop (D3.3, still open from the def2 plan
+and explicitly sequenced after S2 for this reason). Both are measurable against
+the A/B this section leaves in place.
+
+**F2 and F3 are unchanged** and stay open; F2 (private `gctri`) is now bounded
+by the same 73–87 % that bounds F1.
