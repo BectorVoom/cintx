@@ -64,27 +64,58 @@
 
 use cubecl::prelude::*;
 
-/// Read the `width`-wide root run at `base` as one vector.
+/// Read `width` lanes at `base + lane * stride` as one vector.
 ///
-/// The lanes are gathered element by element, so `base` needs only to start a
-/// *contiguous* run — no alignment. That is deliberate rather than lazy: the
-/// per-slot slab stride pads to 8 `f64` (`g_slab_stride`, `three_c2e_slab_stride`),
-/// which is not a multiple of an odd `nroots`, so `slot * g_stride` is not
-/// `nroots`-aligned and a reinterpreting vector load would read across run
-/// boundaries for slots past the first. The gather cannot; and the win here is
-/// the dependency chain, not the load width.
+/// The lanes are gathered element by element, so nothing is required of `base`
+/// or `stride` beyond addressing the right elements — no alignment, and no
+/// contiguity either. That is deliberate rather than lazy on both counts: the
+/// per-slot slab stride pads to 8 `f64` (`g_slab_stride`,
+/// `three_c2e_slab_stride`), which is not a multiple of an odd `nroots`, so
+/// `slot * g_stride` is not `nroots`-aligned and a reinterpreting vector load
+/// would read across run boundaries for slots past the first; and the lane axis
+/// is not always contiguous — `sigma_1e_nuc` vectorizes over its three
+/// Cartesian axis slabs, which sit a whole `g_per_axis` apart. The gather
+/// handles both, and the win here is the dependency chain, not the load width.
+#[cube]
+pub fn lanes_load<F: Float, N: Size>(
+    g: &Slice<F, ReadWrite>,
+    base: u32,
+    stride: u32,
+    #[comptime] width: usize,
+) -> Vector<F, N> {
+    let mut run = Vector::<F, N>::empty();
+    #[unroll]
+    for r in 0..comptime!(width as u32) {
+        run[r as usize] = g[(base + r * stride) as usize];
+    }
+    run
+}
+
+/// Write `value`'s lanes to `base + lane * stride`.
+#[cube]
+pub fn lanes_store<F: Float, N: Size>(
+    g: &mut Slice<F, ReadWrite>,
+    base: u32,
+    stride: u32,
+    value: Vector<F, N>,
+    #[comptime] width: usize,
+) {
+    #[unroll]
+    for r in 0..comptime!(width as u32) {
+        g[(base + r * stride) as usize] = value[r as usize];
+    }
+}
+
+/// The `width`-wide root run at `base` — [`lanes_load`] at stride one, which is
+/// what a root-fastest G layout gives (`di = nroots`, and `dk`/`dl`/`dj` are
+/// multiples of it).
 #[cube]
 pub fn roots_load<F: Float, N: Size>(
     g: &Slice<F, ReadWrite>,
     base: u32,
     #[comptime] width: usize,
 ) -> Vector<F, N> {
-    let mut run = Vector::<F, N>::empty();
-    #[unroll]
-    for r in 0..comptime!(width as u32) {
-        run[r as usize] = g[(base + r) as usize];
-    }
-    run
+    lanes_load::<F, N>(g, base, 1u32, width)
 }
 
 /// Write `value` over the `width`-wide root run at `base`.
@@ -95,10 +126,7 @@ pub fn roots_store<F: Float, N: Size>(
     value: Vector<F, N>,
     #[comptime] width: usize,
 ) {
-    #[unroll]
-    for r in 0..comptime!(width as u32) {
-        g[(base + r) as usize] = value[r as usize];
-    }
+    lanes_store::<F, N>(g, base, 1u32, value, width);
 }
 
 /// The 2D VRR fill for one axis, every Rys root at once — **bra-raising**
