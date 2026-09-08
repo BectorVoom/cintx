@@ -2381,21 +2381,22 @@ fn per_unit_slot_bounds(cost: &[u64], n_slots: usize, balanced: bool) -> Vec<u32
     for s in 1..n_slots {
         // The share this slot's range should end at, in cost units.
         let target = total * s as u128 / n_slots as u128;
-        // Advance to the first row whose prefix reaches the target, then step
-        // back one when the previous cut was closer — whole rows only.
+        // Advance to the first row whose prefix reaches the target, then take
+        // one more when that cut lands closer — whole rows only.
         while cursor < n && prefix + u128::from(cost[cursor]) <= target {
             prefix += u128::from(cost[cursor]);
             cursor += 1;
         }
-        // `prefix > target` when an earlier slot's step-back already carried
-        // the cursor past this slot's share — which happens whenever slots
-        // outnumber rows, since consecutive targets are then closer together
-        // than one row is wide. The cursor is already beyond the ideal cut, so
-        // there is no closer row to step to, and the comparison below would
-        // underflow computing the distance to a target it has passed.
-        if cursor < n && prefix <= target {
-            let before = target - prefix;
-            let after = prefix + u128::from(cost[cursor]) - target;
+        // Distances, not differences. `prefix` can already sit *past* the
+        // target: an earlier slot's step-back carries the cursor beyond every
+        // target it overshot, which happens whenever slots outnumber rows,
+        // since consecutive targets are then closer together than one row is
+        // wide. `abs_diff` keeps that case inside the same expression rather
+        // than underflowing it, and it answers correctly — a cursor already
+        // past the target only moves further away by taking another row.
+        if cursor < n {
+            let before = prefix.abs_diff(target);
+            let after = (prefix + u128::from(cost[cursor])).abs_diff(target);
             if after < before {
                 prefix += u128::from(cost[cursor]);
                 cursor += 1;
@@ -11403,9 +11404,88 @@ mod partition_tests {
         covers_every_row_once(&per_unit_slot_bounds(&[5], 4, true), 1, 4);
         covers_every_row_once(&per_unit_slot_bounds(&[1, 2, 3], 1, true), 3, 1);
         // A slot count above the row count leaves slots empty, never
-        // double-booked.
+        // double-booked — and pins the cuts, not just their shape. Consecutive
+        // targets are closer together than one row is wide here, so a cut that
+        // steps past its target is still the nearest one for the slots after
+        // it; the repeated bounds below are that, and every one of them is a
+        // slot that gets no rows.
+        //
+        // The exact vector is the assertion that matters: a `target - prefix`
+        // that wrapped instead of measuring a distance also satisfies
+        // `covers_every_row_once`, and only differs here.
         let bounds = per_unit_slot_bounds(&[3, 1, 4, 1, 5], 16, true);
         covers_every_row_once(&bounds, 5, 16);
+        assert_eq!(
+            bounds,
+            vec![0, 0, 0, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5]
+        );
+    }
+
+    /// Every cut must be the row boundary nearest its slot's share, out of the
+    /// one before it and the one after — the property the greedy exists to
+    /// deliver, checked against the bounds themselves rather than by replaying
+    /// the loop that produced them.
+    ///
+    /// Swept exhaustively over the small shapes, which is where the arithmetic
+    /// goes wrong: an overshooting cut is only reachable when slots outnumber
+    /// rows, and `balanced_bounds_give_the_expensive_tail_fewer_rows` never
+    /// gets there.
+    #[test]
+    fn balanced_cuts_are_the_nearest_row_boundary() {
+        fn check(cost: &[u64], n_slots: usize) {
+            let bounds = per_unit_slot_bounds(cost, n_slots, true);
+            covers_every_row_once(&bounds, cost.len(), n_slots);
+
+            let total: u128 = cost.iter().map(|&c| u128::from(c)).sum();
+            let prefix: Vec<u128> = cost
+                .iter()
+                .scan(0_u128, |acc, &c| {
+                    *acc += u128::from(c);
+                    Some(*acc)
+                })
+                .collect();
+            let at = |cut: usize| if cut == 0 { 0 } else { prefix[cut - 1] };
+
+            for (s, &cut) in bounds.iter().enumerate().take(n_slots).skip(1) {
+                let cut = cut as usize;
+                let target = total * s as u128 / n_slots as u128;
+                let here = at(cut).abs_diff(target);
+                if cut > 0 {
+                    assert!(
+                        here <= at(cut - 1).abs_diff(target),
+                        "cost={cost:?} n_slots={n_slots} slot {s}: cut {cut} is further \
+                         from {target} than {} is ({bounds:?})",
+                        cut - 1
+                    );
+                }
+                if cut < cost.len() {
+                    assert!(
+                        here <= at(cut + 1).abs_diff(target),
+                        "cost={cost:?} n_slots={n_slots} slot {s}: cut {cut} is further \
+                         from {target} than {} is ({bounds:?})",
+                        cut + 1
+                    );
+                }
+            }
+        }
+
+        // Every cost vector over {1, 2, 3} up to four rows, against every slot
+        // count up to eight — 968 shapes, all of the slots-outnumber-rows kind
+        // among them.
+        let mut cost = Vec::new();
+        for len in 0..=4usize {
+            for encoded in 0..3usize.pow(len as u32) {
+                cost.clear();
+                let mut rest = encoded;
+                for _ in 0..len {
+                    cost.push((rest % 3 + 1) as u64);
+                    rest /= 3;
+                }
+                for n_slots in 1..=8usize {
+                    check(&cost, n_slots);
+                }
+            }
+        }
     }
 
     #[test]
