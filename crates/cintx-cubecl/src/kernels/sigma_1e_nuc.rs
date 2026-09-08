@@ -34,7 +34,6 @@ use crate::kernels::one_electron::{
     ONE_E_DERIV_SHAPE_STRIDE, OneEDerivLaunchGroup, one_e_deriv_single_pair_group,
     one_e_g_slab_stride, one_e_launch_geometry, one_e_per_unit,
 };
-use crate::math::root_vec::{lanes_load, lanes_store};
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use cintx_core::cintxRsError;
 use cubecl::Runtime;
@@ -78,75 +77,6 @@ fn nuc_hrr_axis<F: Float>(g: &mut Array<F>, base: u32, rirj: F, dj: u32, li_max:
             let idx_hi = base + (j - 1u32) * dj + (i + 1u32);
             let idx_lo = base + (j - 1u32) * dj + i;
             g[idx_out as usize] = g[idx_hi as usize] + rirj * g[idx_lo as usize];
-            i += 1u32;
-        }
-        j += 1u32;
-    }
-}
-
-/// [`nuc_vrr_axis`] for all three Cartesian axes at once (V1).
-///
-/// The three axis slabs sit `axis_stride` apart at `gx`, and their recurrences
-/// are independent — same shape, same trip count, `c00` the only thing that
-/// differs. Folding them into `Vector` lanes collapses three serial two-term
-/// chains into one; `b10` is axis-independent and broadcasts.
-///
-/// This kernel cannot take the root-axis form the 2e/3c2e/2c2e engines use:
-/// its G tensor carries no root index at all. The roots are the *outer* loop
-/// over the whole build-and-contract pipeline, and the slab is zeroed and
-/// rebuilt inside it, so there is no `nroots`-run to load. The axis dimension
-/// is the one that is there.
-///
-/// Elementwise ops on the same operands in the same order, so the slab is
-/// bit-identical to three [`nuc_vrr_axis`] calls.
-#[cube]
-fn nuc_vrr_axes<F: Float>(
-    g: &mut Slice<F, ReadWrite>,
-    gx: u32,
-    axis_stride: u32,
-    c00: Vector<F, Const<3>>,
-    b10: F,
-    nmax: u32,
-) {
-    if nmax >= 1u32 {
-        let g0 = lanes_load::<F, Const<3>>(g, gx, axis_stride, 3usize);
-        lanes_store::<F, Const<3>>(g, gx + 1u32, axis_stride, c00 * g0, 3usize);
-        let mut n = 1u32;
-        while n < nmax {
-            let nf: F = F::cast_from(n);
-            let lo = lanes_load::<F, Const<3>>(g, gx + n - 1u32, axis_stride, 3usize);
-            let hi = lanes_load::<F, Const<3>>(g, gx + n, axis_stride, 3usize);
-            let next =
-                Vector::<F, Const<3>>::new(nf) * Vector::<F, Const<3>>::new(b10) * lo + c00 * hi;
-            lanes_store::<F, Const<3>>(g, gx + n + 1u32, axis_stride, next, 3usize);
-            n += 1u32;
-        }
-    }
-}
-
-/// [`nuc_hrr_axis`] for all three Cartesian axes at once (V1); `rirj` is the
-/// only per-axis operand.
-#[cube]
-fn nuc_hrr_axes<F: Float>(
-    g: &mut Slice<F, ReadWrite>,
-    gx: u32,
-    axis_stride: u32,
-    rirj: Vector<F, Const<3>>,
-    dj: u32,
-    li_max: u32,
-    lj: u32,
-) {
-    let mut j = 1u32;
-    while j <= lj {
-        let i_max = li_max - j;
-        let mut i = 0u32;
-        while i <= i_max {
-            let idx_out = gx + j * dj + i;
-            let idx_hi = gx + (j - 1u32) * dj + (i + 1u32);
-            let idx_lo = gx + (j - 1u32) * dj + i;
-            let hi = lanes_load::<F, Const<3>>(g, idx_hi, axis_stride, 3usize);
-            let lo = lanes_load::<F, Const<3>>(g, idx_lo, axis_stride, 3usize);
-            lanes_store::<F, Const<3>>(g, idx_out, axis_stride, hi + rirj * lo, 3usize);
             i += 1u32;
         }
         j += 1u32;
@@ -447,18 +377,13 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
                             g[gy as usize] = F::new(1.0_f32);
                             g[gz as usize] = fac1 * w_n;
 
-                            let mut c00v = Vector::<F, Const<3>>::empty();
-                            c00v[0usize] = c00x;
-                            c00v[1usize] = c00y;
-                            c00v[2usize] = c00z;
-                            let mut rirjv = Vector::<F, Const<3>>::empty();
-                            rirjv[0usize] = rirjx;
-                            rirjv[1usize] = rirjy;
-                            rirjv[2usize] = rirjz;
-                            let mut gs = g.to_slice_mut();
-                            nuc_vrr_axes::<F>(&mut gs, gx, g_per_axis, c00v, rt, nmax);
+                            nuc_vrr_axis::<F>(g, gx, c00x, rt, nmax);
+                            nuc_vrr_axis::<F>(g, gy, c00y, rt, nmax);
+                            nuc_vrr_axis::<F>(g, gz, c00z, rt, nmax);
                             if lj_ext >= 1u32 {
-                                nuc_hrr_axes::<F>(&mut gs, gx, g_per_axis, rirjv, dj, nmax, lj_ext);
+                                nuc_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                                nuc_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                                nuc_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
                             }
 
                             let mut ci = 0u32;
@@ -760,18 +685,13 @@ fn sigma_nuc_gauge_kernel<F: Float + CubeElement>(
                             g[gy as usize] = F::new(1.0_f32);
                             g[gz as usize] = fac1 * w_n;
 
-                            let mut c00v = Vector::<F, Const<3>>::empty();
-                            c00v[0usize] = c00x;
-                            c00v[1usize] = c00y;
-                            c00v[2usize] = c00z;
-                            let mut rirjv = Vector::<F, Const<3>>::empty();
-                            rirjv[0usize] = rirjx;
-                            rirjv[1usize] = rirjy;
-                            rirjv[2usize] = rirjz;
-                            let mut gs = g.to_slice_mut();
-                            nuc_vrr_axes::<F>(&mut gs, gx, g_per_axis, c00v, rt, nmax);
+                            nuc_vrr_axis::<F>(g, gx, c00x, rt, nmax);
+                            nuc_vrr_axis::<F>(g, gy, c00y, rt, nmax);
+                            nuc_vrr_axis::<F>(g, gz, c00z, rt, nmax);
                             if lj_ext >= 1u32 {
-                                nuc_hrr_axes::<F>(&mut gs, gx, g_per_axis, rirjv, dj, nmax, lj_ext);
+                                nuc_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                                nuc_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                                nuc_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
                             }
 
                             // Accumulate this root's 12-comp cg/giao nucsp gout into
@@ -1387,234 +1307,4 @@ pub(crate) fn run_sigma_nuc_on_backend(
     )
     .pop()
     .unwrap_or_default())
-}
-
-#[cfg(test)]
-mod axis_vector_tests {
-    use super::*;
-
-    /// Both arms over separate slabs: `g_scalar` gets three [`nuc_vrr_axis`] /
-    /// [`nuc_hrr_axis`] calls, `g_vector` the fused [`nuc_vrr_axes`] /
-    /// [`nuc_hrr_axes`] pair, from the same seeds and coefficients.
-    #[cube(launch_unchecked)]
-    #[allow(clippy::too_many_arguments)]
-    fn axis_vrr_probe_kernel<F: Float + CubeElement>(
-        g_scalar: &mut Array<F>,
-        g_vector: &mut Array<F>,
-        c00x: F,
-        c00y: F,
-        c00z: F,
-        b10: F,
-        rirjx: F,
-        rirjy: F,
-        rirjz: F,
-        seedz: F,
-        axis_stride: u32,
-        dj: u32,
-        nmax: u32,
-        lj: u32,
-        reps: u32,
-        #[comptime] arm: u32,
-    ) {
-        // Seed both slabs identically: gx/gy at one, gz at the weight.
-        #[unroll]
-        for axis in 0..3u32 {
-            let base = axis * axis_stride;
-            let mut seed = F::new(1.0_f32);
-            if axis == 2u32 {
-                seed = seedz;
-            }
-            g_scalar[base as usize] = seed;
-            g_vector[base as usize] = seed;
-        }
-
-        let mut rep = 0u32;
-        while rep < reps {
-            if comptime!(arm != 1u32) {
-                nuc_vrr_axis::<F>(g_scalar, 0u32, c00x, b10, nmax);
-                nuc_vrr_axis::<F>(g_scalar, axis_stride, c00y, b10, nmax);
-                nuc_vrr_axis::<F>(g_scalar, 2u32 * axis_stride, c00z, b10, nmax);
-                if lj >= 1u32 {
-                    nuc_hrr_axis::<F>(g_scalar, 0u32, rirjx, dj, nmax, lj);
-                    nuc_hrr_axis::<F>(g_scalar, axis_stride, rirjy, dj, nmax, lj);
-                    nuc_hrr_axis::<F>(g_scalar, 2u32 * axis_stride, rirjz, dj, nmax, lj);
-                }
-            }
-            if comptime!(arm != 0u32) {
-                run_vector_arm::<F>(
-                    g_vector,
-                    c00x,
-                    c00y,
-                    c00z,
-                    b10,
-                    rirjx,
-                    rirjy,
-                    rirjz,
-                    axis_stride,
-                    dj,
-                    nmax,
-                    lj,
-                );
-            }
-            rep += 1u32;
-        }
-    }
-
-    #[cube]
-    #[allow(clippy::too_many_arguments)]
-    fn run_vector_arm<F: Float>(
-        g_vector: &mut Array<F>,
-        c00x: F,
-        c00y: F,
-        c00z: F,
-        b10: F,
-        rirjx: F,
-        rirjy: F,
-        rirjz: F,
-        axis_stride: u32,
-        dj: u32,
-        nmax: u32,
-        lj: u32,
-    ) {
-        let mut c00v = Vector::<F, Const<3>>::empty();
-        c00v[0usize] = c00x;
-        c00v[1usize] = c00y;
-        c00v[2usize] = c00z;
-        let mut rirjv = Vector::<F, Const<3>>::empty();
-        rirjv[0usize] = rirjx;
-        rirjv[1usize] = rirjy;
-        rirjv[2usize] = rirjz;
-        let mut gs = g_vector.to_slice_mut();
-        nuc_vrr_axes::<F>(&mut gs, 0u32, axis_stride, c00v, b10, nmax);
-        if lj >= 1u32 {
-            nuc_hrr_axes::<F>(&mut gs, 0u32, axis_stride, rirjv, dj, nmax, lj);
-        }
-    }
-
-    /// `cargo test -p cintx-cubecl --release --lib axis_vrr_bench -- --ignored --nocapture`
-    ///
-    /// The isolated VRR+HRR, both arms. This is the piece the change touches;
-    /// what it is *worth* is that number times the build's share of the kernel,
-    /// and the build is the small half here — the contraction reads roughly
-    /// thirty G values and does nine triple products per Cartesian element,
-    /// against a VRR of `3 * nmax` fused multiply-adds.
-    #[test]
-    #[ignore = "timing probe; run explicitly in release"]
-    fn axis_vrr_bench_vector_vs_scalar() {
-        let client = cubecl::cpu::CpuRuntime::client(&Default::default());
-
-        for (li, lj) in [(0u32, 0u32), (1, 1), (2, 2)] {
-            let nmax = li + lj + 2;
-            let lj_ext = lj + 1;
-            let dj = nmax + 1;
-            let axis_stride = dj * (lj_ext + 1);
-            let len = (3 * axis_stride) as usize;
-            let reps = 200_000u32;
-
-            let mut millis = [0.0_f64; 2];
-            for arm in 0..2u32 {
-                let mut best = f64::INFINITY;
-                for _round in 0..5 {
-                    let zeros = vec![0.0_f64; len];
-                    let gs_h = client.create_from_slice(f64::as_bytes(&zeros));
-                    let gv_h = client.create_from_slice(f64::as_bytes(&zeros));
-                    let start = std::time::Instant::now();
-                    unsafe {
-                        axis_vrr_probe_kernel::launch_unchecked::<f64, cubecl::cpu::CpuRuntime>(
-                            &client,
-                            crate::plane::single_cube_count(),
-                            CubeDim::new_1d(1),
-                            ArrayArg::from_raw_parts(gs_h.clone(), len),
-                            ArrayArg::from_raw_parts(gv_h.clone(), len),
-                            0.31_f64,
-                            -0.47_f64,
-                            0.83_f64,
-                            0.19_f64,
-                            0.53_f64,
-                            -0.71_f64,
-                            0.29_f64,
-                            1.37_f64,
-                            axis_stride,
-                            dj,
-                            nmax,
-                            lj_ext,
-                            reps,
-                            arm,
-                        );
-                    }
-                    let handle = if arm == 1 { gv_h } else { gs_h };
-                    let out = f64::from_bytes(&client.read_one_unchecked(handle)).to_vec();
-                    best = best.min(start.elapsed().as_secs_f64() * 1e3);
-                    assert!(out.iter().any(|v| v.abs() > 1e-18));
-                }
-                millis[arm as usize] = best;
-            }
-            println!(
-                "li={li} lj={lj} nmax={nmax}: scalar {:.1} ms, vector {:.1} ms  ({:.2}x)",
-                millis[0],
-                millis[1],
-                millis[0] / millis[1]
-            );
-        }
-    }
-
-    /// The fused pair must reproduce three scalar calls bit for bit, at every
-    /// `(nmax, lj)` the nuclear σ families reach — `nmax = li + lj + 2` for the
-    /// composed `+1/+1` derivative order, `lj_ext = lj + 1`.
-    #[test]
-    fn axis_vector_vrr_matches_scalar_bit_for_bit() {
-        let client = cubecl::cpu::CpuRuntime::client(&Default::default());
-
-        for li in 0..=2u32 {
-            for lj in 0..=2u32 {
-                let nmax = li + lj + 2;
-                let lj_ext = lj + 1;
-                let dj = nmax + 1;
-                let axis_stride = dj * (lj_ext + 1);
-                let len = (3 * axis_stride) as usize;
-
-                let zeros = vec![0.0_f64; len];
-                let gs_h = client.create_from_slice(f64::as_bytes(&zeros));
-                let gv_h = client.create_from_slice(f64::as_bytes(&zeros));
-
-                unsafe {
-                    axis_vrr_probe_kernel::launch_unchecked::<f64, cubecl::cpu::CpuRuntime>(
-                        &client,
-                        crate::plane::single_cube_count(),
-                        CubeDim::new_1d(1),
-                        ArrayArg::from_raw_parts(gs_h.clone(), len),
-                        ArrayArg::from_raw_parts(gv_h.clone(), len),
-                        0.31_f64,
-                        -0.47_f64,
-                        0.83_f64,
-                        0.19_f64,
-                        0.53_f64,
-                        -0.71_f64,
-                        0.29_f64,
-                        1.37_f64,
-                        axis_stride,
-                        dj,
-                        nmax,
-                        lj_ext,
-                        1u32,
-                        2u32,
-                    );
-                }
-
-                let scalar = f64::from_bytes(&client.read_one_unchecked(gs_h)).to_vec();
-                let vector = f64::from_bytes(&client.read_one_unchecked(gv_h)).to_vec();
-                assert!(
-                    scalar.iter().any(|v| v.abs() > 1e-18),
-                    "li={li} lj={lj}: the scalar arm produced only zeros"
-                );
-                for (i, (a, b)) in scalar.iter().zip(&vector).enumerate() {
-                    assert_eq!(
-                        a.to_bits(),
-                        b.to_bits(),
-                        "li={li} lj={lj}, g[{i}]: scalar {a} vs vector {b}"
-                    );
-                }
-            }
-        }
-    }
 }

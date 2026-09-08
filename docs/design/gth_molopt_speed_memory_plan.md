@@ -1042,43 +1042,41 @@ SO2 / def2-TZVP, 35 shells; batched dispatch, two interleaved A/B rounds:
   `two_e_cooperative_arm`, `gth_contraction_ab`, `def2_integral_parity` — and
   the `cintx-cubecl` unit suite.
 
-## 14. sigma_1e_nuc: the root axis is not there (2026-09-08)
+## 14. sigma_1e_nuc — attempted, measured, refused (2026-09-08)
 
 §12.6 listed `sigma_1e_nuc` beside `center_3c2e` and `center_2c2e` as an engine
-`vrr_fill_axis_roots` should apply to verbatim. It does not, and the reason is
-worth recording because it applies to `sigma_p`'s clone of the same code too.
+`vrr_fill_axis_roots` should apply to verbatim. It does not. The axis-wise
+alternative was implemented and measured, and then **reverted** — this section
+is why, so the next pass does not spend the same day on it. The one piece kept
+is `lanes_load` / `lanes_store` in `math::root_vec`.
 
-### 14.1 Why the root form is unavailable
+### 14.1 The root form is unavailable
 
 The 2e, 3c2e and 2c2e engines all carry a root-fastest G tensor: every index is
 `base + r`, so each point of the recurrence has a contiguous `nroots`-run to
 load. `sigma_1e_nuc` has **no root index in its G tensor at all**. The roots are
 the *outer* loop over the whole build-and-contract pipeline — the slab is zeroed,
 seeded, filled and then fully contracted inside `for irys in 0..nroots`, with
-`gc_out[..] +=` accumulating once per root.
+`gc_out[..] +=` accumulating once per root. `sigma_p`'s `sa01_nuc_vrr_axis` is a
+clone of the same shape and inherits the same finding.
 
-Making the root axis exist means interleaving the slab by root, which is a
-layout change rippling through `nuc_vrr_axis`, `nuc_hrr_axis`, `nuc_nabla_i`,
-`nuc_nabla_j`, `nuc_nabla_ij` and every index expression in the contraction, in
-two kernels, at 5x the scratch. It is also constrained: the contraction must
-*stay* inside a per-root loop reading lane `r`, because hoisting it and reducing
-the lanes would fold `gc_out[e] += w*c0; += w*c1; …` into
-`gc_out[e] += w*(c0+c1+…)` — a different rounding, so not bit-identical. The
+Making the root axis exist means interleaving the slab by root: a layout change
+rippling through `nuc_vrr_axis`, `nuc_hrr_axis`, `nuc_nabla_i`, `nuc_nabla_j`,
+`nuc_nabla_ij` and every index expression in the contraction, across two
+kernels, at 5x the scratch. It is also constrained: the contraction must *stay*
+inside a per-root loop reading lane `r`, because hoisting it and reducing the
+lanes would fold `gc_out[e] += w*c0; += w*c1; …` into
+`gc_out[e] += w*(c0+c1+…)` — a different rounding, so not bit-identical. Its
 reads would then be strided by `nroots`, which is the shape §12.2 measured as a
 *loss*.
 
-### 14.2 What was done instead
+### 14.2 The axis form: built, measured, not kept
 
 The dimension that is there is the Cartesian axis: `gx`/`gy`/`gz` sit a constant
 `g_per_axis` apart, their recurrences are independent, and only `c00` (VRR) and
-`rirj` (HRR) differ between them. `nuc_vrr_axes` / `nuc_hrr_axes` run all three
-as `Vector<F, Const<3>>` lanes — a genuine const width, so no `#[define(N)]`
-plumbing. `root_vec` grew `lanes_load` / `lanes_store`, a strided gather and
-scatter; `roots_load` / `roots_store` are now those at stride one.
-
-### 14.3 Measured, and what it is worth
-
-The isolated VRR+HRR (`axis_vrr_bench_vector_vs_scalar`, best of 5):
+`rirj` (HRR) differ. Fusing the three into `Vector<F, Const<3>>` lanes is a
+drop-in with no layout change, and it was bit-identical. The isolated VRR+HRR,
+best of 5:
 
 | shape | scalar (ms) | vector (ms) | |
 |---|---|---|---|
@@ -1086,17 +1084,27 @@ The isolated VRR+HRR (`axis_vrr_bench_vector_vs_scalar`, best of 5):
 | li=1 lj=1, nmax=4 | 5.5 | 4.6 | 1.18x |
 | li=2 lj=2, nmax=6 | 10.4 | 9.1 | 1.14x |
 
-Well below the 1.4x–1.9x the root form buys the 2e engines: the width is 3
-rather than up to 5, the recurrence is one-dimensional and two-term rather than
-the 2D `(n, m)` nest, and the lanes are gathered across a stride.
+Well short of the 1.4x–1.9x the root form buys the 2e engines: width 3 rather
+than up to 5, a one-dimensional two-term recurrence rather than the 2D `(n, m)`
+nest, and lanes gathered across a stride.
 
-**And that piece is a small fraction of this kernel.** Per root, an `(li=1, lj=1)`
+And that piece is a small fraction of this kernel. Per root, an `(li=1, lj=1)`
 build is ~45 zeroing stores, 12 VRR fused multiply-adds and ~24 HRR ones,
 against a contraction of nine Cartesian elements each doing ~30 G loads, twelve
 `nabla` combinations and nine triple products — roughly 700 operations. A 1.14x
-on the VRR is therefore worth well under a percent end to end, which is below
-what any driver here can resolve. **This is landed as correct and slightly
-faster, not as a measurable win.**
+on the VRR is worth well under a percent end to end, below what any driver here
+resolves. It was reverted rather than kept on that basis: correct and
+unmeasurable is not worth a `Vector` path, two extra helpers and a probe kernel
+in a relativistic family.
+
+### 14.3 What was kept
+
+`lanes_load` / `lanes_store` — a strided gather and scatter — stay in
+`math::root_vec`, with `roots_load` / `roots_store` expressed as those at stride
+one, and `strided_lanes_gather_and_scatter_the_named_elements` covering the
+general form so the `stride` parameter is not carried on the strength of a
+caller that no longer exists. Any future lane axis that is not the innermost one
+needs exactly this.
 
 ### 14.4 Where the time actually is
 
@@ -1105,18 +1113,13 @@ operations on three axes, ~30 loads and most of the flops — and *that* is
 vectorizable over the same axis dimension. The obstacle is that `s0..s8` mix
 lanes (`s0 = g3x*g0y*g0z`), so the products need nine lane extracts, which may
 eat the gain. It is the only lever in this kernel with enough mass behind it to
-matter, and it is not taken here.
+matter.
 
-### 14.5 Verification
+### 14.5 What the attempt established about the gates
 
-- `axis_vector_vrr_matches_scalar_bit_for_bit` runs the fused pair against three
-  `nuc_vrr_axis` / `nuc_hrr_axis` calls over separate slabs, at every
-  `(li, lj)` in `0..=2`, comparing `to_bits()`. Confirmed to fail when the
-  helper is perturbed.
-- The call-site wiring — which axis lands in which lane — is *not* covered by
-  that test, and is covered end to end: swapping the `y`/`z` lanes at the gauge
-  kernel's call site fails `rel_1e_sigma_parity`'s four byte-identity gates, and
-  at the nuclear kernel's call site fails `giao_sigma_1e_parity`'s four. Both
-  were checked by making the swap.
-- `gradient_gap_tier4_1e_sigma`, the `cintx-cubecl` unit suite, and the §12/§13
-  gates re-run clean.
+Worth keeping even though the change is gone: each of the two `sigma_1e_nuc`
+call sites has its own end-to-end byte-identity gate. Swapping the `y`/`z` axis
+operands at the gauge kernel's call site fails `rel_1e_sigma_parity`'s four
+byte-identity gates; the same swap at the nuclear kernel's fails
+`giao_sigma_1e_parity`'s four. Both were checked by making the swap. A future
+attempt on this kernel is well covered.

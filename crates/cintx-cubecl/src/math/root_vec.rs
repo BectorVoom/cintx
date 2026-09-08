@@ -72,10 +72,10 @@ use cubecl::prelude::*;
 /// per-slot slab stride pads to 8 `f64` (`g_slab_stride`,
 /// `three_c2e_slab_stride`), which is not a multiple of an odd `nroots`, so
 /// `slot * g_stride` is not `nroots`-aligned and a reinterpreting vector load
-/// would read across run boundaries for slots past the first; and the lane axis
-/// is not always contiguous — `sigma_1e_nuc` vectorizes over its three
-/// Cartesian axis slabs, which sit a whole `g_per_axis` apart. The gather
-/// handles both, and the win here is the dependency chain, not the load width.
+/// would read across run boundaries for slots past the first; and a lane axis
+/// need not be contiguous at all — `stride` exists for the case where the lanes
+/// are whole sub-slabs apart rather than adjacent. The gather handles both, and
+/// the win here is the dependency chain, not the load width.
 #[cube]
 pub fn lanes_load<F: Float, N: Size>(
     g: &Slice<F, ReadWrite>,
@@ -534,6 +534,74 @@ mod tests {
                 }
             }
             rep += 1u32;
+        }
+    }
+
+    /// A strided gather and scatter, at the widths and strides a lane axis that
+    /// is *not* the innermost one produces.
+    ///
+    /// `roots_load` / `roots_store` exercise `lanes_*` only at stride one. This
+    /// covers the general form directly, so the `stride` parameter is not
+    /// carried on the strength of a caller that may not exist.
+    #[cube(launch_unchecked)]
+    fn lanes_stride_probe_kernel<F: Float + CubeElement, N: Size>(
+        src: &mut Array<F>,
+        dst: &mut Array<F>,
+        base: u32,
+        stride: u32,
+        out_base: u32,
+        out_stride: u32,
+        #[define(N)]
+        #[comptime]
+        width: usize,
+    ) {
+        let run = lanes_load::<F, N>(&src.to_slice_mut(), base, stride, width);
+        let mut out = dst.to_slice_mut();
+        lanes_store::<F, N>(&mut out, out_base, out_stride, run, width);
+    }
+
+    /// A lane read at `base + lane * stride` must land at
+    /// `out_base + lane * out_stride`, and touch nothing else.
+    #[test]
+    fn strided_lanes_gather_and_scatter_the_named_elements() {
+        let client = cpu_client();
+
+        for width in 1..=5usize {
+            for stride in [1u32, 2, 7] {
+                for (base, out_base, out_stride) in [(0u32, 0u32, 1u32), (3, 5, 4)] {
+                    let src: Vec<f64> = (0..96).map(|i| 1.0 + i as f64 * 0.25).collect();
+                    let dst = vec![0.0_f64; 96];
+                    let src_h = client.create_from_slice(f64::as_bytes(&src));
+                    let dst_h = client.create_from_slice(f64::as_bytes(&dst));
+
+                    unsafe {
+                        lanes_stride_probe_kernel::launch_unchecked::<f64, cubecl::cpu::CpuRuntime>(
+                            &client,
+                            crate::plane::single_cube_count(),
+                            CubeDim::new_1d(1),
+                            ArrayArg::from_raw_parts(src_h.clone(), src.len()),
+                            ArrayArg::from_raw_parts(dst_h.clone(), dst.len()),
+                            base,
+                            stride,
+                            out_base,
+                            out_stride,
+                            width,
+                        );
+                    }
+
+                    let got = f64::from_bytes(&client.read_one_unchecked(dst_h)).to_vec();
+                    let mut expected = vec![0.0_f64; 96];
+                    for lane in 0..width {
+                        expected[out_base as usize + lane * out_stride as usize] =
+                            src[base as usize + lane * stride as usize];
+                    }
+                    assert_eq!(
+                        got, expected,
+                        "width={width} stride={stride} base={base} \
+                         out_base={out_base} out_stride={out_stride}"
+                    );
+                }
+            }
         }
     }
 
