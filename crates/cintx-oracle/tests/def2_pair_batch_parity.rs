@@ -1395,6 +1395,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         BatchOptions {
             memory_limit_bytes: None,
             primitive_tolerance: 0.0,
+            expcutoff: None,
         },
     )
     .expect("3c2e tol=0");
@@ -1415,6 +1416,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         BatchOptions {
             memory_limit_bytes: None,
             primitive_tolerance: 1e-14,
+            expcutoff: None,
         },
     )
     .expect("3c2e tol=1e-14");
@@ -1449,6 +1451,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         BatchOptions {
             memory_limit_bytes: None,
             primitive_tolerance: 0.0,
+            expcutoff: None,
         },
     )
     .expect("1e nuc tol=0");
@@ -1470,6 +1473,7 @@ fn primitive_screening_at_zero_tolerance_is_bit_identical() {
         BatchOptions {
             memory_limit_bytes: None,
             primitive_tolerance: 1e-14,
+            expcutoff: None,
         },
     )
     .expect("1e nuc tol=1e-14");
