@@ -24,6 +24,14 @@
 //!                    partition (K2), when the kernel carries it.
 //! - `xform=device` — `set_device_transform(Some(true))`: M3 on the CPU
 //!                    runtime, for the memory column as much as the time.
+//! - `fuse=off`     — CPU only: `set_two_e_nroots_fusion(false)`, one dispatch
+//!                    per Rys order — the grouping before F1 (§15), and the
+//!                    fusion is per-unit-only, so there is nothing for this
+//!                    variant to measure on a GPU. It is the one variant that
+//!                    is a different *compiled program* rather than a kernel
+//!                    scalar, because `nr_max` is comptime; it is still
+//!                    interleaved in-process, and both arms must dump the same
+//!                    bits.
 //! - `klsplit=off`  — GPU only: `set_two_e_kl_split(Some(1))`, one quartet
 //!                    per cube, the shape before G1.
 //! - `coop=lane0`   — GPU only: the pre-S3 G build.
@@ -54,6 +62,7 @@ use cintx_cubecl::{
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_work_list,
     set_contraction_probe, set_cooperative_build_split, set_device_transform,
     set_staged_contraction, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
+    set_two_e_nroots_fusion,
 };
 use cintx_driver::{BasisView, bucket_quartets, enumerate_pairs, enumerate_quartets};
 use cintx_oracle::vendor_ffi;
@@ -164,6 +173,7 @@ fn reset() {
     set_two_e_balance(None);
     set_cooperative_build_split(true);
     set_two_e_kl_split(None);
+    set_two_e_nroots_fusion(Some(true));
     set_device_transform(Some(false));
 }
 
@@ -240,6 +250,15 @@ fn variants() -> Vec<Variant> {
             limited: false,
         });
     } else {
+        out.push(Variant {
+            name: "fuse=off",
+            apply: |b, s| {
+                reset();
+                set_two_e_nroots_fusion(Some(false));
+                resident(b, s)
+            },
+            limited: false,
+        });
         out.push(Variant {
             name: "balance=uniform",
             apply: |b, s| {

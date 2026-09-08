@@ -2,7 +2,9 @@
 
 Status: executed 2026-09-06 — §8 is the record of what landed and what was measured;
 §9 (S3), §10 (the profile-guided pass) and §11 (the GPU decomposition, G1, and
-the T4 measurement package), all 2026-09-07, extend it.
+the T4 measurement package), all 2026-09-07, extend it; §12–§14 (V1, the root-axis
+vector VRR, and what it does not apply to), 2026-09-08; §15 (F1, fusing the Rys
+orders into one dispatch), 2026-09-09.
 Scope: the batched `int2e_sph` path over the two GTH-MOLOPT orbital bases
 `cintx-basis` exposes behind the `gth` feature (`DZVP-MOLOPT-SR-GTH`,
 `TZVP-MOLOPT-GTH`). `gth-tzvp-molopt-sr` does not exist upstream (CP2K ships
@@ -1123,3 +1125,243 @@ operands at the gauge kernel's call site fails `rel_1e_sigma_parity`'s four
 byte-identity gates; the same swap at the nuclear kernel's fails
 `giao_sigma_1e_parity`'s four. Both were checked by making the swap. A future
 attempt on this kernel is well covered.
+
+## 15. F1 — fusing the Rys orders into one dispatch (2026-09-09)
+
+### 15.1 The question, and where the measurement pointed
+
+§10.4 attributed the CPU per-unit kernel — contraction 54–73%, G build 27–46% —
+and §12 took a slice off the build. Neither asked what `gth_profile`'s last line
+had been printing all along:
+
+```text
+launches=15 classes=69 …
+launch floor: 69 quartets (one per class) in 15 launches: 56.61 ms = 57.7% of default
+```
+
+**Seventeen per cent of H2O/TZVP-MOLOPT's quartets cost 58% of the run.** In a
+family basis every quartet of a molecule walks the same `nprim^4` primitive
+quartets, so 69 quartets — one per l-class — is one sixth of the arithmetic of
+406. The remaining five sixths cost 42%. That is not a kernel finding; it is a
+partition finding.
+
+`CINTX_2E_GROUPS=1` (added here, in `plan_2e_stream`) prints what each dispatch
+holds. For H2O/TZVP-MOLOPT, 406 quartets in 15 dispatches keyed on
+`(ibase, kbase, nroots)`:
+
+| signature | quartets | cost share | costliest quartet |
+|---|---|---|---|
+| ib0 kb0 nr3 | 67 | 27.4% | 8.0 M |
+| ib0 kb0 nr4 | **13** | 22.9% | **33.5 M** |
+| ib0 kb1 nr3 | 26 | 9.7% | 8.0 M |
+| ib0 kb0 nr5 | **1** | 6.9% | **80.2 M** |
+| ib0 kb1 nr4 | **4** | 6.9% | **33.5 M** |
+| … 10 more | 11–90 | ≤ 7% each | ≤ 1.6 M |
+
+The per-unit partition (K2) cuts a dispatch's rows across `n_slots` units, so
+the floor a dispatch can reach is `max(cost / units, costliest quartet)` and the
+run's floor is the **sum** of those over dispatches. A dispatch holding one
+`(dd|dd)` quartet occupies one unit of sixteen and the other fifteen wait. On
+the `quartet_cost_estimate` scale, at 16 units:
+
+| grouping | H2O/DZVP-SR | CH4/DZVP-SR | SO2/DZVP-SR | H2O/TZVP | CH4/TZVP | SO2/TZVP |
+|---|---|---|---|---|---|---|
+| per signature (before) | 56.6 | 100.1 | 95.7 | 218.2 | 388.7 | 401.4 |
+| fuse the Rys orders | 36.2 | 71.0 | 95.4 | 139.0 | 276.9 | 401.2 |
+| fuse `ibase`/`kbase` instead | 41.0 | 88.6 | 95.7 | 158.4 | 344.3 | 401.2 |
+| fuse everything | 20.9 | 69.0 | 95.4 | 80.2 | 269.2 | 401.2 |
+
+Three things to read off it. Fusing the **Rys orders** is where nearly all of
+the available balance is — fusing `ibase`/`kbase` instead buys a third as much,
+and fusing both on top of the orders buys almost nothing more. SO2 is *already*
+balanced at either grouping, so the model predicts nothing there. And the model
+is a prediction made before a line of the kernel changed, which is what makes
+the measured outcome (§15.3) evidence rather than a coincidence.
+
+### 15.2 What landed
+
+The dispatch key drops the Rys order for every class the fixed-order solvers
+serve, so one dispatch per `(ibase, kbase)` carries orders 1 through 5:
+
+- `TwoELaunchSignature::nroots` is now a **bucket**: `FUSED_NROOTS_BUCKET` (0)
+  for `nroots <= MAX_FUSED_NROOTS` (5), the order itself above that. The
+  extended orders 6..=12 are deliberately **not** fused: `rys_roots_ext_dev`
+  takes its order at comptime and its double-double arms are an order of
+  magnitude larger than `rys_root1..5`, so merging them would emit seven big
+  solvers per dispatch to join classes carrying under a percent of any work
+  list. Each keeps a dispatch, and `nr_max == nroots` there.
+- The class shape row carries `nroots` (`TWO_E_SHAPE_STRIDE` 14 → 15) and the
+  kernel reads it per quartet. `nroots` is a runtime scalar in the kernel now;
+  the comptime parameter is `nr_max`, the group's widest order, which sizes the
+  private root arrays and decides which per-order arms the program emits at all.
+- **Three places needed the order at comptime, and each keeps it** behind a
+  runtime branch that is taken once per quartet or per primitive quartet, never
+  per root:
+  - the Rys solver — `if nroots == k { rys_root{k} }`, guarded by
+    `comptime!(nr_max >= k)` so a narrow dispatch compiles no wide solver;
+  - the vector VRR (V1, §12) — a `Vector` width is a *type-level* size, so the
+    block moved into `vrr_build_axes_roots<F, N: Size>` and the kernel
+    instantiates it at `Const<2..5>`. This is what retires the `#[define(N)]`
+    dynamic size §12.3 introduced: the width now comes from the concrete type at
+    each call site. The arm stays comptime-off on the cooperative shape and at
+    `nr_max == 1`, exactly as before.
+  - the contraction's `Σ_r gx·gy·gz` — `root_dot<F>(…, #[comptime] width)`,
+    selected once per Cartesian element. A dynamic trip count of one to five
+    would have put a compare and a branch on the hottest statement in the
+    kernel; this branch is on the quartet's order, the same for every element of
+    its block, and predicts perfectly.
+  The scalar VRR's outer loop over roots became an ordinary `while` — its body
+  is the whole three-axis recurrence, so unrolling it by `nroots` was code size
+  rather than speed.
+- **Per-unit only.** `two_e_nroots_fusion` is `nroots_fusion_enabled() &&
+  two_e_per_unit()`; the cooperative arm keeps one dispatch per order, for the
+  measured reason in §15.4. `CINTX_2E_FUSE=off` / `set_two_e_nroots_fusion` is
+  the A/B, and it is the one `gth_profile` variant that is a different compiled
+  program rather than a kernel scalar.
+
+Every quartet is still evaluated by the same code at the same comptime order,
+accumulating the same terms in the same sequence into the same place. Only which
+dispatch it rides in changes — the argument Task 35-M1 used when it merged
+l-classes — so **the output is bit-identical**, and that is the gate.
+
+### 15.3 Measured (CPU per-unit arm)
+
+In-process A/B, `gth_profile`, `default` against `fuse=off`, three passes (best
+of 3, 3 and 5). Both arms are prewarmed and interleaved:
+
+| workload | fusion speedup (3 passes) | launches |
+|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 1.48x, 1.41x, **1.42x** | 15 → 4 |
+| CH4 / DZVP-MOLOPT-SR | 1.25x, 1.26x, **1.45x** | 15 → 4 |
+| SO2 / DZVP-MOLOPT-SR | 1.01x, 1.08x, **1.28x** | 16 → 4 |
+| H2O / TZVP-MOLOPT | 1.39x, 1.40x, **1.32x** | 15 → 4 |
+| CH4 / TZVP-MOLOPT | 1.21x, 1.16x, **1.18x** | 15 → 4 |
+| SO2 / TZVP-MOLOPT | 1.02x, 1.17x, **1.24x** | 16 → 4 |
+
+**1.16x–1.48x**, and the spread is the host's, not the change's: the workloads
+the model called balanced (SO2, 1.00x predicted) are exactly the ones whose
+measured ratio wanders across the noise band, and the ones it called imbalanced
+sit inside ±0.05x of each other across passes.
+
+Whole-workload rows, two engines in one process on the identical list
+(`gth_batched_throughput`, `artifacts/cintx_gth_throughput.json`):
+
+| workload | quartets | libcint (s) | cintx (s) | now | §10.4 | §8.4 |
+|---|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 406 | 0.036 | 0.015 | **2.39x faster** | 1.72x | 1.11x |
+| CH4 / DZVP-MOLOPT-SR | 2 211 | 0.145 | 0.053 | **2.75x faster** | 2.25x | 1.58x |
+| SO2 / DZVP-MOLOPT-SR | 1 035 | 0.163 | 0.069 | **2.38x faster** | 2.22x | 1.47x |
+| H2O / TZVP-MOLOPT | 406 | 0.153 | 0.064 | **2.40x faster** | 1.65x | 1.18x |
+| CH4 / TZVP-MOLOPT | 2 211 | 0.549 | 0.206 | **2.67x faster** | 2.10x | 1.58x |
+| SO2 / TZVP-MOLOPT | 1 035 | 0.689 | 0.328 | **2.10x faster** | 1.98x | 1.51x |
+
+Every `max|diff|` against the vendor is the §10.4 figure to the digit
+(3.33e-15 … 2.65e-13), with 0 mismatched elements.
+
+**def2 gains too, and that was not the target.** The def2 work lists are
+segmented, so C1/K1 never touched them, but their *grouping* has the same shape
+— and `def2_batched_throughput`'s in-process libcint ratios move:
+
+| workload | launches | fuse=off | fused |
+|---|---|---|---|
+| H2O / def2-SVP (unscreened) | 15 → 4 | 1.05x **slower** | **1.62x faster** |
+| H2O / def2-SVP (screened) | 15 → 4 | 1.42x | **1.95x** |
+| CH4 / def2-SVP | 15 → 4 | 1.84x | **2.87x** |
+| SO2 / def2-SVP | 16 → 4 | 2.48x | **2.70x** |
+| H2O / def2-TZVP | 23 → 8 | 1.67x | **1.88x** |
+| SO2 / def2-TZVP | 24 → 9 | 1.76x | 1.72x |
+
+def2-TZVP fuses to 8–9 rather than 4 because its `nroots` 6 and 7 classes keep
+their own dispatches; the SO2/def2-TZVP row is flat, which is the §15.1 model's
+answer for a list of 181 070 quartets whose every group is already wide.
+
+### 15.4 Why the cooperative (GPU) arm does not fuse
+
+Measured on ROCm (gfx1151, H2O, `CINTX_2E_CHUNK_QUARTETS=64`, best of 3,
+interleaved), with the fusion forced on for the cooperative arm:
+
+| workload | fused (ms) | unfused (ms) | fusion | kl_split | G slab |
+|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 173.2 | 183.9 | 1.06x | 25 | 3 692 KiB |
+| H2O / TZVP-MOLOPT | 641.1 | 537.7 | **0.84x** | 26 (was 49) | 3 692 KiB |
+
+Two mechanisms, both visible in the table. `kl_split_factor` sizes G1's
+ket-pair split against a 64 MiB partial-**buffer** budget charged on the
+*group's* whole output, so a four-times wider group buys half the split — 49
+parts became 26, and G1 is worth 5.5–6.9x (§11.3). And a cooperative cube is
+sized from the group's widest Cartesian block while its G slab is sized from the
+group's widest class, so fusing hands an `(ss|ss)` quartet a `(dd|dd)`-shaped
+cube and a 27 KiB slab. Both are fixable — a per-quartet split budget, a
+per-class cube width — and neither is fixed here. The gate is one predicate,
+`two_e_nroots_fusion`, and `def2_2e_batch_rocm_parity`'s launch-count assertion
+now records that the *grouping* is a property of the decomposition (it was
+`assert_eq!`; it is now "the fused arm merges dispatches and adds none").
+
+### 15.5 Costs
+
+- **Device G scratch.** A fused group's slab is sized to its widest class, and
+  it now has as many slots as the whole list has quartets to fill. On the GTH
+  rows the peak went 203 → 422 KiB (DZVP-SR) and 395 → 422 KiB (H2O/TZVP);
+  SO2's 486/851 KiB is unchanged, because its widest group already had both.
+- **Device Cartesian output.** Groups are dispatched one at a time and freed
+  after readback, so the peak is the *widest* group — which fusion makes wider:
+  SO2/def2-TZVP went 16.8 → 42.1 MiB. `plan_batch_bytes` takes that maximum
+  from the same expression the allocation uses, so `memory_limit_bytes` still
+  bounds it and the pre-flight refusal is still honest. Host peak is unchanged
+  on every row (2.10–2.79x output).
+- **Compiled code.** 15 programs of one Rys order became 4 of five orders, so
+  the emitted bodies went 15 → 20 while the *dispatches* went 15 → 4.
+  `prewarm_2e_work_list` reports 69 classes → 4 signatures in 51 ms.
+- **K2 matters far more now.** `balance=uniform` was 0.90–1.00x before the
+  fusion and is 0.56–0.80x after: with one dispatch per `(ibase, kbase)` the
+  cost-balanced partition is the only thing standing between the run and its old
+  imbalance. The two partitions are still bit-identical to each other.
+
+### 15.6 Verification
+
+- **Bit-identity, end to end**: `gth_profile` under `CINTX_GTH_DUMP` on `main`,
+  then `CINTX_GTH_COMPARE` with the fusion in — **0 of 2 313 078 elements
+  differ** across the six GTH workloads (`max|d| = 0.000e0`), and every variant
+  still prints `=bits` against the run's own default.
+- **Vendor**: `gth_batched_throughput` (0 mismatched elements at 1e-9, max|diff|
+  as §10.4), `gth_contraction_ab` water gate and the full six under `--ignored`,
+  `def2_2e_batch_parity`, `def2_integral_parity` (def2-SVP *and* def2-TZVP, so
+  the unfused `nroots` 6–7 arm is covered), `general_contraction_device_indexing`.
+- **Suites**: the whole `cintx-cubecl` unit suite (409 + 58 tests, including the
+  f32 smoke launch at the new shape row and argument list), the whole
+  `cintx-oracle` default suite, `two_e_cooperative_arm` (4), `kl_split_tests`,
+  `partition_tests`, `def2_batch_memory_plan`, `def2_accumulator_ab`,
+  `vrr_root_vector_ab`, `def2_pair_batch_parity`.
+- **ROCm**: `def2_batch_rocm_parity::def2_2e_batch_matches_between_cpu_and_rocm`,
+  `gth_contraction_ab` cross-backend on all six fixtures (staged beats naive
+  1.04–1.30x; cpu-vs-rocm 43.7/576.1 eps of block scale on H2O, the same figures
+  §11.3 recorded), `gth_profile` on ROCm (§15.4).
+- **Pre-existing, and not from this pass**: `def2_batch_rocm_parity`'s
+  `def2_pair_and_triple_batches_match_between_cpu_and_rocm` and
+  `def2_derivative_batches_match_between_cpu_and_rocm` fail on `main` and still
+  fail. §13 landed the vector VRR on the 3c2e/2c2e ROCm path for *both*
+  decompositions, and at `nroots == 3` HIP refuses the kernel outright:
+  `struct __align__(24) double_3` — "requested alignment is not a power of 2".
+  §12.2's note that odd widths are "otherwise ordinary" is wrong for HIP. The 2e
+  kernel is unaffected because its vector arm is comptime-gated to the per-unit
+  shape, which is why `Const<3>` and `Const<5>` here are safe; the fix for the
+  other four kernels is theirs to make.
+
+### 15.7 What is left
+
+- **The GPU fusion**, if it is wanted: a per-quartet ket-split budget and a
+  per-class cooperative cube width, the two mechanisms §15.4 names.
+- **H2O's remaining floor.** The launch floor is still 57–59% of the H2O rows
+  (down from a *sum* of 15 dispatch floors to a single `(dd|dd)` quartet's serial
+  walk, which is now the binding term at 80.2 M of a 1 158.5 M total). Splitting
+  *that quartet* across units is G1 applied to the per-unit arm — the one lever
+  §11.1 listed and left, and it is no longer bit-identical, so it needs the gate
+  `ket_split_agrees_on_gth` already provides.
+- **Fusing `ibase`/`kbase` as well** is worth 80.2 vs 81.0 M on the §15.1 model,
+  i.e. nothing. Not to be revisited without a new reason.
+- The contraction is still 62–76% of the per-unit kernel (`probe:no-ctr`), and
+  §10.4's reading of it is unchanged: nine G loads and six flops per element per
+  primitive quartet, no reuse for a private array to capture. Blocking the bra
+  primitives to amortise the `gctri` read-modify-write was costed from the
+  `naive`/`staged` A/B — 3 read-modify-writes into a cache-hot slab are ~5% of
+  the row — and is not worth a pass.

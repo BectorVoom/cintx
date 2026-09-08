@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the batched 2e dispatch carries every Rys order, not one (2026-09-09)
+
+A `int2e_sph` work list used to be cut into one dispatch per `(ibase, kbase, nroots)`: fifteen
+of them for a GTH-MOLOPT water, sixteen for an SO2. `gth_profile` had been printing what that
+costs and nobody had read it — **17% of H2O/TZVP-MOLOPT's quartets took 58% of the run**. In a
+family basis every quartet walks the same `nprim^4` primitive quartets, so one quartet per
+l-class is a sixth of the arithmetic; the other five sixths cost less than half the time. The
+per-unit partition (K2) balances *within* a dispatch, and a dispatch holding a single `(dd|dd)`
+quartet occupies one unit of sixteen while the other fifteen wait for it.
+
+The Rys order is no longer part of the dispatch key. One dispatch per `(ibase, kbase)` now
+carries orders 1 through 5, each quartet reading its own order from its class row, and the whole
+work list lands in one cost-balanced partition. Fifteen launches become four.
+
+Three things needed the order at JIT time and each keeps it, behind a branch taken once per
+quartet or per primitive quartet and never per root: the fixed-order Rys solvers
+(`comptime!(nr_max >= k)` keeps a narrow dispatch from compiling a wide one); the vector VRR,
+whose `Vector` width is a *type-level* size and which therefore moved into
+`vrr_build_axes_roots<F, N>` instantiated at `Const<2..5>` — retiring the `#[define(N)]` dynamic
+size; and the contraction's `Σ_r gx·gy·gz`, which keeps its unrolled form through
+`root_dot(…, #[comptime] width)` rather than take a compare and a branch on the hottest
+statement in the kernel. Orders 6 and above are deliberately *not* fused: the extended solver
+takes its order at comptime and is an order of magnitude larger, and those classes carry under a
+percent of any work list.
+
+Every quartet is still evaluated by the same code at the same comptime order, summing the same
+terms in the same sequence into the same place — only the dispatch it rides in changes — so
+**the output is bit-identical**: 0 of 2 313 078 elements differ across the six GTH workloads
+against a dump taken before the change, and every vendor `max|diff|` is unmoved to the digit.
+
+Measured as an in-process A/B against `CINTX_2E_FUSE=off`, three passes:
+
+| workload | fusion speedup | vs single-threaded libcint |
+|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 1.41–1.48x | 1.72x → **2.39x faster** |
+| CH4 / DZVP-MOLOPT-SR | 1.25–1.45x | 2.25x → **2.75x faster** |
+| SO2 / DZVP-MOLOPT-SR | 1.01–1.28x | 2.22x → **2.38x faster** |
+| H2O / TZVP-MOLOPT | 1.32–1.40x | 1.65x → **2.40x faster** |
+| CH4 / TZVP-MOLOPT | 1.16–1.21x | 2.10x → **2.67x faster** |
+| SO2 / TZVP-MOLOPT | 1.02–1.24x | 1.98x → **2.10x faster** |
+
+def2 was not the target and gains anyway, because its grouping has the same shape: H2O/def2-SVP
+unscreened goes from 1.05x *slower* than libcint to 1.62x faster, CH4/def2-SVP from 1.84x to
+2.87x, H2O/def2-TZVP from 1.67x to 1.88x (that one fuses to eight dispatches, not four — its
+`nroots` 6 and 7 classes keep their own).
+
+**Per-unit (CPU) only.** Forced on for the cooperative arm, ROCm measured 0.84x on
+H2O/TZVP-MOLOPT, and the harness says why: `kl_split_factor` spends G1's partial-buffer budget
+against the whole group's output, so a four-times wider group buys half the ket-pair split G1 is
+worth 5.5–6.9x for; and a cooperative cube is sized from the group's widest Cartesian block, so
+fusing hands an `(ss|ss)` quartet a `(dd|dd)`-shaped cube. Both are fixable and neither is fixed
+here, so the cooperative arm keeps one dispatch per order.
+
+Costs, all reported through the existing ledger: the device G slab peak goes 203 → 422 KiB on
+the DZVP-MOLOPT-SR rows (a fused group's slab is sized to its widest class and now has a slot
+per unit), the device Cartesian buffer peak rises with the widest group (SO2/def2-TZVP
+16.8 → 42.1 MiB) and `plan_batch_bytes` takes that maximum from the same expression the
+allocation uses, so `memory_limit_bytes` still bounds it. Host peak is unchanged everywhere.
+K2's cost-balanced partition matters far more now — `balance=uniform` was 0.90–1.00x before the
+fusion and is 0.56–0.80x after.
+
+`CINTX_2E_FUSE=off` / `set_two_e_nroots_fusion` is the A/B; `CINTX_2E_GROUPS=1` prints what each
+dispatch holds, which is the attribution this change was chosen from. Record:
+`docs/design/gth_molopt_speed_memory_plan.md` §15.
+
 ### Changed — the cooperative G build runs on the whole cube, not on lane 0 (2026-09-07)
 
 `two_electron_scalar_kernel`'s cooperative arm — the shape every GPU backend runs — built the

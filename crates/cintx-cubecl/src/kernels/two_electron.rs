@@ -869,6 +869,120 @@ fn stage_contract_out<F: Float>(
     }
 }
 
+/// The contraction's per-element Rys sum, `Σ_r gx·gy·gz`, at a **comptime**
+/// root count (F1, §15).
+///
+/// Before the launch-group fusion `nroots` was the kernel's comptime parameter
+/// and this loop was `#[unroll]`ed into the contraction. Fusing the Rys orders
+/// into one dispatch makes `nroots` a per-quartet *runtime* value, and a
+/// dynamic trip count of one to five would put a compare and a branch on the
+/// hottest three-load-two-multiply statement the kernel has. So the loop keeps
+/// its unrolled form and the caller selects the width with one branch per
+/// element instead — a branch that is perfectly predicted, because every
+/// element of a quartet shares its `nroots`.
+///
+/// The accumulation starts at zero and adds the roots in ascending order, which
+/// is what the `#[unroll]`ed loop did; the result is bit-identical.
+#[cube]
+fn root_dot<F: Float>(
+    g: &Slice<F, ReadWrite>,
+    ax: u32,
+    ay: u32,
+    az: u32,
+    #[comptime] width: u32,
+) -> F {
+    let mut sum = F::new(0.0_f32);
+    #[unroll]
+    for r in 0..width {
+        sum += g[(ax + r) as usize] * g[(ay + r) as usize] * g[(az + r) as usize];
+    }
+    sum
+}
+
+/// The vector VRR arm for one primitive quartet: the three axes' 2D
+/// recurrences with the Rys root index folded into `N` vector lanes (V1, §12).
+///
+/// Lifted out of the kernel body by the launch-group fusion (§15). A `Vector`
+/// width is a *type-level* size, so it cannot follow a runtime `nroots`; the
+/// widths this arm serves are instantiated here as `Const<2..5>` and the kernel
+/// picks one with a runtime branch per primitive quartet. That is why the
+/// `#[define(N)]` dynamic size the kernel used to carry is gone: the width now
+/// reaches `vrr_fill_axis_roots` from the concrete type at each call site.
+///
+/// Statement for statement the block it replaces, so the slab it writes is
+/// bit-identical to both the scalar arm and the pre-fusion vector arm.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn vrr_build_axes_roots<F: Float, N: Size>(
+    g_slab: &mut Slice<F, ReadWrite>,
+    urys: &Slice<F, ReadWrite>,
+    wrys: &Slice<F, ReadWrite>,
+    gx_off: u32,
+    g_size: u32,
+    nmax: u32,
+    mmax: u32,
+    g2d_ijmax: u32,
+    g2d_klmax: u32,
+    a0: F,
+    aij: F,
+    akl: F,
+    a1: F,
+    fac1: F,
+    xij_kl: F,
+    yij_kl: F,
+    zij_kl: F,
+    rijrxx: F,
+    rijrxy: F,
+    rijrxz: F,
+    rklrxx: F,
+    rklrxy: F,
+    rklrxz: F,
+    #[comptime] width: usize,
+) {
+    let u2 = Vector::<F, N>::new(a0) * roots_load::<F, N>(urys, 0u32, width);
+    let tmp4 = Vector::<F, N>::new(F::new(0.5_f32))
+        / (u2 * Vector::<F, N>::new(aij + akl) + Vector::<F, N>::new(a1));
+    let tmp5 = u2 * tmp4;
+    let tmp1 = Vector::<F, N>::new(F::new(2.0_f32)) * tmp5;
+    let tmp2 = tmp1 * Vector::<F, N>::new(akl);
+    let tmp3 = tmp1 * Vector::<F, N>::new(aij);
+    let b00 = tmp5;
+    let b10 = tmp5 + tmp4 * Vector::<F, N>::new(akl);
+    let b01 = tmp5 + tmp4 * Vector::<F, N>::new(aij);
+
+    #[unroll]
+    for axis in 0..3u32 {
+        let off = gx_off + axis * g_size;
+        let mut xkl = xij_kl;
+        let mut rijrx = rijrxx;
+        let mut rklrx = rklrxx;
+        if axis == 1u32 {
+            xkl = yij_kl;
+            rijrx = rijrxy;
+            rklrx = rklrxy;
+        } else if axis == 2u32 {
+            xkl = zij_kl;
+            rijrx = rijrxz;
+            rklrx = rklrxz;
+        }
+        let c00 = Vector::<F, N>::new(rijrx) - tmp2 * Vector::<F, N>::new(xkl);
+        let c0p = Vector::<F, N>::new(rklrx) + tmp3 * Vector::<F, N>::new(xkl);
+
+        // `gx`/`gy` seed at one, `gz` at the root's Rys weight times the
+        // primitive's scale factor — the same three values the scalar arm
+        // writes, by the same rule. Statement-level mutation rather than a
+        // value-returning `if`, for the reason the scalar arm records.
+        let mut seed = Vector::<F, N>::new(F::new(1.0_f32));
+        if axis == 2u32 {
+            seed = roots_load::<F, N>(wrys, 0u32, width) * Vector::<F, N>::new(fac1);
+        }
+
+        vrr_fill_axis_roots::<F, N>(
+            g_slab, off, nmax, mmax, g2d_ijmax, g2d_klmax, c00, c0p, b00, b10, b01, seed, width,
+        );
+    }
+}
+
 /// Batched scalar 2e kernel — one cube per shell quartet (Task 34-B).
 ///
 /// The kernel evaluates a whole **launch group** in one dispatch. A group is
@@ -915,7 +1029,13 @@ fn stage_contract_out<F: Float>(
 /// See the module note above for the comptime/runtime split.
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
-fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
+// F1 (§15) selects a per-order arm with `if comptime!(nr_max >= k) { if nroots
+// == k { … } }`. Collapsing the two into one `&&` would put a comptime
+// condition and a runtime one in the same expression, which is not a shape this
+// frontend folds reliably — the module note above records what that costs — and
+// the nesting is what keeps the outer test a pure JIT-time elision.
+#[allow(clippy::collapsible_if)]
+fn two_electron_scalar_kernel<F: Float + CubeElement>(
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -943,16 +1063,16 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
     ctr_stride: u32,
     ctr_mode: u32,
     coop_build: u32,
-    // The root-run width the vector VRR arm is instantiated at — always
-    // `nroots`, carried separately because a `Vector` width is a *type-level*
-    // size in CubeCL while `nroots` is a comptime `u32`. `#[define(N)]`
-    // registers it as the dynamic size `N`; see `math::root_vec`.
-    #[define(N)]
-    #[comptime]
-    root_width: usize,
     #[comptime] ibase: u32,
     #[comptime] kbase: u32,
-    #[comptime] nroots: u32,
+    // F1 (§15): the widest Rys order this dispatch carries, not *the* Rys
+    // order. Every quartet's own `nroots` is a runtime value read from its
+    // class row; `nr_max` is what the kernel's comptime shapes are sized to
+    // and which per-order arms it emits at all — the Rys solvers, the vector
+    // VRR widths and the contraction's unrolled root sum. It stays part of the
+    // kernel's identity so a dispatch that needs a wider order compiles its
+    // own program.
+    #[comptime] nr_max: u32,
     #[comptime] per_unit: u32,
     #[comptime] g_in_shared: u32,
     #[comptime] row_stride: u32,
@@ -1086,13 +1206,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
     // exactly `nroots` once the inline extended entry (task 33-01) serves the
     // class. The caller's fail-closed guard is what keeps `nroots` inside
     // `device_nroots_ceiling(backend, RysFamily::Int2e)`.
-    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
-    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nr_max)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nr_max)));
     // The extended entry is f64-only — its double-double arms are what buy the
     // accuracy — so it lands in its own pair and is cast into `urys`/`wrys`.
     // Both collapse to one element when the arm is not emitted.
-    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
-    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nr_max)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nr_max)));
     // S2's accumulator, hoisted out of the quartet loop: its capacity is
     // comptime, so it never depended on the quartet, and it is zeroed per
     // quartet below in any case.
@@ -1178,6 +1298,11 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
         let g2d_klmax = class_shape[(srow + 12u32) as usize];
         // K1: where this class's Cartesian index table starts in `class_idx`.
         let idx_off = class_shape[(srow + 13u32) as usize];
+        // F1 (§15): this class's Rys order. A *runtime* scalar since the
+        // launch-group fusion — the dispatch carries every order up to
+        // `nr_max`, and which one a quartet takes is a property of its class,
+        // not of the compiled program.
+        let nroots = class_shape[(srow + 14u32) as usize];
         let common_factor = class_factor[cls as usize];
 
         let gy_off = gx_off + g_size;
@@ -1448,31 +1573,59 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
                             // It is what lets each lane own a slice of the G
                             // build below without a barrier to hand the roots
                             // around first.
-                            // Rys roots/weights (comptime nroots branch).
-                            if comptime!(nroots == 1u32) {
-                                rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 2u32) {
-                                rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 3u32) {
-                                rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 4u32) {
-                                rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 5u32) {
-                                rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                            // Rys roots/weights.
+                            //
+                            // F1 (§15): the *order* is a runtime value now, so
+                            // the fixed-order solvers are selected by a runtime
+                            // branch and only the orders this dispatch can
+                            // carry are emitted — `comptime!(nr_max >= k)`
+                            // keeps a `nroots <= 3` program from compiling
+                            // `rys_root5`. The branch costs one predicted test
+                            // per primitive quartet against a solver body of
+                            // tens of operations, and every lane still walks
+                            // the same arm (a quartet's order is cube-uniform).
+                            if comptime!(nr_max <= 5u32) {
+                                if nroots == 1u32 {
+                                    rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                } else if nroots == 2u32 {
+                                    if comptime!(nr_max >= 2u32) {
+                                        rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                    }
+                                } else if nroots == 3u32 {
+                                    if comptime!(nr_max >= 3u32) {
+                                        rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                    }
+                                } else if nroots == 4u32 {
+                                    if comptime!(nr_max >= 4u32) {
+                                        rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                    }
+                                } else {
+                                    if comptime!(nr_max >= 5u32) {
+                                        rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                    }
+                                }
                             } else {
                                 // nroots 6..=12: the inline Wheeler/Jacobi
                                 // entry (task 33-01), reachable only once
                                 // `device_nroots_ceiling` was raised for
                                 // this family on this backend.
+                                //
+                                // F1 (§15) does *not* fuse these orders: the
+                                // extended solver takes its order at comptime,
+                                // and merging 6..=12 into one dispatch would
+                                // emit seven double-double solvers where the
+                                // fixed-order arms emit five short ones. A
+                                // class above five therefore keeps a dispatch
+                                // of its own, and `nr_max == nroots` there.
                                 rys_roots_ext_dev(
                                     rys_tab,
                                     f64::cast_from(x_rys),
                                     &mut uext,
                                     &mut wext,
-                                    nroots,
+                                    nr_max,
                                 );
                                 #[unroll]
-                                for iext in 0..nroots {
+                                for iext in 0..nr_max {
                                     urys[iext as usize] = F::cast_from(uext[iext as usize]);
                                     wrys[iext as usize] = F::cast_from(wext[iext as usize]);
                                 }
@@ -1560,72 +1713,148 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
                             // The cooperative arm keeps the scalar loop unconditionally:
                             // there its `3 * nroots` tasks are real work for real lanes,
                             // and folding the roots away would cut the split to three.
-                            if comptime!(per_unit == 1u32 && nroots > 1u32) {
+                            //
+                            // F1 (§15): `nroots` is a runtime value now and a
+                            // `Vector` width is a type-level size, so the four
+                            // widths this arm serves are instantiated as
+                            // `Const<2..5>` and chosen by one branch per
+                            // primitive quartet. `comptime!(nr_max >= k)` keeps
+                            // a narrow dispatch from emitting the wide ones.
+                            // `vec_built` records whether an arm ran, so the
+                            // scalar fallback below is one test rather than a
+                            // repeat of the same five-way ladder.
+                            let mut vec_built: u32 = 0u32;
+                            if comptime!(per_unit == 1u32 && nr_max > 1u32) {
                                 let uslice = urys.to_slice_mut();
-                                let u2 = Vector::<F, N>::new(a0)
-                                    * roots_load::<F, N>(&uslice, 0u32, root_width);
-                                let tmp4 = Vector::<F, N>::new(F::new(0.5_f32))
-                                    / (u2 * Vector::<F, N>::new(aij + akl)
-                                        + Vector::<F, N>::new(a1));
-                                let tmp5 = u2 * tmp4;
-                                let tmp1 = Vector::<F, N>::new(F::new(2.0_f32)) * tmp5;
-                                let tmp2 = tmp1 * Vector::<F, N>::new(akl);
-                                let tmp3 = tmp1 * Vector::<F, N>::new(aij);
-                                let b00 = tmp5;
-                                let b10 = tmp5 + tmp4 * Vector::<F, N>::new(akl);
-                                let b01 = tmp5 + tmp4 * Vector::<F, N>::new(aij);
-
-                                #[unroll]
-                                for axis in 0..3u32 {
-                                    let off = gx_off + axis * g_size;
-                                    let mut xkl = xij_kl;
-                                    let mut rijrx = rijrxx;
-                                    let mut rklrx = rklrxx;
-                                    if axis == 1u32 {
-                                        xkl = yij_kl;
-                                        rijrx = rijrxy;
-                                        rklrx = rklrxy;
-                                    } else if axis == 2u32 {
-                                        xkl = zij_kl;
-                                        rijrx = rijrxz;
-                                        rklrx = rklrxz;
+                                let wslice = wrys.to_slice_mut();
+                                if comptime!(nr_max >= 2u32) {
+                                    if nroots == 2u32 {
+                                        vrr_build_axes_roots::<F, Const<2>>(
+                                            &mut g_slab,
+                                            &uslice,
+                                            &wslice,
+                                            gx_off,
+                                            g_size,
+                                            nmax,
+                                            mmax,
+                                            g2d_ijmax,
+                                            g2d_klmax,
+                                            a0,
+                                            aij,
+                                            akl,
+                                            a1,
+                                            fac1,
+                                            xij_kl,
+                                            yij_kl,
+                                            zij_kl,
+                                            rijrxx,
+                                            rijrxy,
+                                            rijrxz,
+                                            rklrxx,
+                                            rklrxy,
+                                            rklrxz,
+                                            2usize,
+                                        );
+                                        vec_built = 1u32;
                                     }
-                                    let c00 = Vector::<F, N>::new(rijrx)
-                                        - tmp2 * Vector::<F, N>::new(xkl);
-                                    let c0p = Vector::<F, N>::new(rklrx)
-                                        + tmp3 * Vector::<F, N>::new(xkl);
-
-                                    // `gx`/`gy` seed at one, `gz` at the root's Rys weight
-                                    // times the primitive's scale factor — the same three
-                                    // values the scalar arm writes, by the same rule.
-                                    // Statement-level mutation rather than a value-returning
-                                    // `if`, for the reason the scalar arm records below.
-                                    let mut seed = Vector::<F, N>::new(F::new(1.0_f32));
-                                    if axis == 2u32 {
-                                        let wslice = wrys.to_slice_mut();
-                                        seed = roots_load::<F, N>(&wslice, 0u32, root_width)
-                                            * Vector::<F, N>::new(fac1);
-                                    }
-
-                                    vrr_fill_axis_roots::<F, N>(
-                                        &mut g_slab,
-                                        off,
-                                        nmax,
-                                        mmax,
-                                        g2d_ijmax,
-                                        g2d_klmax,
-                                        c00,
-                                        c0p,
-                                        b00,
-                                        b10,
-                                        b01,
-                                        seed,
-                                        root_width,
-                                    );
                                 }
-                            } else {
-                                #[unroll]
-                                for irys2 in 0..nroots {
+                                if comptime!(nr_max >= 3u32) {
+                                    if nroots == 3u32 {
+                                        vrr_build_axes_roots::<F, Const<3>>(
+                                            &mut g_slab,
+                                            &uslice,
+                                            &wslice,
+                                            gx_off,
+                                            g_size,
+                                            nmax,
+                                            mmax,
+                                            g2d_ijmax,
+                                            g2d_klmax,
+                                            a0,
+                                            aij,
+                                            akl,
+                                            a1,
+                                            fac1,
+                                            xij_kl,
+                                            yij_kl,
+                                            zij_kl,
+                                            rijrxx,
+                                            rijrxy,
+                                            rijrxz,
+                                            rklrxx,
+                                            rklrxy,
+                                            rklrxz,
+                                            3usize,
+                                        );
+                                        vec_built = 1u32;
+                                    }
+                                }
+                                if comptime!(nr_max >= 4u32) {
+                                    if nroots == 4u32 {
+                                        vrr_build_axes_roots::<F, Const<4>>(
+                                            &mut g_slab,
+                                            &uslice,
+                                            &wslice,
+                                            gx_off,
+                                            g_size,
+                                            nmax,
+                                            mmax,
+                                            g2d_ijmax,
+                                            g2d_klmax,
+                                            a0,
+                                            aij,
+                                            akl,
+                                            a1,
+                                            fac1,
+                                            xij_kl,
+                                            yij_kl,
+                                            zij_kl,
+                                            rijrxx,
+                                            rijrxy,
+                                            rijrxz,
+                                            rklrxx,
+                                            rklrxy,
+                                            rklrxz,
+                                            4usize,
+                                        );
+                                        vec_built = 1u32;
+                                    }
+                                }
+                                if comptime!(nr_max >= 5u32) {
+                                    if nroots == 5u32 {
+                                        vrr_build_axes_roots::<F, Const<5>>(
+                                            &mut g_slab,
+                                            &uslice,
+                                            &wslice,
+                                            gx_off,
+                                            g_size,
+                                            nmax,
+                                            mmax,
+                                            g2d_ijmax,
+                                            g2d_klmax,
+                                            a0,
+                                            aij,
+                                            akl,
+                                            a1,
+                                            fac1,
+                                            xij_kl,
+                                            yij_kl,
+                                            zij_kl,
+                                            rijrxx,
+                                            rijrxy,
+                                            rijrxz,
+                                            rklrxx,
+                                            rklrxy,
+                                            rklrxz,
+                                            5usize,
+                                        );
+                                        vec_built = 1u32;
+                                    }
+                                }
+                            }
+                            if vec_built == 0u32 {
+                                let mut irys2 = 0u32;
+                                while irys2 < nroots {
                                     let u2 = a0 * urys[irys2 as usize];
                                     let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
                                     let tmp5 = u2 * tmp4;
@@ -1762,6 +1991,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
                                             }
                                         }
                                     }
+                                    irys2 += 1u32;
                                 }
                             }
 
@@ -2091,12 +2321,42 @@ fn two_electron_scalar_kernel<F: Float + CubeElement, N: Size>(
                                 let base_y = class_idx[(t + 1u32) as usize];
                                 let base_z = class_idx[(t + 2u32) as usize];
 
+                                // F1 (§15): the root sum keeps its unrolled
+                                // form at a comptime width and the width is
+                                // chosen here, once per element. A dynamic
+                                // trip count of one to five would put a
+                                // compare and a branch on the kernel's hottest
+                                // statement; this branch is on the quartet's
+                                // `nroots`, which is the same for every element
+                                // of the block and so perfectly predicted. Only
+                                // the widths this dispatch can carry are
+                                // emitted.
+                                let ax = gx_off + base_x;
+                                let ay = gy_off + base_y;
+                                let az = gz_off + base_z;
                                 let mut sum = F::new(0.0_f32);
-                                #[unroll]
-                                for r in 0..nroots {
-                                    sum += g_slab[(gx_off + base_x + r) as usize]
-                                        * g_slab[(gy_off + base_y + r) as usize]
-                                        * g_slab[(gz_off + base_z + r) as usize];
+                                if comptime!(nr_max > 5u32) {
+                                    // The extended orders are never fused, so
+                                    // `nr_max` is this quartet's own order.
+                                    sum = root_dot::<F>(&g_slab, ax, ay, az, nr_max);
+                                } else if nroots == 1u32 {
+                                    sum = root_dot::<F>(&g_slab, ax, ay, az, 1u32);
+                                } else if nroots == 2u32 {
+                                    if comptime!(nr_max >= 2u32) {
+                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 2u32);
+                                    }
+                                } else if nroots == 3u32 {
+                                    if comptime!(nr_max >= 3u32) {
+                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 3u32);
+                                    }
+                                } else if nroots == 4u32 {
+                                    if comptime!(nr_max >= 4u32) {
+                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 4u32);
+                                    }
+                                } else {
+                                    if comptime!(nr_max >= 5u32) {
+                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 5u32);
+                                    }
                                 }
 
                                 if use_acc {
@@ -3033,19 +3293,130 @@ pub const SHARED_G_SLOTS: usize = 6144;
 pub struct TwoELaunchSignature {
     pub ibase: u32,
     pub kbase: u32,
+    /// The Rys **bucket**, not the Rys order (F1, §15).
+    ///
+    /// [`FUSED_NROOTS_BUCKET`] for every class the fixed-order solvers serve
+    /// (`nroots <= 5`) — those share one dispatch and carry their own order in
+    /// their class row — and the order itself above that, where the extended
+    /// solver's comptime order makes fusion cost more than it saves.
     pub nroots: u32,
 }
 
+/// The bucket every `nroots <= `[`MAX_FUSED_NROOTS`] class dispatches under.
+///
+/// Zero is not a Rys order, so it cannot collide with an unfused one.
+pub const FUSED_NROOTS_BUCKET: u32 = 0;
+
+/// The widest Rys order the fused dispatch carries (F1, §15).
+///
+/// One through five are the fixed-order polynomial solvers `rys_root1..5`:
+/// short bodies, and five of them in one program is the same code the five
+/// separate programs held. Six and above is `rys_roots_ext_dev`, whose
+/// double-double Wheeler/Jacobi arms are an order of magnitude larger and
+/// which takes its order at comptime; fusing those would emit seven of them
+/// per dispatch to merge classes that carry a fraction of a percent of any
+/// work list's primitive quartets. They keep a dispatch each.
+pub const MAX_FUSED_NROOTS: u32 = 5;
+
 impl TwoELaunchSignature {
     /// The signature an angular-momentum class dispatches under.
+    ///
+    /// `fuse` is [`two_e_nroots_fusion`] for the backend this batch runs on —
+    /// the caller passes it rather than the callee reading it, so that one
+    /// grouping decision covers a whole plan and cannot change between the
+    /// pre-flight budget and the dispatch.
     #[must_use]
-    pub fn of(params: &TwoEClassParams) -> Self {
+    pub fn of(params: &TwoEClassParams, fuse: bool) -> Self {
         Self {
             ibase: params.ibase,
             kbase: params.kbase,
-            nroots: params.nroots,
+            nroots: if fuse && params.nroots <= MAX_FUSED_NROOTS {
+                FUSED_NROOTS_BUCKET
+            } else {
+                params.nroots
+            },
         }
     }
+}
+
+/// Does this backend's decomposition want the Rys-order fusion (F1, §15)?
+///
+/// **Per-unit (CPU) only.** The fusion is a load-balancing change: on the
+/// per-unit shape a dispatch's quartets are partitioned across every unit, and
+/// a dispatch that holds one `(dd|dd)` quartet leaves fifteen of sixteen units
+/// idle while it runs. Fusing the Rys orders into one dispatch per `(ibase,
+/// kbase)` puts the whole work list in one partition; measured 1.21x-1.48x on
+/// four of six GTH workloads and 1.0x on the two that were already balanced.
+///
+/// On the cooperative (GPU) shape it *costs*, and the measurement says why
+/// (§15.4): a cube is sized from the group's widest Cartesian block and its G
+/// slab from the group's widest class, so fusing hands an `(ss|ss)` quartet a
+/// 256-lane cube and a 27 KiB slab; and `kl_split_factor`'s partial-buffer
+/// budget is spent against the group's whole output, so a four-times wider
+/// group buys half the ket-pair split G1 lives on. H2O/TZVP-MOLOPT measured
+/// 0.84x on ROCm. Both are fixable — per-class cube widths and a per-quartet
+/// split budget — and neither is fixed here, so the cooperative arm keeps one
+/// dispatch per Rys order.
+fn two_e_nroots_fusion<R: Runtime>(client: &ComputeClient<R>) -> bool {
+    nroots_fusion_enabled() && two_e_per_unit::<R>(client)
+}
+
+/// [`two_e_nroots_fusion`] for a resolved backend.
+fn two_e_nroots_fusion_for(backend: &ResolvedBackend) -> bool {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => two_e_nroots_fusion::<cubecl::cpu::CpuRuntime>(client),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => two_e_nroots_fusion::<cubecl_wgpu::WgpuRuntime>(client),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => two_e_nroots_fusion::<cubecl_cuda::CudaRuntime>(client),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => two_e_nroots_fusion::<cubecl_hip::HipRuntime>(client),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            two_e_nroots_fusion::<cubecl_wgpu::WgpuRuntime>(client)
+        }
+    }
+}
+
+/// Is the Rys-order launch-group fusion on (F1, §15), with `CINTX_2E_FUSE`
+/// applied?
+///
+/// `off` restores the pre-fusion grouping — one dispatch per `(ibase, kbase,
+/// nroots)` — which is the A/B this section's ratios are quoted from. Unlike
+/// the kernel's other switches this one *does* change the compiled program
+/// (`nr_max` is comptime), so the two arms are two programs; that is why it is
+/// a grouping switch read on the host rather than a kernel scalar. The
+/// measurement it supports is of the *grouping*, and both arms produce
+/// bit-identical output, which is what `gth_profile`'s dump comparison holds
+/// them to.
+fn nroots_fusion_enabled() -> bool {
+    let current = NROOTS_FUSION.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current == 1;
+    }
+    let from_env = u32::from(
+        !std::env::var("CINTX_2E_FUSE").is_ok_and(|value| value.eq_ignore_ascii_case("off")),
+    );
+    NROOTS_FUSION.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env == 1
+}
+
+/// `u32::MAX` until [`nroots_fusion_enabled`] resolves the environment.
+static NROOTS_FUSION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Pin the Rys-order fusion for the rest of this process: `Some(true)` fuses,
+/// `Some(false)` restores one dispatch per Rys order, `None` re-reads
+/// `CINTX_2E_FUSE`. For in-process A/B measurement.
+///
+/// A work list already planned is unaffected — the grouping is read when a
+/// [`crate::ResidentTwoEBasis`] plans a batch, so set this before the call
+/// whose grouping is being measured.
+pub fn set_two_e_nroots_fusion(fused: Option<bool>) {
+    NROOTS_FUSION.store(
+        fused.map_or(u32::MAX, u32::from),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// Accumulator slots in the **per-unit** decomposition (S2).
@@ -3094,11 +3465,12 @@ const fn acc_capacity(per_unit: u32) -> usize {
 pub(crate) const QUARTET_ROW_STRIDE: usize = 8;
 
 /// `u32` shape scalars per class row of the device shape table:
-/// `li,lj,lk,ll,di,dk,dl,dj,g_size,nmax,mmax,g2d_ijmax,g2d_klmax,idx_off`.
+/// `li,lj,lk,ll,di,dk,dl,dj,g_size,nmax,mmax,g2d_ijmax,g2d_klmax,idx_off,nroots`.
 ///
 /// `idx_off` (K1) is where the class's Cartesian index table starts in
-/// [`TwoELaunchGroup::class_idx`].
-const TWO_E_SHAPE_STRIDE: usize = 14;
+/// [`TwoELaunchGroup::class_idx`], and `nroots` (F1, §15) is the class's Rys
+/// order — a runtime column since orders are fused into one dispatch.
+const TWO_E_SHAPE_STRIDE: usize = 15;
 
 /// One dispatch: every quartet sharing a [`TwoELaunchSignature`] (Task 35-M1).
 ///
@@ -3129,6 +3501,11 @@ pub struct TwoELaunchGroup {
     pub out_len: usize,
     /// Widest `g_size` in the group — what the per-slot G slab is sized to.
     pub max_g_size: u32,
+    /// Widest Rys order merged into this dispatch (F1, §15) — the kernel's
+    /// comptime `nr_max`. It sizes the private root arrays and decides which
+    /// per-order arms the program emits; each quartet still takes the order in
+    /// its own class row.
+    pub max_nroots: u32,
     /// Widest Cartesian contraction block — the cooperative cube's parallel width.
     pub max_block_len: u32,
     /// Widest staged-contraction scratch any quartet here needs
@@ -3150,6 +3527,7 @@ impl TwoELaunchGroup {
             quartets: Vec::new(),
             out_len: 0,
             max_g_size: 0,
+            max_nroots: 0,
             max_block_len: 0,
             max_ctr_len: 0,
             quartet_cost: Vec::new(),
@@ -3163,9 +3541,11 @@ impl TwoELaunchGroup {
     /// class under the wrong comptime parameters would silently evaluate it
     /// with another HRR branch or Rys order.
     pub fn push_class(&mut self, params: &TwoEClassParams) -> u32 {
-        assert_eq!(
-            TwoELaunchSignature::of(params),
-            self.signature,
+        assert!(
+            params.ibase == self.signature.ibase
+                && params.kbase == self.signature.kbase
+                && (self.signature.nroots == FUSED_NROOTS_BUCKET
+                    || self.signature.nroots == params.nroots),
             "class does not belong to this launch group"
         );
         let index = self.class_factor.len() as u32;
@@ -3185,6 +3565,7 @@ impl TwoELaunchGroup {
             params.g2d_ijmax,
             params.g2d_klmax,
             idx_off,
+            params.nroots,
         ]);
         self.class_factor.push(params.common_factor);
         // K1: the class's Cartesian index table, in the contraction's element
@@ -3213,6 +3594,7 @@ impl TwoELaunchGroup {
             }
         }
         self.max_g_size = self.max_g_size.max(params.g_size);
+        self.max_nroots = self.max_nroots.max(params.nroots);
         index
     }
 
@@ -3529,6 +3911,7 @@ fn run_2e_batches<R: Runtime>(
             per_unit,
             block_len: group.max_block_len,
             signature: group.signature,
+            max_nroots: group.max_nroots,
             primitive_tolerance: options.primitive_tolerance,
             heuristic_cube_dim: two_e_cube_dim::<R>(
                 client,
@@ -3798,6 +4181,8 @@ struct TwoEGroupDispatch<R: Runtime> {
     per_unit: bool,
     block_len: u32,
     signature: TwoELaunchSignature,
+    /// The kernel's comptime `nr_max` — this group's widest Rys order (F1, §15).
+    max_nroots: u32,
     primitive_tolerance: f64,
     /// The geometry [`two_e_cube_dim`] picked — the safe default, and the
     /// candidate every tuned width has to beat.
@@ -3920,10 +4305,9 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 ctr_stride as u32,
                 self.ctr_mode,
                 self.coop_build,
-                self.signature.nroots as usize,
                 self.signature.ibase,
                 self.signature.kbase,
-                self.signature.nroots,
+                self.max_nroots,
                 u32::from(self.per_unit),
                 u32::from(self.g_in_shared),
                 QUARTET_ROW_STRIDE as u32,
@@ -3942,7 +4326,7 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
             } else {
                 crate::tuning::Decomposition::Cooperative
             },
-            self.signature.nroots,
+            self.max_nroots,
             self.n_quartets as usize,
             self.block_len,
             slot_scratch_bytes(self.g_size, self.ctr_len),
@@ -4133,7 +4517,9 @@ fn run_2e_scalar_device<R: Runtime>(
         basis.centers.extend_from_slice(&center);
     }
 
-    let mut group = TwoELaunchGroup::new(TwoELaunchSignature::of(&params));
+    // One class, one dispatch: the Rys-order fusion (F1) has nothing to merge
+    // here, so this group is keyed on the class's own order.
+    let mut group = TwoELaunchGroup::new(TwoELaunchSignature::of(&params, false));
     let class_index = group.push_class(&params);
     group.out_len = out_len;
     group.max_block_len = (out_len / ((nctr_i * nctr_j * nctr_k * nctr_l) as usize).max(1)) as u32;
@@ -8345,6 +8731,9 @@ mod device_tests {
             shape.g2d_klmax as u32,
             // K1: the class's index table starts at 0.
             0,
+            // F1: this class's Rys order, read per quartet since the fused
+            // dispatch carries several.
+            1,
         ];
         // One `(ss|ss)` Cartesian element, whose three G offsets are all 0.
         let class_idx: [u32; 3] = [0, 0, 0];
@@ -8460,11 +8849,11 @@ mod device_tests {
             1u32,
             // S3 split; with one lane it is the same build either way.
             1u32,
-            // `nroots == 1` here, so the vector VRR arm is comptime-off and the
-            // width only names the (unused) `Vector` type it would have used.
-            1usize,
             shape.ibase as u32,
             shape.kbase as u32,
+            // F1: `nr_max` — the widest Rys order the dispatch carries. One
+            // here, so only the `rys_root1` arm is emitted and the vector VRR
+            // arm is comptime-off.
             1u32,
             // Cooperative decomposition: one cube, one quartet, `cooperative_cube_dim`
             // lanes — the shape this test's single `3 * g_size` slab is sized for.
@@ -9756,6 +10145,9 @@ fn plan_2e_stream(
         backend,
         crate::device_rys_ceiling::RysFamily::Int2e,
     );
+    // F1 (§15): one grouping decision for the whole plan, taken here so the
+    // pre-flight budget below and the dispatch cannot disagree about it.
+    let fuse = two_e_nroots_fusion_for(backend);
 
     // ── M1: evaluate in chunks of consecutive quartets ────────────────────
     //
@@ -9796,7 +10188,41 @@ fn plan_2e_stream(
     for range in ranges {
         let sub = &quartets[range.clone()];
         let (groups, classes, placement, row_owner) =
-            build_launch_groups(sub, shells, &resident.pairs, ceiling)?;
+            build_launch_groups(sub, shells, &resident.pairs, ceiling, fuse)?;
+
+        // `CINTX_2E_GROUPS=1` prints the grouping this chunk will dispatch:
+        // per signature, the quartet count, the merged class count, the widest
+        // block and G tensor, the summed `quartet_cost_estimate` and the
+        // costliest single quartet. It is the attribution F1 (§15) was chosen
+        // from: `Σ_groups max(cost / units, max quartet cost)` is the floor the
+        // per-unit partition can reach, and comparing it against
+        // `max(Σ cost / units, max quartet cost)` says what fusing the
+        // dispatches is worth *before* the kernel is touched. It costs nothing
+        // when the variable is unset and it is the only way to see the
+        // imbalance from outside — `launches=` counts dispatches but not what
+        // is in them.
+        if std::env::var("CINTX_2E_GROUPS").is_ok() {
+            let total: u64 = groups.iter().flat_map(|g| g.quartet_cost.iter()).sum();
+            eprintln!("  chunk: {} groups, total cost {total}", groups.len());
+            for g in &groups {
+                let cost: u64 = g.quartet_cost.iter().sum();
+                eprintln!(
+                    "    sig(ibase={},kbase={},nroots={}) quartets={} classes={} \
+                     block={} g_size={} nr_max={} cost={} ({:.1}%) maxq={}",
+                    g.signature.ibase,
+                    g.signature.kbase,
+                    g.signature.nroots,
+                    g.len(),
+                    g.class_count(),
+                    g.max_block_len,
+                    g.max_g_size,
+                    g.max_nroots,
+                    cost,
+                    100.0 * cost as f64 / total as f64,
+                    g.quartet_cost.iter().max().copied().unwrap_or(0),
+                );
+            }
+        }
 
         // The pre-flight plan (M1): every term comes from the expression the
         // dispatch allocates from, so a refusal here is a statement about this
@@ -10196,6 +10622,7 @@ fn build_launch_groups(
     shells: &[BatchShell],
     pairs: &crate::kernels::pair_table::PairTable,
     ceiling: usize,
+    fuse: bool,
 ) -> Result<LaunchGrouping, cintxRsError> {
     // Group by launch class, preserving the caller's order within a class.
     let mut grouped: std::collections::BTreeMap<[u8; 4], Vec<usize>> = Default::default();
@@ -10244,7 +10671,7 @@ fn build_launch_groups(
             });
         }
 
-        let signature = TwoELaunchSignature::of(&params);
+        let signature = TwoELaunchSignature::of(&params, fuse);
         let cart_block = ncart(li) * ncart(lj) * ncart(lk) * ncart(ll);
         let class_index = classes.len();
         classes.push(TwoEClassPlacement {
@@ -11125,6 +11552,10 @@ pub fn prewarm_2e_work_list(
         });
     }
     let units = prewarm_items_per_class(backend);
+    // F1 (§15): warm the programs the real batch will dispatch, which means
+    // grouping the representatives the way `plan_2e_stream` will group the
+    // work list.
+    let fuse = two_e_nroots_fusion_for(backend);
     let mut report = PrewarmReport {
         items_per_class: units,
         ..Default::default()
@@ -11166,7 +11597,7 @@ pub fn prewarm_2e_work_list(
     for (class, (count, representative)) in by_class {
         let [li, lj, lk, ll] = class;
         let params = TwoEClassParams::new(li, lj, lk, ll);
-        let signature = TwoELaunchSignature::of(&params);
+        let signature = TwoELaunchSignature::of(&params, fuse);
         let entry = by_signature
             .entry((signature.ibase, signature.kbase, signature.nroots))
             .or_default();

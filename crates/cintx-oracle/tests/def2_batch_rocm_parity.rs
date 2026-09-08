@@ -229,11 +229,23 @@ fn def2_2e_batch_matches_between_cpu_and_rocm() {
     let rocm = evaluate_2e_quartet_batch(&backend(BackendKind::Rocm), &shells, &list)
         .expect("rocm 2e batch");
 
-    // The launch *plan* is backend-independent; only the decomposition differs.
-    assert_eq!(
-        cpu.stats.kernel_launch_count, rocm.stats.kernel_launch_count,
-        "both backends dispatch once per launch signature"
+    // The l-class decomposition is backend-independent. The *grouping* of
+    // those classes into dispatches is not, and has not been since F1 (GTH
+    // plan §15): the per-unit arm fuses the Rys orders into one dispatch per
+    // `(ibase, kbase)` because a dispatch holding one `(dd|dd)` quartet leaves
+    // fifteen of sixteen units idle, while the cooperative arm keeps one
+    // dispatch per order because fusing there costs it half of G1's ket-pair
+    // split (§15.4). Both moves only ever *merge* what the other would launch
+    // separately, and the cooperative arm additionally launches one reduce per
+    // split group, so the per-unit count cannot exceed the cooperative one.
+    assert!(
+        cpu.stats.kernel_launch_count <= rocm.stats.kernel_launch_count,
+        "the fused per-unit grouping merges dispatches and adds none: \
+         cpu={} rocm={}",
+        cpu.stats.kernel_launch_count,
+        rocm.stats.kernel_launch_count
     );
+    assert!(cpu.stats.kernel_launch_count > 0);
     assert_eq!(cpu.stats.launch_classes, rocm.stats.launch_classes);
     assert_eq!(cpu.offsets, rocm.offsets);
     assert_agrees("int2e_sph", &cpu.values, &rocm.values);

@@ -69,7 +69,7 @@ pub use kernels::two_electron::{
     prewarm_2e_work_list, schwarz_bounds, set_accumulator_slots_max, set_contraction_mode,
     set_contraction_probe, set_cooperative_build_split, set_shared_g_enabled,
     set_staged_contraction, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
-    set_two_e_per_unit, stream_2e_quartet_batch,
+    set_two_e_nroots_fusion, set_two_e_per_unit, stream_2e_quartet_batch,
 };
 pub use memory_probe::{DeviceMemoryProbe, residency_profiling_enabled};
 pub use plane::{
