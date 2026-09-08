@@ -72,6 +72,7 @@ use crate::kernels::f12::{Nabla1Center, gout_ip1ip2, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{
     build_2e_shape_omega, fill_g_tensor_2e_range, two_e_shape_as_f12,
 };
+use crate::math::root_vec::{roots_load, vrr_fill_axis_roots_ket};
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
@@ -183,7 +184,7 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
 ///         g2c2e.c `CINT2c2e_loop_nopt`.
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
-fn center_2c2e_kernel<F: Float + CubeElement>(
+fn center_2c2e_kernel<F: Float + CubeElement, N: Size>(
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -198,6 +199,13 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
     n_pairs: u32,
     n_cubes: u32,
     g_stride: u32,
+    // The root-run width the vector VRR arm is instantiated at — always
+    // `nroots`, carried separately because a `Vector` width is a type-level size
+    // in CubeCL while `nroots` is a comptime `u32`. `#[define(N)]` registers it
+    // as the dynamic size `N`; see `math::root_vec`.
+    #[define(N)]
+    #[comptime]
+    root_width: usize,
     #[comptime] nroots: u32,
     #[comptime] per_unit: u32,
 ) {
@@ -357,91 +365,161 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                     let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor;
 
                     // ── Fill the G-tensor (VRR) ──────────
-                    #[unroll]
-                    for irys in 0..nroots {
-                        let u2 = a0 * urys[irys as usize];
-                        let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                    // The roots as vector lanes (V1). This kernel runs its whole
+                    // VRR under `lane == 0` — one pair per slot, nothing split
+                    // across the root axis — so unlike `two_electron` there is no
+                    // decomposition to gate against: both arms take it. The
+                    // `nroots == 1` case keeps the scalar loop, where a width-one
+                    // `Vector` is pure overhead.
+                    //
+                    // Elementwise ops on the same operands in the same order, so
+                    // the slab is bit-identical; `math::root_vec` carries the
+                    // reasoning and the gate.
+                    if comptime!(nroots > 1u32) {
+                        let uslice = urys.to_slice_mut();
+                        let u2 =
+                            Vector::<F, N>::new(a0) * roots_load::<F, N>(&uslice, 0u32, root_width);
+                        let tmp4 = Vector::<F, N>::new(F::new(0.5_f32))
+                            / (u2 * Vector::<F, N>::new(aij + akl) + Vector::<F, N>::new(a1));
                         let tmp5 = u2 * tmp4;
                         let b00 = tmp5;
-                        let b10 = tmp5 + tmp4 * akl;
-                        let b01 = tmp5 + tmp4 * aij;
-                        let tmp2 = F::new(2.0_f32) * tmp5 * akl;
-                        let tmp3 = F::new(2.0_f32) * tmp5 * aij;
+                        let b10 = tmp5 + tmp4 * Vector::<F, N>::new(akl);
+                        let b01 = tmp5 + tmp4 * Vector::<F, N>::new(aij);
+                        let tmp2 =
+                            Vector::<F, N>::new(F::new(2.0_f32)) * tmp5 * Vector::<F, N>::new(akl);
+                        let tmp3 =
+                            Vector::<F, N>::new(F::new(2.0_f32)) * tmp5 * Vector::<F, N>::new(aij);
 
-                        // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
-                        g[(gbase + irys) as usize] = F::new(1.0_f32);
-                        g[(gbase + g_size + irys) as usize] = F::new(1.0_f32);
-                        g[(gbase + 2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
+                        // The `gz` seed; `gx`/`gy` seed at one (g2e.c:4517-4521).
+                        let wslice = wrys.to_slice_mut();
+                        let zseed = roots_load::<F, N>(&wslice, 0u32, root_width)
+                            * Vector::<F, N>::new(fac1);
 
+                        let mut g_slab = g.to_slice_mut();
                         #[unroll]
                         for axis in 0..3u32 {
                             let base = gbase + axis * g_size;
-                            // Displacement component for this axis.
                             let mut d = xij;
                             if axis == 1u32 {
                                 d = yij;
                             } else if axis == 2u32 {
                                 d = zij;
                             }
-                            let c00a = -tmp2 * d;
-                            let c0pa = tmp3 * d;
+                            let dv = Vector::<F, N>::new(d);
+                            // `c00a = -tmp2 * d` — the sign moves onto `d`, which is an
+                            // exact operation, so the product is the same bits.
+                            let c00a = tmp2 * (Vector::<F, N>::new(F::new(0.0_f32)) - dv);
+                            let c0pa = tmp3 * dv;
 
-                            // i-VRR (nmax = li): g[n+1] = c00*g[n] + n*b10*g[n-1]
-                            if li >= 1u32 {
-                                let mut s_prev = g[(base + irys) as usize];
-                                let mut s1 = c00a * s_prev;
-                                g[(base + irys + dn) as usize] = s1;
-                                let mut n = 1u32;
-                                while n < li {
-                                    let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
-                                    g[(base + irys + (n + 1u32) * dn) as usize] = s2;
-                                    s_prev = s1;
-                                    s1 = s2;
-                                    n += 1u32;
-                                }
+                            let mut seed = Vector::<F, N>::new(F::new(1.0_f32));
+                            if axis == 2u32 {
+                                seed = zseed;
                             }
 
-                            // k-VRR pure (i=0, mmax = lk):
-                            // g[k+1] = c0p*g[k] + k*b01*g[k-1]
-                            if lk >= 1u32 {
-                                let mut s_prev = g[(base + irys) as usize];
-                                let mut s1 = c0pa * s_prev;
-                                g[(base + irys + dm) as usize] = s1;
-                                let mut m = 1u32;
-                                while m < lk {
-                                    let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
-                                    g[(base + irys + (m + 1u32) * dm) as usize] = s2;
-                                    s_prev = s1;
-                                    s1 = s2;
-                                    m += 1u32;
-                                }
-                            }
+                            vrr_fill_axis_roots_ket::<F, N>(
+                                &mut g_slab,
+                                base,
+                                li,
+                                lk,
+                                dn,
+                                dm,
+                                c00a,
+                                c0pa,
+                                b00,
+                                b10,
+                                b01,
+                                seed,
+                                root_width,
+                            );
+                        }
+                    } else {
+                        #[unroll]
+                        for irys in 0..nroots {
+                            let u2 = a0 * urys[irys as usize];
+                            let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                            let tmp5 = u2 * tmp4;
+                            let b00 = tmp5;
+                            let b10 = tmp5 + tmp4 * akl;
+                            let b01 = tmp5 + tmp4 * aij;
+                            let tmp2 = F::new(2.0_f32) * tmp5 * akl;
+                            let tmp3 = F::new(2.0_f32) * tmp5 * aij;
 
-                            // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
-                            // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
-                            if lk >= 1u32 && li >= 1u32 {
-                                let mut n = 1u32;
-                                while n <= li {
-                                    let i_off = irys + n * dn;
-                                    let s0_k0 = g[(base + i_off) as usize];
-                                    let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
-                                    // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
-                                    let mut s1 = c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
-                                    g[(base + i_off + dm) as usize] = s1;
-                                    let mut s_prev = s0_k0;
+                            // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
+                            g[(gbase + irys) as usize] = F::new(1.0_f32);
+                            g[(gbase + g_size + irys) as usize] = F::new(1.0_f32);
+                            g[(gbase + 2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
+
+                            #[unroll]
+                            for axis in 0..3u32 {
+                                let base = gbase + axis * g_size;
+                                // Displacement component for this axis.
+                                let mut d = xij;
+                                if axis == 1u32 {
+                                    d = yij;
+                                } else if axis == 2u32 {
+                                    d = zij;
+                                }
+                                let c00a = -tmp2 * d;
+                                let c0pa = tmp3 * d;
+
+                                // i-VRR (nmax = li): g[n+1] = c00*g[n] + n*b10*g[n-1]
+                                if li >= 1u32 {
+                                    let mut s_prev = g[(base + irys) as usize];
+                                    let mut s1 = c00a * s_prev;
+                                    g[(base + irys + dn) as usize] = s1;
+                                    let mut n = 1u32;
+                                    while n < li {
+                                        let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
+                                        g[(base + irys + (n + 1u32) * dn) as usize] = s2;
+                                        s_prev = s1;
+                                        s1 = s2;
+                                        n += 1u32;
+                                    }
+                                }
+
+                                // k-VRR pure (i=0, mmax = lk):
+                                // g[k+1] = c0p*g[k] + k*b01*g[k-1]
+                                if lk >= 1u32 {
+                                    let mut s_prev = g[(base + irys) as usize];
+                                    let mut s1 = c0pa * s_prev;
+                                    g[(base + irys + dm) as usize] = s1;
                                     let mut m = 1u32;
                                     while m < lk {
-                                        let prev_i_km =
-                                            g[(base + irys + (n - 1u32) * dn + m * dm) as usize];
-                                        let s2 = c0pa * s1
-                                            + F::cast_from(m) * b01 * s_prev
-                                            + F::cast_from(n) * b00 * prev_i_km;
-                                        g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
+                                        let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
+                                        g[(base + irys + (m + 1u32) * dm) as usize] = s2;
                                         s_prev = s1;
                                         s1 = s2;
                                         m += 1u32;
                                     }
-                                    n += 1u32;
+                                }
+
+                                // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
+                                // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
+                                if lk >= 1u32 && li >= 1u32 {
+                                    let mut n = 1u32;
+                                    while n <= li {
+                                        let i_off = irys + n * dn;
+                                        let s0_k0 = g[(base + i_off) as usize];
+                                        let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
+                                        // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
+                                        let mut s1 =
+                                            c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
+                                        g[(base + i_off + dm) as usize] = s1;
+                                        let mut s_prev = s0_k0;
+                                        let mut m = 1u32;
+                                        while m < lk {
+                                            let prev_i_km = g
+                                                [(base + irys + (n - 1u32) * dn + m * dm) as usize];
+                                            let s2 = c0pa * s1
+                                                + F::cast_from(m) * b01 * s_prev
+                                                + F::cast_from(n) * b00 * prev_i_km;
+                                            g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
+                                            s_prev = s1;
+                                            s1 = s2;
+                                            m += 1u32;
+                                        }
+                                        n += 1u32;
+                                    }
                                 }
                             }
                         }
@@ -727,6 +805,7 @@ fn run_2c2e_batches<R: Runtime>(
                         n_pairs as u32,
                         n_cubes,
                         g_stride as u32,
+                        $nr as usize,
                         $nr,
                         per_unit,
                     );
@@ -2393,10 +2472,11 @@ mod tests {
             unsafe { ArrayArg::from_raw_parts(g_h, 3) },
             unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
             PIE4 as f32,
-            1u32, // n_pairs
-            1u32, // n_cubes
-            3u32, // g_stride (one slab, unpadded)
-            1u32, // nroots
+            1u32,   // n_pairs
+            1u32,   // n_cubes
+            3u32,   // g_stride (one slab, unpadded)
+            1usize, // root_width: `nroots == 1`, so the vector arm is comptime-off
+            1u32,   // nroots
             // One cube, one pair: the cooperative shape this single slab is
             // sized for.
             0u32,

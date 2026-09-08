@@ -845,3 +845,199 @@ rate is 1/32 of f32, and then nothing but fewer flops helps).
   the f32 smoke launch, `kl_split_tests`, the full `cintx-cubecl` unit suite.
 - ROCm: `gth_profile` (§11.3), `gth_contraction_ab` cross-backend,
   `def2_batch_rocm_parity` with the split active by default.
+
+## 12. V1 — the VRR as vector lanes over the Rys roots (2026-09-08)
+
+### 12.1 The question
+
+§10.4 attributed the CPU per-unit kernel: contraction 54–73%, G build 27–46%,
+and called the contraction "the honest floor of this design on this runtime."
+The G build was never attacked directly. It divides into the VRR
+(`CINTg0_2e_2d`) and the HRR transfer, and the two have opposite shapes: the
+VRR is *latency*-bound — per root, one division and two serial two-term
+recurrences — while the HRR is a strided read-modify-write over the whole
+slab. CubeCL carries a `Vector<F, N>` type that lowers to native SIMD, and the
+Rys root axis is the contiguous, aligned, innermost axis of every G slab
+(`di = nroots`, and `dk`/`dl`/`dj`/`g_size` are all multiples of it), with no
+recurrence crossing it. So the roots can become lanes.
+
+### 12.2 Three candidates, measured before any of them landed
+
+`crates/cintx-cubecl/src/math/root_vec.rs` carries the one that paid; the other
+two were measured on the CPU runtime by the same in-process A/B and are recorded
+here so the next pass does not repeat them.
+
+| candidate | shape | CPU A/B |
+|---|---|---|
+| **VRR over roots** | latency-bound; `nroots` serial chains collapse into one | **1.4x–1.9x** (`nroots` 2–5) |
+| HRR transfer over roots | gather-bound; `g[dst+r] = c·g[a+r] + g[b+r]` | 0.60–0.81x |
+| contraction `Σ_r gx·gy·gz` | gather-bound, plus an in-order lane reduction that is the same dependency chain the scalar loop had | 0.85–1.12x |
+
+At `nroots == 1` the vector VRR measures 0.88x — a width-1 `Vector` is pure
+overhead — so the arm is comptime-off there.
+
+Two CubeCL facts fell out of the attempt and are worth keeping:
+
+- `Slice::with_vector_size` (the reinterpreting vector load) is **not supported
+  on the CPU runtime**: it sets `IndexOperator::vector_size`, which
+  `cubecl-cpu`'s `visit_index` asserts is zero. The lanes are therefore gathered
+  and scattered explicitly, which costs nothing here — the win is the
+  dependency chain, not the load width.
+- Binding a buffer as `Array<Vector<F, N>>` at **odd** `N` returns wrong values
+  on the CPU runtime (checked at `N = 3`). Nothing in `root_vec` does; the slab
+  stays scalar-typed. `N = 3` and `N = 5` are otherwise ordinary — `VectorSize`
+  is a plain `usize` in the IR and CPU/HIP/CUDA all report
+  `max_vector_size: VectorSize::MAX`. (wgpu caps it at 4 and has no f64.)
+
+### 12.3 What landed
+
+`vrr_fill_axis_roots` — the scalar `vrr_fill_axis` body with the root index
+folded into vector lanes, statement for statement. It is selected at comptime by
+`per_unit == 1 && nroots > 1`, i.e. **the per-unit (CPU) arm only**. The
+cooperative arm keeps the scalar loop deliberately: S3 hands out `3 * nroots`
+independent `(axis, root)` tasks across the cube, and folding the roots into
+lanes would cut that to three. On the per-unit arm there is nothing to lose —
+`lanes == 1`, so `build_lanes == 1` and `build_lane == 0` whichever `coop_build`
+mode is set, and the residue test admits every task.
+
+The width reaches the kernel as a `#[define(N)]` comptime argument rather than a
+`Const<N>` generic: `nroots` is already a comptime `u32` (one JIT specialization
+per value, one Rust instantiation), and a const generic would have forced five
+Rust monomorphizations of the whole kernel through every launcher.
+
+### 12.4 Measured (CPU, per-unit arm, `gth_profile`, best of 3, interleaved)
+
+| workload | scalar VRR (ms) | vector VRR (ms) | whole kernel | G build alone |
+|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 22.57 | 21.98 | 1.03x | **1.09x** |
+| CH4 / DZVP-MOLOPT-SR | 65.61 | 59.99 | 1.09x | **1.14x** |
+| SO2 / DZVP-MOLOPT-SR | 74.61 | 75.91 | 0.98x | **1.09x** |
+| H2O / TZVP-MOLOPT | 90.83 | 83.88 | 1.08x | **1.15x** |
+| CH4 / TZVP-MOLOPT | 274.11 | 266.86 | 1.03x | **1.17x** |
+| SO2 / TZVP-MOLOPT | 370.15 | 360.12 | 1.03x | **1.20x** |
+
+"G build alone" is the `probe:no-ctr` variant, which runs the build and skips
+the contraction. It moves consistently, 1.09–1.20x; the whole kernel moves
+0.98–1.09x, because §10.4's split still holds and the build is the smaller
+half. The 1.4–1.9x the micro-benchmark shows is the VRR in isolation, and the
+HRR — untouched — is the rest of the build.
+
+This is a small end-to-end win. It is recorded as landed rather than refused
+because it is free of any accuracy cost, and because the build's share is
+larger everywhere the contraction is cheaper: §10.5 measured the contraction at
+5–6% of the *cooperative* kernel, where the same lever is available the moment
+the S3 split stops being the reason not to take it.
+
+### 12.5 Verification
+
+- **Bit-identity, unit level**: `root_vec_matches_scalar_bit_for_bit` runs both
+  arms over separate slabs at all five `(nroots, nmax, mmax)` shapes and compares
+  `to_bits()`, so the odd widths 3 and 5 are covered. A `Vector` op is
+  elementwise on the same operands in the same order, and no fused multiply-add
+  is introduced, so there is no divergence budget to spend.
+- **Bit-identity, end to end**: `gth_profile` under `CINTX_GTH_DUMP` with the
+  arm on, then `CINTX_GTH_COMPARE` with it off — all six GTH workloads, 1.12M
+  values on SO2/TZVP alone, zero differing bits.
+- **Vendor**: every `max|diff|` is the §10.4 figure to the digit
+  (3.33e-15 … 2.65e-13), and `gth_profile` still prints `=bits` for every
+  variant.
+- **Suites**: `def2_2e_batch_parity` (4), `two_e_cooperative_arm` (4 — the
+  cooperative arm is untouched and still agrees with the per-unit one),
+  `gth_contraction_ab` water, `def2_integral_parity`, `def2_accumulator_ab`,
+  `def2_device_c2s_parity`, the f32 smoke launch, and the `cintx-cubecl` unit
+  suite.
+
+### 12.6 What is left
+
+- **The other Rys engines.** `center_3c2e`, `center_2c2e` and `sigma_1e_nuc`
+  inline the same `CINTg0_2e_2d` shape over the same root-fastest layout;
+  `vrr_fill_axis_roots` applies verbatim. Not taken here — each needs its own
+  signature surgery and its own parity gate.
+- **The HRR.** Still the larger half of the build and still scalar. The vector
+  form loses because it is gather-bound; what would help is a layout with a
+  wider contiguous run, not a wider load of the same run.
+- **The cooperative arm.** The lever is available there too, and worth more
+  (§10.5: the build is ~94% of that kernel), but it trades against S3's
+  `3 * nroots` split. The trade is only worth measuring once the GPU stops being
+  latency-bound on the serial primitive-quartet loop — the item §10.5 names.
+
+## 13. V1 extended to the 2c2e and 3c2e Rys engines (2026-09-08)
+
+§12.6 named the obvious follow-on: the other Rys engines inline the same 2D
+recurrence over the same root-fastest layout, so `vrr_fill_axis_roots` should
+apply verbatim. It mostly does. Four device kernels now take the vector arm:
+
+| kernel | ordering | selected when |
+|---|---|---|
+| `center_2c2e_kernel` | ket-raising | `nroots > 1` |
+| `center_3c2e_scalar_kernel` | ket-raising | `nroots > 1` |
+| `center_3c2e_ip1_kernel` | bra-raising | `nroots > 1` |
+| `center_3c2e_ip2_kernel` | bra-raising | `nroots > 1` |
+
+### 13.1 Two orderings, not one
+
+`CINTg0_2e_2d` appears in this crate in two loop orderings, and they are not
+interchangeable — the mixed `b00` recurrence raises a different index and reads
+a different neighbour in each:
+
+- **bra-raising**, `g(n+1,m) = c00·g(n,m) + n·b10·g(n-1,m) + m·b00·g(n,m-1)` —
+  `two_electron` and the two 3c2e derivative kernels;
+- **ket-raising**, `g(n,m+1) = c0p·g(n,m) + m·b01·g(n,m-1) + n·b00·g(n-1,m)` —
+  the 3c2e base kernel and `center_2c2e`.
+
+`vrr_fill_axis_roots_ket` is the second, and the module note in
+`math::root_vec` says which is which so the next caller does not pick wrong.
+Both measure the same: **1.4x–1.9x** on the VRR alone for `nroots` 2..5, and
+nothing at `nroots == 1`.
+
+### 13.2 No `per_unit` gate here
+
+`two_electron` takes the vector arm only on the per-unit arm, because S3 splits
+`3 * nroots` `(axis, root)` tasks across the cube and folding the roots into
+lanes would cut that to three (§12.3). These four kernels have no such split:
+each runs its whole build under `lane == 0`, one pair or triple per slot. Both
+decompositions therefore take the vector arm, and the ROCm path gets it too.
+
+### 13.3 A correction to §12.2
+
+§12.2 said the root runs are `nroots`-aligned. They are **not**, and it does not
+matter. Per-slot slabs are padded to 8 `f64` (`g_slab_stride`,
+`three_c2e_slab_stride`), which is not a multiple of an odd `nroots`, so
+`slot * g_stride` is unaligned for every slot past the first. `roots_load` /
+`roots_store` gather and scatter the lanes element by element and need only a
+*contiguous* run, so nothing was ever wrong — but a future move to a
+reinterpreting vector load would read across run boundaries, and the padding is
+where it would break. The note now lives on `roots_load` itself.
+
+### 13.4 Measured (CPU, `vrr_root_vector_ab` throughput probe, best of 7)
+
+SO2 / def2-TZVP, 35 shells; batched dispatch, two interleaved A/B rounds:
+
+| family | scalar VRR (ms) | vector VRR (ms) |
+|---|---|---|
+| `int2c2e_sph` (1 225 pairs) | 0.5 | 0.5 |
+| `int3c2e_sph` (21 576 triples) | 9.6 / 9.2 | 9.2 / 8.6 |
+| `int3c2e_ip1_sph` | 14.1 / 14.9 | 13.8 / 13.9 |
+| `int3c2e_ip2_sph` | 15.5 / 14.8 | 14.9 / 13.8 |
+
+**1.02x–1.07x**, consistently in the right direction and the same order as
+§12.4's whole-kernel figure. 2c2e is below the resolution of this probe. As in
+§12, the reason to land it is that it costs nothing — not that it is large.
+
+### 13.5 Verification
+
+- **Unit, bit-identical**: `root_vec_matches_scalar_bit_for_bit` now runs *both*
+  orderings over separate slabs at all five `(nroots, nmax, mmax)` shapes and
+  compares `to_bits()`.
+- **End to end, bit-identical**: `vrr_root_vector_ab` (new) sweeps all four
+  families over a def2-TZVP water — `nroots` 1..5, the odd widths included —
+  under `CINTX_VRR_DUMP` with the arms on and `CINTX_VRR_COMPARE` with them off.
+  155 107 values across the four families, zero differing bits.
+- **Vendor**: the same test's default run holds all four families to 1e-12
+  (4.3e-14, 4.0e-15, 1.1e-14, 1.1e-14) at higher angular momentum than the
+  STO-3G sweeps in `center_2c2e_parity` / `center_3c2e_parity`.
+- **Suites**: `center_2c2e_parity`, `center_3c2e_parity`,
+  `def2_3c2e_deriv_batch_parity` (whose batched-vs-`eval_raw` check is at
+  `to_bits()`), plus the §12.5 set re-run — `def2_2e_batch_parity`,
+  `two_e_cooperative_arm`, `gth_contraction_ab`, `def2_integral_parity` — and
+  the `cintx-cubecl` unit suite.

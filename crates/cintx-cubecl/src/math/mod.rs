@@ -10,6 +10,7 @@ pub mod eigh;
 pub mod roots_jacobi_data;
 // D-PBC-24 stage 3: double-double images of the long-double Jacobi tables,
 // needed by the lower-bounded short-range quadrature.
+pub mod root_vec;
 pub mod roots_jacobi_dd_data;
 pub mod roots_xw_data;
 mod rys_smallx_data;

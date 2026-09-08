@@ -46,6 +46,7 @@ use crate::kernels::two_electron::{
 use crate::kernels::f12::{gout_ip1ip2_l, gout_ipip1, gout_ipip2_l, gout_ipvip1};
 use crate::math::pdata::PairData;
 use crate::math::pdata::compute_pdata_host;
+use crate::math::root_vec::{roots_load, vrr_fill_axis_roots, vrr_fill_axis_roots_ket};
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
@@ -571,7 +572,7 @@ fn transpose_ij_3idx_into(buf: &[f64], ni: usize, nj: usize, nk: usize, out: &mu
 /// contraction-major layout `center_3c2e_ip1_kernel` and the 2e kernel use.
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
-fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
+fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -591,6 +592,13 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
     g_stride: u32,
     split_stride: u32,
     work_slab: u32,
+    // The root-run width the vector VRR arm is instantiated at — always
+    // `nroots`, carried separately because a `Vector` width is a type-level size
+    // in CubeCL while `nroots` is a comptime `u32`. `#[define(N)]` registers it
+    // as the dynamic size `N`; see `math::root_vec`.
+    #[define(N)]
+    #[comptime]
+    root_width: usize,
     #[comptime] nroots: u32,
     #[comptime] per_unit: u32,
 ) {
@@ -820,27 +828,43 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                             }
 
                             // ── Fill the 2D G-tensor (fill_g_tensor_3c2e) ──────────────
-                            #[unroll]
-                            for irys in 0..nroots {
-                                let u2 = a0 * urys[irys as usize];
-                                let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                            // The roots as vector lanes (V1). This kernel runs its whole VRR
+                            // under `lane == 0` — one triple per slot, nothing split across
+                            // the root axis — so unlike `two_electron` there is no
+                            // decomposition to gate against: both arms take it. The
+                            // `nroots == 1` case keeps the scalar loop, where a width-one
+                            // `Vector` is pure overhead.
+                            //
+                            // Elementwise ops on the same operands in the same order, so the
+                            // slab is bit-identical; `math::root_vec` carries the reasoning
+                            // and the gate.
+                            if comptime!(nroots > 1u32) {
+                                let uslice = urys.to_slice_mut();
+                                let u2 = Vector::<F, N>::new(a0)
+                                    * roots_load::<F, N>(&uslice, 0u32, root_width);
+                                let tmp4 = Vector::<F, N>::new(F::new(0.5_f32))
+                                    / (u2 * Vector::<F, N>::new(aij + akl)
+                                        + Vector::<F, N>::new(a1));
                                 let tmp5 = u2 * tmp4;
                                 let b00 = tmp5;
-                                let b10 = tmp5 + tmp4 * akl;
-                                let b01 = tmp5 + tmp4 * aij;
-                                let tmp2 = F::new(2.0_f32) * tmp5 * akl;
-                                let tmp3 = F::new(2.0_f32) * tmp5 * aij;
+                                let b10 = tmp5 + tmp4 * Vector::<F, N>::new(akl);
+                                let b01 = tmp5 + tmp4 * Vector::<F, N>::new(aij);
+                                let tmp2 = Vector::<F, N>::new(F::new(2.0_f32))
+                                    * tmp5
+                                    * Vector::<F, N>::new(akl);
+                                let tmp3 = Vector::<F, N>::new(F::new(2.0_f32))
+                                    * tmp5
+                                    * Vector::<F, N>::new(aij);
 
-                                // Base case: gx=gy=1, gz=w*fac1.
-                                g[(gbase + irys) as usize] = F::new(1.0_f32);
-                                g[(gbase + g_size + irys) as usize] = F::new(1.0_f32);
-                                g[(gbase + 2u32 * g_size + irys) as usize] =
-                                    wrys[irys as usize] * fac1;
+                                // The `gz` seed; `gx`/`gy` seed at one.
+                                let wslice = wrys.to_slice_mut();
+                                let zseed = roots_load::<F, N>(&wslice, 0u32, root_width)
+                                    * Vector::<F, N>::new(fac1);
 
+                                let mut g_slab = g.to_slice_mut();
                                 #[unroll]
                                 for axis in 0..3u32 {
                                     let base = gbase + axis * g_size;
-                                    // Per-axis displacement components.
                                     let mut d = xij_kl;
                                     let mut rx = rijrx_x;
                                     if axis == 1u32 {
@@ -850,65 +874,124 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                         d = zij_kl;
                                         rx = rijrx_z;
                                     }
-                                    let c00a = rx - tmp2 * d;
-                                    let c0pa = tmp3 * d;
+                                    let c00a =
+                                        Vector::<F, N>::new(rx) - tmp2 * Vector::<F, N>::new(d);
+                                    let c0pa = tmp3 * Vector::<F, N>::new(d);
 
-                                    // VRR in combined ij direction (n-axis), nmax = li+lj.
-                                    if nmax >= 1u32 {
-                                        let mut s_prev = g[(base + irys) as usize];
-                                        let mut s1 = c00a * s_prev;
-                                        g[(base + irys + dn) as usize] = s1;
-                                        let mut n = 1u32;
-                                        while n < nmax {
-                                            let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
-                                            g[(base + irys + (n + 1u32) * dn) as usize] = s2;
-                                            s_prev = s1;
-                                            s1 = s2;
-                                            n += 1u32;
-                                        }
+                                    let mut seed = Vector::<F, N>::new(F::new(1.0_f32));
+                                    if axis == 2u32 {
+                                        seed = zseed;
                                     }
 
-                                    // VRR in mapped k(ll)-direction (m-axis), mmax = lk.
-                                    if mmax >= 1u32 {
-                                        let mut s_prev = g[(base + irys) as usize];
-                                        let mut s1 = c0pa * s_prev;
-                                        g[(base + irys + dm) as usize] = s1;
-                                        let mut m = 1u32;
-                                        while m < mmax {
-                                            let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
-                                            g[(base + irys + (m + 1u32) * dm) as usize] = s2;
-                                            s_prev = s1;
-                                            s1 = s2;
-                                            m += 1u32;
+                                    vrr_fill_axis_roots_ket::<F, N>(
+                                        &mut g_slab,
+                                        base,
+                                        nmax,
+                                        mmax,
+                                        dn,
+                                        dm,
+                                        c00a,
+                                        c0pa,
+                                        b00,
+                                        b10,
+                                        b01,
+                                        seed,
+                                        root_width,
+                                    );
+                                }
+                            } else {
+                                #[unroll]
+                                for irys in 0..nroots {
+                                    let u2 = a0 * urys[irys as usize];
+                                    let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                                    let tmp5 = u2 * tmp4;
+                                    let b00 = tmp5;
+                                    let b10 = tmp5 + tmp4 * akl;
+                                    let b01 = tmp5 + tmp4 * aij;
+                                    let tmp2 = F::new(2.0_f32) * tmp5 * akl;
+                                    let tmp3 = F::new(2.0_f32) * tmp5 * aij;
+
+                                    // Base case: gx=gy=1, gz=w*fac1.
+                                    g[(gbase + irys) as usize] = F::new(1.0_f32);
+                                    g[(gbase + g_size + irys) as usize] = F::new(1.0_f32);
+                                    g[(gbase + 2u32 * g_size + irys) as usize] =
+                                        wrys[irys as usize] * fac1;
+
+                                    #[unroll]
+                                    for axis in 0..3u32 {
+                                        let base = gbase + axis * g_size;
+                                        // Per-axis displacement components.
+                                        let mut d = xij_kl;
+                                        let mut rx = rijrx_x;
+                                        if axis == 1u32 {
+                                            d = yij_kl;
+                                            rx = rijrx_y;
+                                        } else if axis == 2u32 {
+                                            d = zij_kl;
+                                            rx = rijrx_z;
+                                        }
+                                        let c00a = rx - tmp2 * d;
+                                        let c0pa = tmp3 * d;
+
+                                        // VRR in combined ij direction (n-axis), nmax = li+lj.
+                                        if nmax >= 1u32 {
+                                            let mut s_prev = g[(base + irys) as usize];
+                                            let mut s1 = c00a * s_prev;
+                                            g[(base + irys + dn) as usize] = s1;
+                                            let mut n = 1u32;
+                                            while n < nmax {
+                                                let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
+                                                g[(base + irys + (n + 1u32) * dn) as usize] = s2;
+                                                s_prev = s1;
+                                                s1 = s2;
+                                                n += 1u32;
+                                            }
                                         }
 
-                                        // n>0 ladders over m with b00 cross term.
-                                        if nmax >= 1u32 {
-                                            let mut n = 1u32;
-                                            while n <= nmax {
-                                                let i_off = irys + n * dn;
-                                                let s0_k0 = g[(base + i_off) as usize];
-                                                let prev_i_k0 =
-                                                    g[(base + irys + (n - 1u32) * dn) as usize];
-                                                let mut s1 = c0pa * s0_k0
-                                                    + F::cast_from(n) * b00 * prev_i_k0;
-                                                g[(base + i_off + dm) as usize] = s1;
-                                                let mut s_prev = s0_k0;
-                                                let mut m = 1u32;
-                                                while m < mmax {
-                                                    let prev_i_km =
-                                                        g[(base + irys + (n - 1u32) * dn + m * dm)
+                                        // VRR in mapped k(ll)-direction (m-axis), mmax = lk.
+                                        if mmax >= 1u32 {
+                                            let mut s_prev = g[(base + irys) as usize];
+                                            let mut s1 = c0pa * s_prev;
+                                            g[(base + irys + dm) as usize] = s1;
+                                            let mut m = 1u32;
+                                            while m < mmax {
+                                                let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
+                                                g[(base + irys + (m + 1u32) * dm) as usize] = s2;
+                                                s_prev = s1;
+                                                s1 = s2;
+                                                m += 1u32;
+                                            }
+
+                                            // n>0 ladders over m with b00 cross term.
+                                            if nmax >= 1u32 {
+                                                let mut n = 1u32;
+                                                while n <= nmax {
+                                                    let i_off = irys + n * dn;
+                                                    let s0_k0 = g[(base + i_off) as usize];
+                                                    let prev_i_k0 =
+                                                        g[(base + irys + (n - 1u32) * dn) as usize];
+                                                    let mut s1 = c0pa * s0_k0
+                                                        + F::cast_from(n) * b00 * prev_i_k0;
+                                                    g[(base + i_off + dm) as usize] = s1;
+                                                    let mut s_prev = s0_k0;
+                                                    let mut m = 1u32;
+                                                    while m < mmax {
+                                                        let prev_i_km = g[(base
+                                                            + irys
+                                                            + (n - 1u32) * dn
+                                                            + m * dm)
                                                             as usize];
-                                                    let s2 = c0pa * s1
-                                                        + F::cast_from(m) * b01 * s_prev
-                                                        + F::cast_from(n) * b00 * prev_i_km;
-                                                    g[(base + i_off + (m + 1u32) * dm) as usize] =
-                                                        s2;
-                                                    s_prev = s1;
-                                                    s1 = s2;
-                                                    m += 1u32;
+                                                        let s2 = c0pa * s1
+                                                            + F::cast_from(m) * b01 * s_prev
+                                                            + F::cast_from(n) * b00 * prev_i_km;
+                                                        g[(base + i_off + (m + 1u32) * dm)
+                                                            as usize] = s2;
+                                                        s_prev = s1;
+                                                        s1 = s2;
+                                                        m += 1u32;
+                                                    }
+                                                    n += 1u32;
                                                 }
-                                                n += 1u32;
                                             }
                                         }
                                     }
@@ -1429,6 +1512,7 @@ fn run_3c2e_batches<R: Runtime>(
                         g_stride as u32,
                         split_stride as u32,
                         work_slab as u32,
+                        $nr as usize,
                         $nr,
                         per_unit,
                     );
@@ -1999,7 +2083,7 @@ fn run_3c2e_device<R: Runtime>(
 // zero term would break the column alignment that makes the component index
 // readable at a glance.
 #[allow(clippy::erasing_op)]
-fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
+fn center_3c2e_ip1_kernel<F: Float + CubeElement, N: Size>(
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -2015,6 +2099,11 @@ fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
     n_triples: u32,
     n_cubes: u32,
     g_stride: u32,
+    // The root-run width the vector VRR arm is instantiated at — always
+    // `nroots`; see `math::root_vec` and `center_3c2e_scalar_kernel`.
+    #[define(N)]
+    #[comptime]
+    root_width: usize,
     #[comptime] nroots: u32,
     #[comptime] per_unit: u32,
 ) {
@@ -2259,120 +2348,189 @@ fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
                         let g2d_klmax = dl;
 
                         // Base + VRR per axis (vrr_fill_axis inlined for 3 axes).
-                        let mut irys = 0u32;
-                        while irys < nrys {
-                            g[(gbase + irys) as usize] = F::new(1.0_f32);
-                            g[(gy_off + irys) as usize] = F::new(1.0_f32);
-                            g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
-                            irys += 1u32;
-                        }
-
-                        let mut irys2 = 0u32;
-                        while irys2 < nrys {
-                            let u2 = a0 * urys[irys2 as usize];
-                            let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                        // The roots as vector lanes (V1) — the bra-raising ordering, the
+                        // same `fill_g_tensor_2e` recurrence `two_electron` runs. This
+                        // kernel builds under `lane == 0` with nothing split across the
+                        // root axis, so both decompositions take it; `nroots == 1` keeps
+                        // the scalar loop, where a width-one `Vector` is pure overhead.
+                        //
+                        // The three seeds move inside the axis loop: the helper writes
+                        // each slice's `(0,0)` entry, which only reorders stores into
+                        // disjoint axis slices. Everything else is elementwise on the
+                        // same operands in the same order, so the slab is bit-identical.
+                        if comptime!(nroots > 1u32) {
+                            let uslice = urys.to_slice_mut();
+                            let u2 = Vector::<F, N>::new(a0)
+                                * roots_load::<F, N>(&uslice, 0u32, root_width);
+                            let tmp4 = Vector::<F, N>::new(F::new(0.5_f32))
+                                / (u2 * Vector::<F, N>::new(aij + akl) + Vector::<F, N>::new(a1));
                             let tmp5 = u2 * tmp4;
-                            let tmp1 = F::new(2.0_f32) * tmp5;
-                            let tmp2 = tmp1 * akl;
-                            let tmp3 = tmp1 * aij;
+                            let tmp1 = Vector::<F, N>::new(F::new(2.0_f32)) * tmp5;
+                            let tmp2 = tmp1 * Vector::<F, N>::new(akl);
+                            let tmp3 = tmp1 * Vector::<F, N>::new(aij);
                             let b00 = tmp5;
-                            let b10 = tmp5 + tmp4 * akl;
-                            let b01 = tmp5 + tmp4 * aij;
+                            let b10 = tmp5 + tmp4 * Vector::<F, N>::new(akl);
+                            let b01 = tmp5 + tmp4 * Vector::<F, N>::new(aij);
 
-                            let mut axis = 0u32;
-                            while axis < 3u32 {
+                            let wslice = wrys.to_slice_mut();
+                            let zseed = roots_load::<F, N>(&wslice, 0u32, root_width)
+                                * Vector::<F, N>::new(fac1);
+
+                            let mut g_slab = g.to_slice_mut();
+                            #[unroll]
+                            for axis in 0..3u32 {
                                 let base = gbase + axis * g_size;
                                 let mut d = xij_kl;
                                 let mut rijrx = rijrx_x;
                                 if axis == 1u32 {
                                     d = yij_kl;
                                     rijrx = rijrx_y;
-                                }
-                                if axis == 2u32 {
+                                } else if axis == 2u32 {
                                     d = zij_kl;
                                     rijrx = rijrx_z;
                                 }
-                                let c00 = rijrx - tmp2 * d;
-                                // c0p = rklrx + tmp3*d; rklrx = 0.
-                                let c0p = tmp3 * d;
+                                // `c0p = rklrx + tmp3 * d`, and `rklrx` is zero here.
+                                let c00 =
+                                    Vector::<F, N>::new(rijrx) - tmp2 * Vector::<F, N>::new(d);
+                                let c0p = tmp3 * Vector::<F, N>::new(d);
 
-                                // vrr_fill_axis with dn=g2d_ijmax, dm=g2d_klmax.
-                                let dn = g2d_ijmax;
-                                let dm = g2d_klmax;
-                                let root = base + irys2;
-
-                                // n-ladder (nmax).
-                                if nmax >= 1u32 {
-                                    let mut s0 = g[root as usize];
-                                    let mut s1 = c00 * s0;
-                                    g[(root + dn) as usize] = s1;
-                                    let mut n = 1u32;
-                                    while n < nmax {
-                                        let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
-                                        g[(root + (n + 1u32) * dn) as usize] = s2;
-                                        s0 = s1;
-                                        s1 = s2;
-                                        n += 1u32;
-                                    }
+                                let mut seed = Vector::<F, N>::new(F::new(1.0_f32));
+                                if axis == 2u32 {
+                                    seed = zseed;
                                 }
 
-                                // m-ladder (mmax) at n=0, then n=1 cross term, then n>0 fill.
-                                if mmax >= 1u32 {
-                                    let mut s0 = g[root as usize];
-                                    let mut s1 = c0p * s0;
-                                    g[(root + dm) as usize] = s1;
-                                    let mut m = 1u32;
-                                    while m < mmax {
-                                        let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
-                                        g[(root + (m + 1u32) * dm) as usize] = s2;
-                                        s0 = s1;
-                                        s1 = s2;
-                                        m += 1u32;
+                                vrr_fill_axis_roots::<F, N>(
+                                    &mut g_slab,
+                                    base,
+                                    nmax,
+                                    mmax,
+                                    g2d_ijmax,
+                                    g2d_klmax,
+                                    c00,
+                                    c0p,
+                                    b00,
+                                    b10,
+                                    b01,
+                                    seed,
+                                    root_width,
+                                );
+                            }
+                        } else {
+                            let mut irys = 0u32;
+                            while irys < nrys {
+                                g[(gbase + irys) as usize] = F::new(1.0_f32);
+                                g[(gy_off + irys) as usize] = F::new(1.0_f32);
+                                g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
+                                irys += 1u32;
+                            }
+
+                            let mut irys2 = 0u32;
+                            while irys2 < nrys {
+                                let u2 = a0 * urys[irys2 as usize];
+                                let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                                let tmp5 = u2 * tmp4;
+                                let tmp1 = F::new(2.0_f32) * tmp5;
+                                let tmp2 = tmp1 * akl;
+                                let tmp3 = tmp1 * aij;
+                                let b00 = tmp5;
+                                let b10 = tmp5 + tmp4 * akl;
+                                let b01 = tmp5 + tmp4 * aij;
+
+                                let mut axis = 0u32;
+                                while axis < 3u32 {
+                                    let base = gbase + axis * g_size;
+                                    let mut d = xij_kl;
+                                    let mut rijrx = rijrx_x;
+                                    if axis == 1u32 {
+                                        d = yij_kl;
+                                        rijrx = rijrx_y;
+                                    }
+                                    if axis == 2u32 {
+                                        d = zij_kl;
+                                        rijrx = rijrx_z;
+                                    }
+                                    let c00 = rijrx - tmp2 * d;
+                                    // c0p = rklrx + tmp3*d; rklrx = 0.
+                                    let c0p = tmp3 * d;
+
+                                    // vrr_fill_axis with dn=g2d_ijmax, dm=g2d_klmax.
+                                    let dn = g2d_ijmax;
+                                    let dm = g2d_klmax;
+                                    let root = base + irys2;
+
+                                    // n-ladder (nmax).
+                                    if nmax >= 1u32 {
+                                        let mut s0 = g[root as usize];
+                                        let mut s1 = c00 * s0;
+                                        g[(root + dn) as usize] = s1;
+                                        let mut n = 1u32;
+                                        while n < nmax {
+                                            let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
+                                            g[(root + (n + 1u32) * dn) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            n += 1u32;
+                                        }
+                                    }
+
+                                    // m-ladder (mmax) at n=0, then n=1 cross term, then n>0 fill.
+                                    if mmax >= 1u32 {
+                                        let mut s0 = g[root as usize];
+                                        let mut s1 = c0p * s0;
+                                        g[(root + dm) as usize] = s1;
+                                        let mut m = 1u32;
+                                        while m < mmax {
+                                            let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
+                                            g[(root + (m + 1u32) * dm) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            m += 1u32;
+                                        }
+
+                                        if nmax >= 1u32 {
+                                            let mut s0n = g[(root + dn) as usize];
+                                            let mut s1n = c0p * s0n + b00 * g[root as usize];
+                                            g[(root + dn + dm) as usize] = s1n;
+                                            let mut m2 = 1u32;
+                                            while m2 < mmax {
+                                                let s2n = c0p * s1n
+                                                    + F::cast_from(m2) * b01 * s0n
+                                                    + b00 * g[(root + m2 * dm) as usize];
+                                                g[(root + dn + (m2 + 1u32) * dm) as usize] = s2n;
+                                                s0n = s1n;
+                                                s1n = s2n;
+                                                m2 += 1u32;
+                                            }
+                                        }
                                     }
 
                                     if nmax >= 1u32 {
-                                        let mut s0n = g[(root + dn) as usize];
-                                        let mut s1n = c0p * s0n + b00 * g[root as usize];
-                                        g[(root + dn + dm) as usize] = s1n;
-                                        let mut m2 = 1u32;
-                                        while m2 < mmax {
-                                            let s2n = c0p * s1n
-                                                + F::cast_from(m2) * b01 * s0n
-                                                + b00 * g[(root + m2 * dm) as usize];
-                                            g[(root + dn + (m2 + 1u32) * dm) as usize] = s2n;
-                                            s0n = s1n;
-                                            s1n = s2n;
-                                            m2 += 1u32;
+                                        let mut m3 = 1u32;
+                                        while m3 <= mmax {
+                                            let off = m3 * dm;
+                                            let j = off + root;
+                                            let mut s0 = g[j as usize];
+                                            let mut s1 = g[(j + dn) as usize];
+                                            let mut n2 = 1u32;
+                                            while n2 < nmax {
+                                                let s2 = c00 * s1
+                                                    + F::cast_from(n2) * b10 * s0
+                                                    + F::cast_from(m3)
+                                                        * b00
+                                                        * g[(j + n2 * dn - dm) as usize];
+                                                g[(j + (n2 + 1u32) * dn) as usize] = s2;
+                                                s0 = s1;
+                                                s1 = s2;
+                                                n2 += 1u32;
+                                            }
+                                            m3 += 1u32;
                                         }
                                     }
-                                }
 
-                                if nmax >= 1u32 {
-                                    let mut m3 = 1u32;
-                                    while m3 <= mmax {
-                                        let off = m3 * dm;
-                                        let j = off + root;
-                                        let mut s0 = g[j as usize];
-                                        let mut s1 = g[(j + dn) as usize];
-                                        let mut n2 = 1u32;
-                                        while n2 < nmax {
-                                            let s2 = c00 * s1
-                                                + F::cast_from(n2) * b10 * s0
-                                                + F::cast_from(m3)
-                                                    * b00
-                                                    * g[(j + n2 * dn - dm) as usize];
-                                            g[(j + (n2 + 1u32) * dn) as usize] = s2;
-                                            s0 = s1;
-                                            s1 = s2;
-                                            n2 += 1u32;
-                                        }
-                                        m3 += 1u32;
-                                    }
+                                    axis += 1u32;
                                 }
-
-                                axis += 1u32;
+                                irys2 += 1u32;
                             }
-                            irys2 += 1u32;
                         }
 
                         // ── HRR transfer (kbase==false): ibase selects branch. ─────
@@ -2810,6 +2968,7 @@ fn run_3c2e_deriv_batches<R: Runtime>(
                         n_triples as u32,
                         n_cubes,
                         g_stride as u32,
+                        $nr as usize,
                         $nr,
                         per_unit,
                     );
@@ -3345,7 +3504,7 @@ pub fn evaluate_3c2e_deriv_triple_batch_resident(
 // zero term would break the column alignment that makes the component index
 // readable at a glance.
 #[allow(clippy::erasing_op)]
-fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
+fn center_3c2e_ip2_kernel<F: Float + CubeElement, N: Size>(
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -3361,6 +3520,11 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
     n_triples: u32,
     n_cubes: u32,
     g_stride: u32,
+    // The root-run width the vector VRR arm is instantiated at — always
+    // `nroots`; see `math::root_vec` and `center_3c2e_scalar_kernel`.
+    #[define(N)]
+    #[comptime]
+    root_width: usize,
     #[comptime] nroots: u32,
     #[comptime] per_unit: u32,
 ) {
@@ -3601,118 +3765,187 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
                         let g2d_klmax = dl;
 
                         // Base + VRR per axis.
-                        let mut irys = 0u32;
-                        while irys < nrys {
-                            g[(gbase + irys) as usize] = F::new(1.0_f32);
-                            g[(gy_off + irys) as usize] = F::new(1.0_f32);
-                            g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
-                            irys += 1u32;
-                        }
-
-                        let mut irys2 = 0u32;
-                        while irys2 < nrys {
-                            let u2 = a0 * urys[irys2 as usize];
-                            let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                        // The roots as vector lanes (V1) — the bra-raising ordering, the
+                        // same `fill_g_tensor_2e` recurrence `two_electron` runs. This
+                        // kernel builds under `lane == 0` with nothing split across the
+                        // root axis, so both decompositions take it; `nroots == 1` keeps
+                        // the scalar loop, where a width-one `Vector` is pure overhead.
+                        //
+                        // The three seeds move inside the axis loop: the helper writes
+                        // each slice's `(0,0)` entry, which only reorders stores into
+                        // disjoint axis slices. Everything else is elementwise on the
+                        // same operands in the same order, so the slab is bit-identical.
+                        if comptime!(nroots > 1u32) {
+                            let uslice = urys.to_slice_mut();
+                            let u2 = Vector::<F, N>::new(a0)
+                                * roots_load::<F, N>(&uslice, 0u32, root_width);
+                            let tmp4 = Vector::<F, N>::new(F::new(0.5_f32))
+                                / (u2 * Vector::<F, N>::new(aij + akl) + Vector::<F, N>::new(a1));
                             let tmp5 = u2 * tmp4;
-                            let tmp1 = F::new(2.0_f32) * tmp5;
-                            let tmp2 = tmp1 * akl;
-                            let tmp3 = tmp1 * aij;
+                            let tmp1 = Vector::<F, N>::new(F::new(2.0_f32)) * tmp5;
+                            let tmp2 = tmp1 * Vector::<F, N>::new(akl);
+                            let tmp3 = tmp1 * Vector::<F, N>::new(aij);
                             let b00 = tmp5;
-                            let b10 = tmp5 + tmp4 * akl;
-                            let b01 = tmp5 + tmp4 * aij;
+                            let b10 = tmp5 + tmp4 * Vector::<F, N>::new(akl);
+                            let b01 = tmp5 + tmp4 * Vector::<F, N>::new(aij);
 
-                            let mut axis = 0u32;
-                            while axis < 3u32 {
+                            let wslice = wrys.to_slice_mut();
+                            let zseed = roots_load::<F, N>(&wslice, 0u32, root_width)
+                                * Vector::<F, N>::new(fac1);
+
+                            let mut g_slab = g.to_slice_mut();
+                            #[unroll]
+                            for axis in 0..3u32 {
                                 let base = gbase + axis * g_size;
                                 let mut d = xij_kl;
                                 let mut rijrx = rijrx_x;
                                 if axis == 1u32 {
                                     d = yij_kl;
                                     rijrx = rijrx_y;
-                                }
-                                if axis == 2u32 {
+                                } else if axis == 2u32 {
                                     d = zij_kl;
                                     rijrx = rijrx_z;
                                 }
-                                let c00 = rijrx - tmp2 * d;
-                                let c0p = tmp3 * d;
+                                // `c0p = rklrx + tmp3 * d`, and `rklrx` is zero here.
+                                let c00 =
+                                    Vector::<F, N>::new(rijrx) - tmp2 * Vector::<F, N>::new(d);
+                                let c0p = tmp3 * Vector::<F, N>::new(d);
 
-                                let dn = g2d_ijmax;
-                                let dm = g2d_klmax;
-                                let root = base + irys2;
-
-                                // n-ladder (nmax).
-                                if nmax >= 1u32 {
-                                    let mut s0 = g[root as usize];
-                                    let mut s1 = c00 * s0;
-                                    g[(root + dn) as usize] = s1;
-                                    let mut n = 1u32;
-                                    while n < nmax {
-                                        let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
-                                        g[(root + (n + 1u32) * dn) as usize] = s2;
-                                        s0 = s1;
-                                        s1 = s2;
-                                        n += 1u32;
-                                    }
+                                let mut seed = Vector::<F, N>::new(F::new(1.0_f32));
+                                if axis == 2u32 {
+                                    seed = zseed;
                                 }
 
-                                // m-ladder (mmax).
-                                if mmax >= 1u32 {
-                                    let mut s0 = g[root as usize];
-                                    let mut s1 = c0p * s0;
-                                    g[(root + dm) as usize] = s1;
-                                    let mut m = 1u32;
-                                    while m < mmax {
-                                        let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
-                                        g[(root + (m + 1u32) * dm) as usize] = s2;
-                                        s0 = s1;
-                                        s1 = s2;
-                                        m += 1u32;
+                                vrr_fill_axis_roots::<F, N>(
+                                    &mut g_slab,
+                                    base,
+                                    nmax,
+                                    mmax,
+                                    g2d_ijmax,
+                                    g2d_klmax,
+                                    c00,
+                                    c0p,
+                                    b00,
+                                    b10,
+                                    b01,
+                                    seed,
+                                    root_width,
+                                );
+                            }
+                        } else {
+                            let mut irys = 0u32;
+                            while irys < nrys {
+                                g[(gbase + irys) as usize] = F::new(1.0_f32);
+                                g[(gy_off + irys) as usize] = F::new(1.0_f32);
+                                g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
+                                irys += 1u32;
+                            }
+
+                            let mut irys2 = 0u32;
+                            while irys2 < nrys {
+                                let u2 = a0 * urys[irys2 as usize];
+                                let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
+                                let tmp5 = u2 * tmp4;
+                                let tmp1 = F::new(2.0_f32) * tmp5;
+                                let tmp2 = tmp1 * akl;
+                                let tmp3 = tmp1 * aij;
+                                let b00 = tmp5;
+                                let b10 = tmp5 + tmp4 * akl;
+                                let b01 = tmp5 + tmp4 * aij;
+
+                                let mut axis = 0u32;
+                                while axis < 3u32 {
+                                    let base = gbase + axis * g_size;
+                                    let mut d = xij_kl;
+                                    let mut rijrx = rijrx_x;
+                                    if axis == 1u32 {
+                                        d = yij_kl;
+                                        rijrx = rijrx_y;
+                                    }
+                                    if axis == 2u32 {
+                                        d = zij_kl;
+                                        rijrx = rijrx_z;
+                                    }
+                                    let c00 = rijrx - tmp2 * d;
+                                    let c0p = tmp3 * d;
+
+                                    let dn = g2d_ijmax;
+                                    let dm = g2d_klmax;
+                                    let root = base + irys2;
+
+                                    // n-ladder (nmax).
+                                    if nmax >= 1u32 {
+                                        let mut s0 = g[root as usize];
+                                        let mut s1 = c00 * s0;
+                                        g[(root + dn) as usize] = s1;
+                                        let mut n = 1u32;
+                                        while n < nmax {
+                                            let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
+                                            g[(root + (n + 1u32) * dn) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            n += 1u32;
+                                        }
+                                    }
+
+                                    // m-ladder (mmax).
+                                    if mmax >= 1u32 {
+                                        let mut s0 = g[root as usize];
+                                        let mut s1 = c0p * s0;
+                                        g[(root + dm) as usize] = s1;
+                                        let mut m = 1u32;
+                                        while m < mmax {
+                                            let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
+                                            g[(root + (m + 1u32) * dm) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            m += 1u32;
+                                        }
+
+                                        if nmax >= 1u32 {
+                                            let mut s0n = g[(root + dn) as usize];
+                                            let mut s1n = c0p * s0n + b00 * g[root as usize];
+                                            g[(root + dn + dm) as usize] = s1n;
+                                            let mut m2 = 1u32;
+                                            while m2 < mmax {
+                                                let s2n = c0p * s1n
+                                                    + F::cast_from(m2) * b01 * s0n
+                                                    + b00 * g[(root + m2 * dm) as usize];
+                                                g[(root + dn + (m2 + 1u32) * dm) as usize] = s2n;
+                                                s0n = s1n;
+                                                s1n = s2n;
+                                                m2 += 1u32;
+                                            }
+                                        }
                                     }
 
                                     if nmax >= 1u32 {
-                                        let mut s0n = g[(root + dn) as usize];
-                                        let mut s1n = c0p * s0n + b00 * g[root as usize];
-                                        g[(root + dn + dm) as usize] = s1n;
-                                        let mut m2 = 1u32;
-                                        while m2 < mmax {
-                                            let s2n = c0p * s1n
-                                                + F::cast_from(m2) * b01 * s0n
-                                                + b00 * g[(root + m2 * dm) as usize];
-                                            g[(root + dn + (m2 + 1u32) * dm) as usize] = s2n;
-                                            s0n = s1n;
-                                            s1n = s2n;
-                                            m2 += 1u32;
+                                        let mut m3 = 1u32;
+                                        while m3 <= mmax {
+                                            let off = m3 * dm;
+                                            let j = off + root;
+                                            let mut s0 = g[j as usize];
+                                            let mut s1 = g[(j + dn) as usize];
+                                            let mut n2 = 1u32;
+                                            while n2 < nmax {
+                                                let s2 = c00 * s1
+                                                    + F::cast_from(n2) * b10 * s0
+                                                    + F::cast_from(m3)
+                                                        * b00
+                                                        * g[(j + n2 * dn - dm) as usize];
+                                                g[(j + (n2 + 1u32) * dn) as usize] = s2;
+                                                s0 = s1;
+                                                s1 = s2;
+                                                n2 += 1u32;
+                                            }
+                                            m3 += 1u32;
                                         }
                                     }
-                                }
 
-                                if nmax >= 1u32 {
-                                    let mut m3 = 1u32;
-                                    while m3 <= mmax {
-                                        let off = m3 * dm;
-                                        let j = off + root;
-                                        let mut s0 = g[j as usize];
-                                        let mut s1 = g[(j + dn) as usize];
-                                        let mut n2 = 1u32;
-                                        while n2 < nmax {
-                                            let s2 = c00 * s1
-                                                + F::cast_from(n2) * b10 * s0
-                                                + F::cast_from(m3)
-                                                    * b00
-                                                    * g[(j + n2 * dn - dm) as usize];
-                                            g[(j + (n2 + 1u32) * dn) as usize] = s2;
-                                            s0 = s1;
-                                            s1 = s2;
-                                            n2 += 1u32;
-                                        }
-                                        m3 += 1u32;
-                                    }
+                                    axis += 1u32;
                                 }
-
-                                axis += 1u32;
+                                irys2 += 1u32;
                             }
-                            irys2 += 1u32;
                         }
 
                         // ── HRR transfer (kbase==false): ibase selects branch. ─────
@@ -6310,6 +6543,7 @@ mod scalar_device_tests {
             3u32,    // g_stride (one slab, unpadded)
             3u32,    // split_stride
             1u32,    // work_slab
+            1usize,  // root_width: `nroots == 1`, so the vector arm is comptime-off
             1u32,    // nroots
             // One cube, one triple: the shape these single slabs are sized for.
             0u32,
