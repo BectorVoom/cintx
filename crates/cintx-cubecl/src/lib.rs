@@ -38,7 +38,7 @@ pub use device_rys_ceiling::{
 pub use executor::{
     BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features,
 };
-pub use kernels::c2s_device::device_transform_enabled;
+pub use kernels::c2s_device::{device_transform_enabled, set_device_transform};
 pub use kernels::center_2c2e::{
     TwoC2eBatchOutput, evaluate_2c2e_pair_batch, evaluate_2c2e_pair_batch_resident,
 };
@@ -66,9 +66,10 @@ pub use kernels::two_electron::{
     TwoEBatchOptions, TwoEBatchOutput, accumulator_slots_max, contraction_mode,
     cooperative_build_mode, evaluate_2e_quartet_batch, evaluate_2e_quartet_batch_into,
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_quartet_classes,
-    prewarm_2e_work_list, schwarz_bounds, set_accumulator_slots_max, set_cooperative_build_split,
-    set_shared_g_enabled, set_staged_contraction, set_two_e_cube_dim, set_two_e_per_unit,
-    stream_2e_quartet_batch,
+    prewarm_2e_work_list, schwarz_bounds, set_accumulator_slots_max, set_contraction_mode,
+    set_contraction_probe, set_cooperative_build_split, set_shared_g_enabled,
+    set_staged_contraction, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
+    set_two_e_per_unit, stream_2e_quartet_batch,
 };
 pub use memory_probe::{DeviceMemoryProbe, residency_profiling_enabled};
 pub use plane::{

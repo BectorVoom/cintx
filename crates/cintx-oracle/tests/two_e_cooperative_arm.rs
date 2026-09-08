@@ -38,12 +38,24 @@ use cintx_basis::{RawArrays, StandardBasis, to_raw_arrays};
 use cintx_cubecl::backend::ResolvedBackend;
 use cintx_cubecl::{
     BatchShell, ResidentTwoEBasis, evaluate_2e_quartet_batch_resident, set_cooperative_build_split,
-    set_two_e_cube_dim, set_two_e_per_unit,
+    set_two_e_cube_dim, set_two_e_kl_split, set_two_e_per_unit,
 };
 use cintx_driver::{BasisView, bucket_quartets, enumerate_pairs, enumerate_quartets};
 use cintx_oracle::vendor_ffi;
 use cintx_runtime::{BackendIntent, BackendKind};
 use def2_fixtures::{batch_shells, water};
+
+/// Every test in this file pins process-global switches (`set_two_e_per_unit`,
+/// `set_two_e_cube_dim`, `set_two_e_kl_split`), so two of them running on
+/// the harness's parallel test threads would read each other's settings. One
+/// lock, taken for the length of each test.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// Lanes per cube in the pinned cooperative runs.
 ///
@@ -217,6 +229,7 @@ fn assert_arms_agree(label: &str, arrays: &RawArrays, list: &[[u32; 4]]) {
 /// all the cooperative arm has to split.
 #[test]
 fn cooperative_g_build_is_bit_identical_on_def2() {
+    let _serial = serial();
     let arrays = to_raw_arrays(&water(StandardBasis::Def2Svp)).expect("raw arrays");
     let list = one_quartet_per_class(&arrays, 3, 24);
     println!("\ndef2-SVP water: {} quartets, one per class", list.len());
@@ -229,6 +242,7 @@ fn cooperative_g_build_is_bit_identical_on_def2() {
 #[cfg(feature = "gth")]
 #[test]
 fn cooperative_g_build_is_bit_identical_on_gth() {
+    let _serial = serial();
     for (label, arrays) in def2_fixtures::gth_workloads() {
         if !label.starts_with("H2O") {
             continue;
@@ -236,6 +250,107 @@ fn cooperative_g_build_is_bit_identical_on_gth() {
         let list = one_quartet_per_class(&arrays, 3, 12);
         println!("\n{label}: {} quartets, one per class", list.len());
         assert_arms_agree(&label, &arrays, &list);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// G1 — the ket-pair split, exercised without a GPU
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The ket-pair split (G1) spreads a cooperative quartet over `n` cubes, each
+/// accumulating a contiguous slice of the ket range into its own copy of the
+/// output, and a reduce kernel sums the copies in part order. The default
+/// never selects it on the CPU backend (no hardware planes), so it is pinned
+/// here on the 4-lane cooperative arm and held to two things: the vendor at
+/// the oracle tolerance, and the unsplit cooperative result to within a few
+/// ULP of each block's scale — the sum over ket pairs is re-associated, so
+/// bit-identity is not the gate, but a wrong row range or a partial written
+/// on top of another is a wrong number, orders of magnitude outside it.
+fn assert_split_agrees(label: &str, arrays: &RawArrays, list: &[[u32; 4]], parts: u32) {
+    let shells = batch_shells(arrays);
+    let (unsplit, offsets) = evaluate_pinned(&shells, list, false, true);
+    set_two_e_kl_split(Some(parts));
+    let (split, split_offsets) = evaluate_pinned(&shells, list, false, true);
+    set_two_e_kl_split(None);
+    assert_eq!(offsets, split_offsets, "{label}: block layout");
+    assert_eq!(unsplit.len(), split.len(), "{label}: output length");
+
+    let total = unsplit.len();
+    let mut worst_eps = 0.0_f64;
+    let mut worst_abs = 0.0_f64;
+    for (index, &start) in offsets.iter().enumerate() {
+        let end = offsets.get(index + 1).copied().unwrap_or(total);
+        let scale = unsplit[start..end]
+            .iter()
+            .fold(0.0_f64, |acc, v| acc.max(v.abs()));
+        for (a, b) in unsplit[start..end].iter().zip(&split[start..end]) {
+            let abs = (a - b).abs();
+            worst_abs = worst_abs.max(abs);
+            if scale > 0.0 {
+                worst_eps = worst_eps.max(abs / (scale * f64::EPSILON));
+            }
+        }
+    }
+    println!(
+        "  {label:<34} split {parts:>2} vs unsplit: max|diff|={worst_abs:.3e} \
+         ({worst_eps:.1} eps of block scale)"
+    );
+    // Re-associating a sum over up to 49 ket pairs, each itself a staged
+    // contraction, moves a value by tens of ULP (77 eps measured on
+    // TZVP-MOLOPT water at three parts); a topology fault — a wrong row range,
+    // a partial written on top of another — moves it by orders of magnitude.
+    // The vendor gate below is the real bound; this one only has to tell
+    // those two apart.
+    assert!(
+        worst_eps <= 1024.0,
+        "{label}: the ket-pair split differs from the unsplit cooperative arm by \
+         {worst_eps:.1} eps of block scale (max |diff| {worst_abs:.3e})"
+    );
+
+    let vendor = vendor_values(arrays, list, &offsets, total);
+    let mut over = 0_usize;
+    let mut worst = 0.0_f64;
+    for (v, a) in vendor.iter().zip(&split) {
+        let diff = (v - a).abs();
+        worst = worst.max(diff);
+        if diff > 1e-12 {
+            over += 1;
+        }
+    }
+    assert_eq!(
+        over, 0,
+        "{label}: the ket-pair split has {over} elements over 1e-12 against vendored \
+         libcint (max |diff| {worst:.3e})"
+    );
+    println!("  {label:<34} split {parts:>2} vs vendor:  max|diff|={worst:.3e}");
+}
+
+/// def2-SVP: segmented, short ket ranges — some parts of a wide split are
+/// empty, which must contribute exactly zero.
+#[test]
+fn ket_split_agrees_on_def2() {
+    let _serial = serial();
+    let arrays = to_raw_arrays(&water(StandardBasis::Def2Svp)).expect("raw arrays");
+    let list = one_quartet_per_class(&arrays, 3, 24);
+    for parts in [2, 7] {
+        assert_split_agrees("H2O / def2-SVP", &arrays, &list, parts);
+    }
+}
+
+/// GTH-MOLOPT: generally contracted, so every part runs the staged
+/// contraction's stages and its own `out` flush, and the reduce sums those.
+#[cfg(feature = "gth")]
+#[test]
+fn ket_split_agrees_on_gth() {
+    let _serial = serial();
+    for (label, arrays) in def2_fixtures::gth_workloads() {
+        if !label.starts_with("H2O") {
+            continue;
+        }
+        let list = one_quartet_per_class(&arrays, 3, 12);
+        for parts in [3, 8] {
+            assert_split_agrees(&label, &arrays, &list, parts);
+        }
     }
 }
 
@@ -279,6 +394,7 @@ fn full_list(arrays: &RawArrays) -> Vec<[u32; 4]> {
 #[test]
 #[ignore = "needs a ROCm device; run with CINTX_ROCM_ORACLE=1 --ignored"]
 fn split_g_build_beats_lane0_on_rocm() {
+    let _serial = serial();
     if !std::env::var("CINTX_ROCM_ORACLE").is_ok_and(|value| value != "0") {
         println!("CINTX_ROCM_ORACLE not set; skipping");
         return;

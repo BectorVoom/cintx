@@ -176,10 +176,20 @@ fn def2_svp_batch_matches_vendor_and_per_quartet() {
                 + 4 * std::mem::size_of::<u32>()
         })
         .sum();
-    // Six `u32` per quartet row, plus one 13-`u32` shape row and one `f64`
-    // common factor per merged l-class.
-    let table_bytes = list.len() * 6 * std::mem::size_of::<u32>()
-        + classes.len() * (13 * std::mem::size_of::<u32>() + std::mem::size_of::<f64>());
+    // Eight `u32` per quartet row (G1 added the ket range), plus — per merged l-class — one 14-`u32`
+    // shape row, one `f64` common factor, and the class's Cartesian index
+    // table (K1): three `u32` G offsets per Cartesian element of the block.
+    let table_bytes = list.len() * 8 * std::mem::size_of::<u32>()
+        + classes
+            .iter()
+            .map(|&[li, lj, lk, ll]| {
+                let cart_block = cintx_cubecl::transform::c2s::ncart(li)
+                    * cintx_cubecl::transform::c2s::ncart(lj)
+                    * cintx_cubecl::transform::c2s::ncart(lk)
+                    * cintx_cubecl::transform::c2s::ncart(ll);
+                (14 + 3 * cart_block) * std::mem::size_of::<u32>() + std::mem::size_of::<f64>()
+            })
+            .sum::<usize>();
     // The residency also carries the primitive-pair table (S1): five `f64` and
     // two `u32` per surviving pair, plus `nbas^2 + 1` prefix sums. It is part of
     // the *basis* upload — built from the shells and the `expcutoff` alone, and

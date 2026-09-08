@@ -922,10 +922,12 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     quartets: &Array<u32>,
     class_shape: &Array<u32>,
     class_factor: &Array<F>,
+    class_idx: &Array<u32>,
     rys_tab: &Array<f64>,
     pair_data: &Array<F>,
     pair_index: &Array<u32>,
     pair_offset: &Array<u32>,
+    slot_bounds: &Array<u32>,
     g: &mut Array<F>,
     ctr: &mut Array<F>,
     cart_out: &mut Array<F>,
@@ -945,6 +947,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     #[comptime] nroots: u32,
     #[comptime] per_unit: u32,
     #[comptime] g_in_shared: u32,
+    #[comptime] row_stride: u32,
 ) {
     let cube_pos = CUBE_POS as u32;
 
@@ -1104,14 +1107,21 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     // neighbouring `cart_out` blocks, so an interleaved assignment would put
     // every unit's accumulation on the same handful of cache lines.
     // Same `coop`/`punit` arithmetic as above, for the same reason:
-    //   per-unit  -> [slot*chunk, slot*chunk + chunk)  step 1
-    //   coop      -> [slot,       n_quartets)          step n_slots
-    // `u32::div_ceil` has no `#[cube]` expansion, so the blocked-walk
-    // chunk size is written out.
-    #[allow(clippy::manual_div_ceil)]
-    let chunk = (n_quartets + n_slots - 1u32) / n_slots;
-    let qi_start = slot * (chunk * punit + coop);
-    let mut qi_stop = (qi_start + chunk) * punit + n_quartets * coop;
+    //   per-unit  -> [bounds[slot], bounds[slot + 1])  step 1
+    //   coop      -> [slot,         n_quartets)        step n_slots
+    //
+    // K2 (GTH plan §10): the per-unit ranges come from the host as
+    // `slot_bounds` — `n_slots + 1` row indices, cost-balanced by default
+    // (`per_unit_slot_bounds`) so a unit that draws the `(pp|pp)` rows of a
+    // generally contracted class gets fewer of them than a unit drawing
+    // `(ss|ss)`. `CINTX_2E_BALANCE=uniform` restores `ceil(n / n_slots)`
+    // rows each. Which unit evaluates a quartet cannot change its value, so
+    // the two partitions are bit-identical by construction. The index is
+    // `slot * punit`, so the cooperative arm reads the two-element
+    // placeholder it is handed and keeps its interleaved walk.
+    let bidx = slot * punit;
+    let qi_start = slot_bounds[bidx as usize] * punit + slot * coop;
+    let mut qi_stop = slot_bounds[(bidx + 1u32) as usize] * punit + n_quartets * coop;
     if qi_stop > n_quartets {
         qi_stop = n_quartets;
     }
@@ -1119,7 +1129,11 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
 
     let mut qi = qi_start;
     while qi < qi_stop {
-        let qrow = qi * 6u32;
+        // `row_stride` is comptime and part of the kernel's identity, so a
+        // change to the row layout changes the compiled program's cache key
+        // (the HIP cache is keyed by signature, not body: a body-only change
+        // once ran a stale kernel against the new table and page-faulted).
+        let qrow = qi * row_stride;
         let si = quartets[qrow as usize];
         let sj = quartets[(qrow + 1u32) as usize];
         let sk = quartets[(qrow + 2u32) as usize];
@@ -1154,6 +1168,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         let mmax = class_shape[(srow + 10u32) as usize];
         let g2d_ijmax = class_shape[(srow + 11u32) as usize];
         let g2d_klmax = class_shape[(srow + 12u32) as usize];
+        // K1: where this class's Cartesian index table starts in `class_idx`.
+        let idx_off = class_shape[(srow + 13u32) as usize];
         let common_factor = class_factor[cls as usize];
 
         let gy_off = gx_off + g_size;
@@ -1311,9 +1327,11 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         let ij_slot = si * nbas + sj;
         let ij_start = pair_offset[ij_slot as usize];
         let ij_stop = pair_offset[(ij_slot + 1u32) as usize];
-        let kl_slot = sk * nbas + sl;
-        let kl_start = pair_offset[kl_slot as usize];
-        let kl_stop = pair_offset[(kl_slot + 1u32) as usize];
+        // G1: the ket range is the row's, not the pair table's — the same
+        // `pair_offset[sk*nbas+sl] ..` span for an unsplit row, a slice of it
+        // when the quartet is spread over several cubes (`expand_kl_split`).
+        let kl_start = quartets[(qrow + 6u32) as usize];
+        let kl_stop = quartets[(qrow + 7u32) as usize];
 
         let mut kl_row = kl_start;
         while kl_row < kl_stop {
@@ -1940,197 +1958,108 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             }
 
                             // ── Contract into per-quad Cartesian blocks cooperatively ───────────
-                            // Descending cart_comps over (l,k,j,i); i fastest.
-                            let mut l_idx = 0u32;
-                            let mut la = 0u32;
-                            while la <= ll {
-                                let lx = ll - la;
-                                let ll_minus = ll - lx;
-                                let mut lb = 0u32;
-                                while lb <= ll_minus {
-                                    let ly = ll_minus - lb;
-                                    let lz = ll - lx - ly;
+                            //
+                            // K1 (GTH plan §10): the Cartesian elements of a
+                            // class are walked through its index table —
+                            // three G offsets per element, built once on the
+                            // host by `TwoELaunchGroup::push_class` in the
+                            // order the five-deep `(l, k, j, i)` nest walked
+                            // them, `i` fastest — instead of that nest being
+                            // re-run per primitive quartet. libcint does the
+                            // same (`CINTg2e_index_xyz`, `idx` in `cint2e.c`).
+                            //
+                            // Two things follow. The per-unit arm sheds eight
+                            // loop counters and the offset arithmetic per
+                            // element. The cooperative arm goes from every
+                            // lane walking all `block_len` iterations and
+                            // taking one in `lanes` — one lane live per
+                            // wavefront step — to each lane striding through
+                            // its own elements, so the contraction is `lanes`
+                            // times shorter. Each element is still the same
+                            // expression over the same roots in the same
+                            // order, accumulated into the same place, so the
+                            // result is bit-identical (`gth_profile`'s dump
+                            // comparison is the gate).
+                            // `ctr_mode == 2` is the measurement probe: the G
+                            // build runs and the contraction does not, so the
+                            // difference against the default is the
+                            // contraction's share. The output is undefined
+                            // under it; only `gth_profile` sets it.
+                            let mut q_elem = lane_u;
+                            if ctr_mode == 2u32 {
+                                q_elem = block_len;
+                            }
+                            while q_elem < block_len {
+                                let t = idx_off + 3u32 * q_elem;
+                                let base_x = class_idx[t as usize];
+                                let base_y = class_idx[(t + 1u32) as usize];
+                                let base_z = class_idx[(t + 2u32) as usize];
 
-                                    let mut k_idx = 0u32;
-                                    let mut ka = 0u32;
-                                    while ka <= lk {
-                                        let kx = lk - ka;
-                                        let lk_minus = lk - kx;
-                                        let mut kb = 0u32;
-                                        while kb <= lk_minus {
-                                            let ky = lk_minus - kb;
-                                            let kz = lk - kx - ky;
-
-                                            let mut j_idx = 0u32;
-                                            let mut ja = 0u32;
-                                            while ja <= lj {
-                                                let jx = lj - ja;
-                                                let lj_minus = lj - jx;
-                                                let mut jb = 0u32;
-                                                while jb <= lj_minus {
-                                                    let jy = lj_minus - jb;
-                                                    let jz = lj - jx - jy;
-
-                                                    let mut i_idx = 0u32;
-                                                    let mut ia = 0u32;
-                                                    while ia <= li {
-                                                        let ix = li - ia;
-                                                        let li_minus_ix = li - ix;
-                                                        let mut ib = 0u32;
-                                                        while ib <= li_minus_ix {
-                                                            let iy = li_minus_ix - ib;
-                                                            let iz = li - ix - iy;
-
-                                                            let q_elem = i_idx
-                                                                + (j_idx
-                                                                    + (k_idx + l_idx * nfk) * nfj)
-                                                                    * nfi;
-
-                                                            if ((q_elem as u32) % lanes) == lane {
-                                                                let base_x = ix * di
-                                                                    + kx * dk
-                                                                    + lx * dl
-                                                                    + jx * dj;
-                                                                let base_y = iy * di
-                                                                    + ky * dk
-                                                                    + ly * dl
-                                                                    + jy * dj;
-                                                                let base_z = iz * di
-                                                                    + kz * dk
-                                                                    + lz * dl
-                                                                    + jz * dj;
-
-                                                                let mut sum = F::new(0.0_f32);
-                                                                #[unroll]
-                                                                for r in 0..nroots {
-                                                                    sum += g_slab[(gx_off
-                                                                        + base_x
-                                                                        + r)
-                                                                        as usize]
-                                                                        * g_slab[(gy_off
-                                                                            + base_y
-                                                                            + r)
-                                                                            as usize]
-                                                                        * g_slab[(gz_off
-                                                                            + base_z
-                                                                            + r)
-                                                                            as usize];
-                                                                }
-
-                                                                if use_acc {
-                                                                    acc[(q_elem / lanes)
-                                                                        as usize] +=
-                                                                        prim_weight * sum;
-                                                                } else if is_uncontracted {
-                                                                    cart_out[(out_off + q_elem)
-                                                                        as usize] +=
-                                                                        prim_weight * sum;
-                                                                } else if use_staged {
-                                                                    // The `i` stage: this
-                                                                    // primitive quartet into
-                                                                    // `gctri[ci][q]`.
-                                                                    let w = fold * sum;
-                                                                    let mut ci = 0u32;
-                                                                    while ci < nctr_i {
-                                                                        let mut cvi =
-                                                                            F::new(1.0_f32);
-                                                                        if nctr_i > 1u32 {
-                                                                            cvi = coeffs[(coff_i
-                                                                                + pi * nctr_i
-                                                                                + ci)
-                                                                                as usize];
-                                                                        }
-                                                                        let idx = ctr_i_off
-                                                                            + ci * block_len
-                                                                            + q_elem;
-                                                                        if iempty == 1u32 {
-                                                                            ctr[idx as usize] =
-                                                                                cvi * w;
-                                                                        } else {
-                                                                            ctr[idx as usize] +=
-                                                                                cvi * w;
-                                                                        }
-                                                                        ci += 1u32;
-                                                                    }
-                                                                } else {
-                                                                    // Accumulate into every
-                                                                    // contraction quad block.
-                                                                    let mut ci = 0u32;
-                                                                    while ci < nctr_i {
-                                                                        let cvi = coeffs[(coff_i
-                                                                            + pi * nctr_i
-                                                                            + ci)
-                                                                            as usize];
-                                                                        let mut cj = 0u32;
-                                                                        while cj < nctr_j {
-                                                                            let cvj = coeffs[(coff_j
-                                                                                + pj * nctr_j
-                                                                                + cj)
-                                                                                as usize];
-                                                                            let mut ck = 0u32;
-                                                                            while ck < nctr_k {
-                                                                                let cvk = coeffs
-                                                                                    [(coff_k
-                                                                                        + pk
-                                                                                            * nctr_k
-                                                                                        + ck)
-                                                                                        as usize];
-                                                                                let mut cl = 0u32;
-                                                                                while cl < nctr_l {
-                                                                                    let cvl = coeffs
-                                                                                    [(coff_l
-                                                                                        + pl
-                                                                                            * nctr_l
-                                                                                        + cl)
-                                                                                        as usize];
-                                                                                    let weight = cvi
-                                                                                        * cvj
-                                                                                        * cvk
-                                                                                        * cvl;
-                                                                                    let qbase = (((ci
-                                                                                    * nctr_j
-                                                                                    + cj)
-                                                                                    * nctr_k
-                                                                                    + ck)
-                                                                                    * nctr_l
-                                                                                    + cl)
-                                                                                    * block_len;
-                                                                                    let oidx = out_off
-                                                                                    + qbase
-                                                                                    + q_elem;
-                                                                                    cart_out[oidx
-                                                                                    as usize] +=
-                                                                                    weight * sum;
-                                                                                    cl += 1u32;
-                                                                                }
-                                                                                ck += 1u32;
-                                                                            }
-                                                                            cj += 1u32;
-                                                                        }
-                                                                        ci += 1u32;
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            i_idx += 1u32;
-                                                            ib += 1u32;
-                                                        }
-                                                        ia += 1u32;
-                                                    }
-                                                    j_idx += 1u32;
-                                                    jb += 1u32;
-                                                }
-                                                ja += 1u32;
-                                            }
-                                            k_idx += 1u32;
-                                            kb += 1u32;
-                                        }
-                                        ka += 1u32;
-                                    }
-                                    l_idx += 1u32;
-                                    lb += 1u32;
+                                let mut sum = F::new(0.0_f32);
+                                #[unroll]
+                                for r in 0..nroots {
+                                    sum += g_slab[(gx_off + base_x + r) as usize]
+                                        * g_slab[(gy_off + base_y + r) as usize]
+                                        * g_slab[(gz_off + base_z + r) as usize];
                                 }
-                                la += 1u32;
+
+                                if use_acc {
+                                    acc[(q_elem / lanes_u) as usize] += prim_weight * sum;
+                                } else if is_uncontracted {
+                                    cart_out[(out_off + q_elem) as usize] += prim_weight * sum;
+                                } else if use_staged {
+                                    // The `i` stage: this primitive quartet
+                                    // into `gctri[ci][q]`.
+                                    let w = fold * sum;
+                                    let mut ci = 0u32;
+                                    while ci < nctr_i {
+                                        let mut cvi = F::new(1.0_f32);
+                                        if nctr_i > 1u32 {
+                                            cvi = coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                        }
+                                        let idx = ctr_i_off + ci * block_len + q_elem;
+                                        if iempty == 1u32 {
+                                            ctr[idx as usize] = cvi * w;
+                                        } else {
+                                            ctr[idx as usize] += cvi * w;
+                                        }
+                                        ci += 1u32;
+                                    }
+                                } else {
+                                    // Accumulate into every contraction quad
+                                    // block (the naive A/B arm).
+                                    let mut ci = 0u32;
+                                    while ci < nctr_i {
+                                        let cvi = coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                        let mut cj = 0u32;
+                                        while cj < nctr_j {
+                                            let cvj = coeffs[(coff_j + pj * nctr_j + cj) as usize];
+                                            let mut ck = 0u32;
+                                            while ck < nctr_k {
+                                                let cvk =
+                                                    coeffs[(coff_k + pk * nctr_k + ck) as usize];
+                                                let mut cl = 0u32;
+                                                while cl < nctr_l {
+                                                    let cvl = coeffs
+                                                        [(coff_l + pl * nctr_l + cl) as usize];
+                                                    let weight = cvi * cvj * cvk * cvl;
+                                                    let qbase = (((ci * nctr_j + cj) * nctr_k
+                                                        + ck)
+                                                        * nctr_l
+                                                        + cl)
+                                                        * block_len;
+                                                    let oidx = out_off + qbase + q_elem;
+                                                    cart_out[oidx as usize] += weight * sum;
+                                                    cl += 1u32;
+                                                }
+                                                ck += 1u32;
+                                            }
+                                            cj += 1u32;
+                                        }
+                                        ci += 1u32;
+                                    }
+                                }
+                                q_elem += lanes_u;
                             }
                             if use_staged {
                                 iempty = 0u32;
@@ -2273,6 +2202,312 @@ static CONTRACTION_MODE: std::sync::atomic::AtomicU32 = std::sync::atomic::Atomi
 /// [`set_accumulator_slots_max`] is.
 pub fn set_staged_contraction(staged: bool) {
     CONTRACTION_MODE.store(u32::from(staged), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Measurement probe: run the G build without the contraction, for the rest
+/// of this process. **The output is undefined** — every element the kernel
+/// would have contracted is left as whatever the buffer held — so this is
+/// for attributing time inside a profile run and nothing else; `gth_profile`
+/// is its only caller. [`set_staged_contraction`] restores a real mode.
+#[doc(hidden)]
+pub fn set_contraction_probe() {
+    set_contraction_mode(2);
+}
+
+/// Set the raw contraction mode: `0` naive, `1` staged, `2` the probe.
+/// Measurement aid only.
+#[doc(hidden)]
+pub fn set_contraction_mode(mode: u32) {
+    CONTRACTION_MODE.store(mode, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The per-unit partition switch, with `CINTX_2E_BALANCE` applied (K2).
+///
+/// `1` (the default) hands each unit a contiguous run of quartet rows whose
+/// *estimated cost* is a `1/n_slots` share of the dispatch
+/// ([`per_unit_slot_bounds`]); `uniform` (`0`) hands each unit
+/// `ceil(n / n_slots)` rows, which was the only shape before K2. Runtime
+/// rather than comptime for the reason [`accumulator_slots_max`] gives.
+pub fn balance_mode() -> u32 {
+    let current = BALANCE_MODE.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env = if std::env::var("CINTX_2E_BALANCE")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("uniform"))
+    {
+        0
+    } else {
+        1
+    };
+    BALANCE_MODE.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`balance_mode`] resolves the environment.
+static BALANCE_MODE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Pin the per-unit partition for the rest of this process: `Some(true)` is
+/// the cost-balanced partition, `Some(false)` the uniform one, `None`
+/// re-reads `CINTX_2E_BALANCE`. For in-process A/B measurement.
+pub fn set_two_e_balance(balanced: Option<bool>) {
+    BALANCE_MODE.store(
+        balanced.map_or(u32::MAX, u32::from),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// Row bounds of the per-unit walk: `n_slots + 1` indices into a group's
+/// quartet rows, slot `s` taking `[bounds[s], bounds[s + 1])` (K2).
+///
+/// Uniform: `ceil(n / n_slots)` rows per slot, the shape the kernel computed
+/// for itself before K2. Balanced: contiguous runs cut where the prefix sum
+/// of `cost` crosses each `1/n_slots` share of the total, so a dispatch whose
+/// rows are appended class by class — cheap `(ss|ss)` first, `(pp|pp)` with
+/// `7^4` primitive quartets and 81 contraction blocks last — no longer hands
+/// the last unit all of the expensive rows. Both shapes cover every row
+/// exactly once and are monotone, which is all the kernel relies on.
+fn per_unit_slot_bounds(cost: &[u64], n_slots: usize, balanced: bool) -> Vec<u32> {
+    let n = cost.len();
+    let n_slots = n_slots.max(1);
+    let mut bounds = Vec::with_capacity(n_slots + 1);
+    if !balanced || n == 0 {
+        let chunk = n.div_ceil(n_slots).max(1);
+        for s in 0..=n_slots {
+            bounds.push((s * chunk).min(n) as u32);
+        }
+        return bounds;
+    }
+    let total: u128 = cost.iter().map(|&c| u128::from(c)).sum();
+    bounds.push(0);
+    let mut cursor = 0_usize;
+    let mut prefix: u128 = 0;
+    for s in 1..n_slots {
+        // The share this slot's range should end at, in cost units.
+        let target = total * s as u128 / n_slots as u128;
+        // Advance to the first row whose prefix reaches the target, then step
+        // back one when the previous cut was closer — whole rows only.
+        while cursor < n && prefix + u128::from(cost[cursor]) <= target {
+            prefix += u128::from(cost[cursor]);
+            cursor += 1;
+        }
+        // `prefix > target` when an earlier slot's step-back already carried
+        // the cursor past this slot's share — which happens whenever slots
+        // outnumber rows, since consecutive targets are then closer together
+        // than one row is wide. The cursor is already beyond the ideal cut, so
+        // there is no closer row to step to, and the comparison below would
+        // underflow computing the distance to a target it has passed.
+        if cursor < n && prefix <= target {
+            let before = target - prefix;
+            let after = prefix + u128::from(cost[cursor]) - target;
+            if after < before {
+                prefix += u128::from(cost[cursor]);
+                cursor += 1;
+            }
+        }
+        bounds.push(cursor as u32);
+    }
+    bounds.push(n as u32);
+    bounds
+}
+
+/// Relative cost of one quartet row, for [`per_unit_slot_bounds`] (K2).
+///
+/// Primitive quartets after the pair screen, times the per-primitive-quartet
+/// work: the contraction's `3 * nroots` G loads per Cartesian element plus
+/// the `i` stage's `nctr_i` accumulations, and the VRR/HRR over the three
+/// axes of the G tensor. A proxy, not a model — it only has to rank rows.
+fn quartet_cost_estimate(prim_quartets: u64, params: &TwoEClassParams, nctr_i: u32) -> u64 {
+    let block_len = (ncart(params.li as u8)
+        * ncart(params.lj as u8)
+        * ncart(params.lk as u8)
+        * ncart(params.ll as u8)) as u64;
+    let per_prim = block_len * (3 * u64::from(params.nroots) + 2 * u64::from(nctr_i))
+        + 10 * u64::from(params.g_size)
+        + 100;
+    prim_quartets.max(1) * per_prim
+}
+
+/// Cubes per hardware execution unit the ket-pair split aims for (G1).
+///
+/// One quartet per cube leaves a small molecule with a few dozen workgroups
+/// on a GPU of tens of compute units, each walking thousands of primitive
+/// quartets serially (GTH plan §10.5). Eight cubes per unit is enough
+/// occupancy to hide that latency without asking for more partial buffers
+/// than the split is worth.
+const KL_SPLIT_TARGET_CUBES_PER_UNIT: usize = 8;
+
+/// Ceiling on the partial-output buffers the ket-pair split may add, in bytes
+/// (G1). Above it the split narrows rather than the run growing.
+const KL_SPLIT_PARTIAL_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+
+/// Widest ket-pair split (G1). A GTH-MOLOPT ket has at most 49 primitive
+/// pairs, a def2-TZVP sulfur ket at most 36 surviving ones; beyond this a
+/// part would hold no rows at all.
+const KL_SPLIT_MAX: usize = 64;
+
+/// The ket-pair split override, with `CINTX_2E_KL_SPLIT` applied (G1).
+///
+/// `None` (the default, or `auto`) lets [`kl_split_factor`] size the split
+/// from the hardware; `Some(1)` (`0`, `1`, `off`) disables it; `Some(n)`
+/// pins it. The A/B switch for the GPU profile.
+fn kl_split_override() -> Option<usize> {
+    let mut current = KL_SPLIT_OVERRIDE.load(std::sync::atomic::Ordering::Relaxed);
+    if current == KL_SPLIT_UNRESOLVED {
+        current = match std::env::var("CINTX_2E_KL_SPLIT").ok().as_deref() {
+            None | Some("") | Some("auto") => KL_SPLIT_AUTO,
+            Some("off") => 1,
+            Some(value) => value.parse::<u32>().map_or(KL_SPLIT_AUTO, |n| n.max(1)),
+        };
+        KL_SPLIT_OVERRIDE.store(current, std::sync::atomic::Ordering::Relaxed);
+    }
+    (current != KL_SPLIT_AUTO).then_some(current as usize)
+}
+
+const KL_SPLIT_UNRESOLVED: u32 = u32::MAX;
+const KL_SPLIT_AUTO: u32 = u32::MAX - 1;
+static KL_SPLIT_OVERRIDE: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(KL_SPLIT_UNRESOLVED);
+
+/// Pin the ket-pair split (G1) for the rest of this process: `Some(1)` turns
+/// it off, `Some(n)` spreads every cooperative quartet over `n` cubes, `None`
+/// restores the hardware-sized default. For in-process A/B measurement, and
+/// for exercising the split on the CPU backend's pinned cooperative arm,
+/// where the default never selects it.
+pub fn set_two_e_kl_split(parts: Option<u32>) {
+    KL_SPLIT_OVERRIDE.store(
+        parts.map_or(KL_SPLIT_AUTO, |n| n.max(1)),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// How many cubes each quartet of `group` is spread over on `client` (G1).
+///
+/// `1` — no split — on a backend without hardware planes (the per-unit shape
+/// never splits: its units are threads, and K2 balances them), and whenever
+/// the group already offers [`KL_SPLIT_TARGET_CUBES_PER_UNIT`] cubes per
+/// execution unit. Otherwise the smallest split that reaches that target,
+/// bounded by the widest ket range in the group (a part with no rows is
+/// waste) and by [`KL_SPLIT_PARTIAL_BUDGET_BYTES`].
+fn kl_split_factor<R: Runtime>(client: &ComputeClient<R>, group: &TwoELaunchGroup) -> usize {
+    let n = group.len();
+    if n == 0 {
+        return 1;
+    }
+    let hw = crate::plane::launch_hardware(client);
+    let max_rows = group
+        .quartets
+        .chunks_exact(QUARTET_ROW_STRIDE)
+        .map(|row| (row[7] - row[6]) as usize)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    if let Some(pinned) = kl_split_override() {
+        return pinned.clamp(1, max_rows);
+    }
+    if !hw.has_planes {
+        return 1;
+    }
+    let target = KL_SPLIT_TARGET_CUBES_PER_UNIT * hw.parallel_units.max(1) as usize;
+    let by_occupancy = target.div_ceil(n);
+    let by_memory = (KL_SPLIT_PARTIAL_BUDGET_BYTES / group.output_bytes().max(1)).max(1);
+    by_occupancy
+        .min(max_rows)
+        .min(by_memory)
+        .min(KL_SPLIT_MAX)
+        .max(1)
+}
+
+/// Spread every row of `rows` over `n_split` rows, each taking a contiguous
+/// `1/n_split` of the ket range and writing to its own copy of the group's
+/// output at `p * out_len` (G1).
+///
+/// Ket rows stay in libcint's `(pl, pk)` order inside each part, so a part's
+/// accumulation is a contiguous slice of the vendor's; only the final sum over
+/// parts (`reduce_kl_partials`) re-associates it. A part may be empty — its
+/// block is zeroed and nothing else — so the cube count is uniform.
+fn expand_kl_split(rows: &[u32], n_split: usize, out_len: usize) -> Vec<u32> {
+    let mut out = Vec::with_capacity(rows.len() * n_split);
+    let n_split_u = n_split as u32;
+    for row in rows.chunks_exact(QUARTET_ROW_STRIDE) {
+        let (lo, hi) = (row[6], row[7]);
+        let len = hi - lo;
+        for part in 0..n_split_u {
+            let a = lo + len * part / n_split_u;
+            let b = lo + len * (part + 1) / n_split_u;
+            out.extend_from_slice(&[
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4] + part * out_len as u32,
+                row[5],
+                a,
+                b,
+            ]);
+        }
+    }
+    out
+}
+
+/// Sum the `n_split` partial output copies of a ket-split dispatch (G1):
+/// `out[i] = parts[i] + parts[out_len + i] + …`, in part order, so the result
+/// is deterministic. Grid-stride over `n_threads` work items.
+#[cube(launch_unchecked)]
+fn reduce_kl_partials<F: Float>(
+    parts: &Array<F>,
+    out: &mut Array<F>,
+    out_len: u32,
+    n_split: u32,
+    n_threads: u32,
+) {
+    let mut i = (CUBE_POS as u32) * (CUBE_DIM as u32) + (UNIT_POS as u32);
+    while i < out_len {
+        let mut acc = parts[i as usize];
+        let mut p = 1u32;
+        while p < n_split {
+            acc += parts[(p * out_len + i) as usize];
+            p += 1u32;
+        }
+        out[i as usize] = acc;
+        i += n_threads;
+    }
+}
+
+/// Run [`reduce_kl_partials`] over `parts`, returning the `out_len`-element
+/// result buffer; the partial buffer is the caller's to drop.
+fn reduce_kl_partials_into<R: Runtime>(
+    client: &ComputeClient<R>,
+    parts: &cubecl::server::Handle,
+    out_len: usize,
+    n_split: usize,
+    probe: &Arc<Mutex<crate::memory_probe::DeviceMemoryProbe>>,
+) -> cubecl::server::Handle {
+    let out_bytes = out_len * std::mem::size_of::<f64>();
+    let out_h = client.empty(out_bytes.max(1));
+    probe
+        .lock()
+        .expect("device memory probe poisoned")
+        .charge_output(out_bytes);
+    let cube_dim = crate::plane::backend_plane_cube_dim::<R>(client);
+    let width = (cube_dim.num_elems() as usize).max(1);
+    let cubes = crate::plane::grid_cube_count(client, out_len.div_ceil(width).max(1));
+    let n_threads = cubes as usize * width;
+    // SAFETY: `parts` holds `n_split * out_len` elements and `out_h` `out_len`;
+    // the kernel's indices are bounded by exactly those two products.
+    unsafe {
+        reduce_kl_partials::launch_unchecked::<f64, R>(
+            client,
+            crate::plane::cube_count_1d(cubes),
+            cube_dim,
+            ArrayArg::from_raw_parts(parts.clone(), out_len * n_split),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            out_len as u32,
+            n_split as u32,
+            n_threads as u32,
+        );
+    }
+    out_h
 }
 
 /// The cooperative G-build switch, with `CINTX_2E_COOP_BUILD` applied.
@@ -2751,9 +2986,22 @@ const fn acc_capacity(per_unit: u32) -> usize {
     }
 }
 
+/// `u32` per quartet row of the device quartet table:
+/// `si, sj, sk, sl, out_off, class, kl_lo, kl_hi`.
+///
+/// `kl_lo..kl_hi` (G1) is the range of ket primitive-pair rows this row
+/// evaluates — the whole of `pair_offset[sk*nbas+sl] ..` for an unsplit
+/// quartet, a slice of it when [`expand_kl_split`] has spread the quartet
+/// over several cubes. Carried on the row rather than derived in the kernel
+/// so the split is a host-side table change and nothing else.
+pub(crate) const QUARTET_ROW_STRIDE: usize = 8;
+
 /// `u32` shape scalars per class row of the device shape table:
-/// `li,lj,lk,ll,di,dk,dl,dj,g_size,nmax,mmax,g2d_ijmax,g2d_klmax`.
-const TWO_E_SHAPE_STRIDE: usize = 13;
+/// `li,lj,lk,ll,di,dk,dl,dj,g_size,nmax,mmax,g2d_ijmax,g2d_klmax,idx_off`.
+///
+/// `idx_off` (K1) is where the class's Cartesian index table starts in
+/// [`TwoELaunchGroup::class_idx`].
+const TWO_E_SHAPE_STRIDE: usize = 14;
 
 /// One dispatch: every quartet sharing a [`TwoELaunchSignature`] (Task 35-M1).
 ///
@@ -2771,7 +3019,14 @@ pub struct TwoELaunchGroup {
     pub class_shape: Vec<u32>,
     /// One `common_factor` per merged class.
     pub class_factor: Vec<f64>,
-    /// `[si, sj, sk, sl, out_off, class]` per quartet.
+    /// Every merged class's Cartesian index table, concatenated (K1): three
+    /// `u32` G offsets per Cartesian element, `[base_x, base_y, base_z]`,
+    /// in the contraction's element order (`l, k, j, i` descending
+    /// components, `i` fastest); a class's table starts at the `idx_off` of
+    /// its shape row. libcint's `idx` from `CINTg2e_index_xyz`.
+    pub class_idx: Vec<u32>,
+    /// [`QUARTET_ROW_STRIDE`] `u32` per quartet:
+    /// `[si, sj, sk, sl, out_off, class, kl_lo, kl_hi]`.
     pub quartets: Vec<u32>,
     /// Total Cartesian output elements across this group's quartets.
     pub out_len: usize,
@@ -2782,6 +3037,8 @@ pub struct TwoELaunchGroup {
     /// Widest staged-contraction scratch any quartet here needs
     /// ([`staged_ctr_len`]); `0` when every quartet is segmented.
     pub max_ctr_len: u32,
+    /// One [`quartet_cost_estimate`] per quartet row, in row order (K2).
+    pub quartet_cost: Vec<u64>,
 }
 
 impl TwoELaunchGroup {
@@ -2792,11 +3049,13 @@ impl TwoELaunchGroup {
             signature,
             class_shape: Vec::new(),
             class_factor: Vec::new(),
+            class_idx: Vec::new(),
             quartets: Vec::new(),
             out_len: 0,
             max_g_size: 0,
             max_block_len: 0,
             max_ctr_len: 0,
+            quartet_cost: Vec::new(),
         }
     }
 
@@ -2813,6 +3072,7 @@ impl TwoELaunchGroup {
             "class does not belong to this launch group"
         );
         let index = self.class_factor.len() as u32;
+        let idx_off = self.class_idx.len() as u32;
         self.class_shape.extend_from_slice(&[
             params.li,
             params.lj,
@@ -2827,8 +3087,34 @@ impl TwoELaunchGroup {
             params.mmax,
             params.g2d_ijmax,
             params.g2d_klmax,
+            idx_off,
         ]);
         self.class_factor.push(params.common_factor);
+        // K1: the class's Cartesian index table, in the contraction's element
+        // order — the same nest `contract_2e_cart` walks on the host.
+        let (di, dk, dl, dj) = (params.di, params.dk, params.dl, params.dj);
+        for &(lx, ly, lz) in &cart_comps(params.ll as u8) {
+            for &(kx, ky, kz) in &cart_comps(params.lk as u8) {
+                for &(jx, jy, jz) in &cart_comps(params.lj as u8) {
+                    for &(ix, iy, iz) in &cart_comps(params.li as u8) {
+                        self.class_idx.extend_from_slice(&[
+                            u32::from(ix) * di
+                                + u32::from(kx) * dk
+                                + u32::from(lx) * dl
+                                + u32::from(jx) * dj,
+                            u32::from(iy) * di
+                                + u32::from(ky) * dk
+                                + u32::from(ly) * dl
+                                + u32::from(jy) * dj,
+                            u32::from(iz) * di
+                                + u32::from(kz) * dk
+                                + u32::from(lz) * dl
+                                + u32::from(jz) * dj,
+                        ]);
+                    }
+                }
+            }
+        }
         self.max_g_size = self.max_g_size.max(params.g_size);
         index
     }
@@ -2836,7 +3122,7 @@ impl TwoELaunchGroup {
     /// Number of quartets in this group.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.quartets.len() / 6
+        self.quartets.len() / QUARTET_ROW_STRIDE
     }
 
     /// Is this group empty?
@@ -2854,7 +3140,8 @@ impl TwoELaunchGroup {
     /// Bytes this group's quartet and class tables cost to upload.
     #[must_use]
     pub fn upload_bytes(&self) -> usize {
-        (self.quartets.len() + self.class_shape.len()) * std::mem::size_of::<u32>()
+        (self.quartets.len() + self.class_shape.len() + self.class_idx.len())
+            * std::mem::size_of::<u32>()
             + self.class_factor.len() * std::mem::size_of::<f64>()
     }
 
@@ -3045,20 +3332,58 @@ fn run_2e_batches<R: Runtime>(
             && shared_g_bytes <= client.properties().hardware.max_shared_memory_size
             && shared_g_enabled();
 
-        let quartets_h = client.create_from_slice(u32::as_bytes(&group.quartets));
+        // ── G1: spread each cooperative quartet over several cubes ──────────
+        //
+        // A dispatch of one quartet per cube lasts as long as its slowest
+        // quartet's *serial* walk over its primitive quartets, however few
+        // cubes it carries (GTH plan §10.5). Splitting the ket-pair range
+        // across `n_split` cubes shortens that walk by the same factor; each
+        // part accumulates into its own copy of the group's output, and one
+        // reduce kernel sums the copies in a fixed order. The per-unit shape
+        // never splits, and neither does a run under a memory budget: the
+        // partial copies are exactly the kind of peak the budget refuses.
+        let n_split = if per_unit || options.memory_limit_bytes.is_some() {
+            1
+        } else {
+            kl_split_factor::<R>(client, group)
+        };
+        let split_rows: Vec<u32>;
+        let rows: &[u32] = if n_split > 1 {
+            split_rows = expand_kl_split(&group.quartets, n_split, group.out_len);
+            &split_rows
+        } else {
+            &group.quartets
+        };
+        let n_rows = n_quartets * n_split;
+        probe
+            .lock()
+            .expect("device memory probe poisoned")
+            .note_kl_split(n_split as u32);
+
+        let quartets_h = client.create_from_slice(u32::as_bytes(rows));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
-        // The transform reads the same two tables the evaluation does — the same
-        // quartet rows and the same class shapes — so it binds the same buffers
-        // rather than uploading a second copy (M3).
-        let quartets_h_for_c2s = quartets_h.clone();
+        // The transform reads the same class shapes the evaluation does and the
+        // *unsplit* quartet rows — one per quartet, pointing at the reduced
+        // output — so it binds the same buffers where it can (M3).
+        let quartets_h_for_c2s = if n_split > 1 {
+            client.create_from_slice(u32::as_bytes(&group.quartets))
+        } else {
+            quartets_h.clone()
+        };
         let shape_h_for_c2s = shape_h.clone();
         let factor_h = client.create_from_slice(f64::as_bytes(&group.class_factor));
+        let idx_h = client.create_from_slice(u32::as_bytes(&group.class_idx));
         let out_bytes = group.output_bytes();
-        let out_h = client.empty(out_bytes);
+        // `n_split` copies of the group's output under the split (G1).
+        let out_h = client.empty(out_bytes * n_split);
         {
             let mut ledger = probe.lock().expect("device memory probe poisoned");
-            ledger.charge_tables(group.upload_bytes(), 3);
-            ledger.charge_output(out_bytes);
+            ledger.charge_tables(
+                group.upload_bytes()
+                    + (rows.len() - group.quartets.len()) * std::mem::size_of::<u32>(),
+                4,
+            );
+            ledger.charge_output(out_bytes * n_split);
         }
 
         let dispatch = TwoEGroupDispatch::<R> {
@@ -3074,6 +3399,8 @@ fn run_2e_batches<R: Runtime>(
             quartets: quartets_h,
             class_shape: shape_h,
             class_factor: factor_h,
+            class_idx: idx_h,
+            class_idx_len: group.class_idx.len(),
             rys_tables: rys_tab_h.clone(),
             shared_g: shared_g.clone(),
             shared_g_len,
@@ -3082,11 +3409,13 @@ fn run_2e_batches<R: Runtime>(
             ctr_len: group.max_ctr_len as usize,
             ctr_mode: contraction_mode(),
             coop_build: cooperative_build_mode(),
+            quartet_cost: Arc::new(group.quartet_cost.clone()),
+            balance: balance_mode(),
             pair_data: pairs.data.clone(),
             pair_index: pairs.index.clone(),
             pair_offset: pairs.offset.clone(),
             out: out_h.clone(),
-            quartets_len: group.quartets.len(),
+            quartets_len: rows.len(),
             class_shape_len: group.class_shape.len(),
             class_factor_len: group.class_factor.len(),
             pair_data_len: pairs.data_len,
@@ -3096,14 +3425,9 @@ fn run_2e_batches<R: Runtime>(
             nbas: pairs.nbas,
             acc_slots_max: accumulator_slots_max(),
             g_in_shared: use_shared_g,
-            out_len: group.out_len,
-            n_quartets: n_quartets as u32,
-            n_cubes: two_e_cube_count::<R>(
-                client,
-                n_quartets,
-                g_size_u,
-                group.max_ctr_len as usize,
-            ),
+            out_len: group.out_len * n_split,
+            n_quartets: n_rows as u32,
+            n_cubes: two_e_cube_count::<R>(client, n_rows, g_size_u, group.max_ctr_len as usize),
             g_size: g_size_u,
             per_unit,
             block_len: group.max_block_len,
@@ -3112,13 +3436,20 @@ fn run_2e_batches<R: Runtime>(
             heuristic_cube_dim: two_e_cube_dim::<R>(
                 client,
                 group.max_block_len,
-                n_quartets,
+                n_rows,
                 g_size_u,
                 group.max_ctr_len as usize,
             ),
             probe: Arc::clone(&probe),
         };
         dispatch_2e_group(dispatch);
+        // G1: fold the partial copies into the group's output. The partial
+        // buffer is dropped here, before the readback or transform allocates.
+        let out_h = if n_split > 1 {
+            reduce_kl_partials_into::<R>(client, &out_h, group.out_len, n_split, &probe)
+        } else {
+            out_h
+        };
 
         // ── S4: optionally keep one dispatch in flight ────────────────────
         //
@@ -3317,6 +3648,9 @@ struct TwoEGroupDispatch<R: Runtime> {
     quartets: cubecl::server::Handle,
     class_shape: cubecl::server::Handle,
     class_factor: cubecl::server::Handle,
+    /// The group's Cartesian index tables (K1).
+    class_idx: cubecl::server::Handle,
+    class_idx_len: usize,
     rys_tables: cubecl::server::Handle,
     /// The run's shared G-tensor scratch (M4.1), used whenever this geometry's
     /// slab fits inside it.
@@ -3337,6 +3671,11 @@ struct TwoEGroupDispatch<R: Runtime> {
     /// on lane 0. Meaningless under the per-unit decomposition, where a
     /// cooperative group is one lane either way.
     coop_build: u32,
+    /// Per-row cost estimates the per-unit partition is cut from (K2);
+    /// shared, because the tuner clones this dispatch per candidate width.
+    quartet_cost: Arc<Vec<u64>>,
+    /// `1` cuts the per-unit partition by cost, `0` uniformly (K2).
+    balance: u32,
     pair_data: cubecl::server::Handle,
     pair_index: cubecl::server::Handle,
     pair_offset: cubecl::server::Handle,
@@ -3422,12 +3761,36 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
             (self.client.empty(ctr_bytes), ctr_total)
         };
 
+        // K2: the per-unit walk's row bounds, one range per slot. The
+        // cooperative arm ignores them (it indexes `slot * punit == 0`) and is
+        // handed a two-element placeholder. Recomputed per launch because the
+        // slot count is the one thing the tuner's candidate widths change.
+        let slot_bounds: Vec<u32> = if self.per_unit {
+            per_unit_slot_bounds(
+                &self.quartet_cost[..self.n_quartets as usize],
+                n_slots,
+                self.balance == 1,
+            )
+        } else {
+            vec![0, self.n_quartets]
+        };
+        let bounds_h = self.client.create_from_slice(u32::as_bytes(&slot_bounds));
+        // A real (tiny) upload per launch. It reaches `device_table_bytes_total`
+        // through the ledger; `transfer_bytes` is summed from the groups'
+        // `upload_bytes` before any width is chosen, so it does not carry the
+        // `4 * (n_slots + 1)` bytes here.
+        self.probe
+            .lock()
+            .expect("device memory probe poisoned")
+            .charge_tables(slot_bounds.len() * std::mem::size_of::<u32>(), 1);
+
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
         // `n_quartets`, by the class index in each quartet row (bounded by
         // `class_count`), by the per-shell `nprim`/`nctr` read from
-        // `shell_meta`, and by the per-class G-tensor extents — the same bounds
-        // the single-quartet path has always satisfied.
+        // `shell_meta`, by `n_slots + 1` for the partition bounds, and by the
+        // per-class G-tensor extents — the same bounds the single-quartet path
+        // has always satisfied.
         unsafe {
             two_electron_scalar_kernel::launch_unchecked::<f64, R>(
                 &self.client,
@@ -3440,10 +3803,12 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 ArrayArg::from_raw_parts(self.quartets.clone(), self.quartets_len),
                 ArrayArg::from_raw_parts(self.class_shape.clone(), self.class_shape_len),
                 ArrayArg::from_raw_parts(self.class_factor.clone(), self.class_factor_len),
+                ArrayArg::from_raw_parts(self.class_idx.clone(), self.class_idx_len),
                 ArrayArg::from_raw_parts(self.rys_tables.clone(), EXT_TABLES_LEN),
                 ArrayArg::from_raw_parts(self.pair_data.clone(), self.pair_data_len),
                 ArrayArg::from_raw_parts(self.pair_index.clone(), self.pair_index_len),
                 ArrayArg::from_raw_parts(self.pair_offset.clone(), self.pair_offset_len),
+                ArrayArg::from_raw_parts(bounds_h, slot_bounds.len()),
                 ArrayArg::from_raw_parts(g_h, g_capacity),
                 ArrayArg::from_raw_parts(ctr_h, ctr_capacity),
                 ArrayArg::from_raw_parts(self.out.clone(), self.out_len),
@@ -3463,6 +3828,7 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 self.signature.nroots,
                 u32::from(self.per_unit),
                 u32::from(self.g_in_shared),
+                QUARTET_ROW_STRIDE as u32,
             );
         }
     }
@@ -3671,9 +4037,6 @@ fn run_2e_scalar_device<R: Runtime>(
 
     let mut group = TwoELaunchGroup::new(TwoELaunchSignature::of(&params));
     let class_index = group.push_class(&params);
-    group
-        .quartets
-        .extend_from_slice(&[0, 1, 2, 3, 0, class_index]);
     group.out_len = out_len;
     group.max_block_len = (out_len / ((nctr_i * nctr_j * nctr_k * nctr_l) as usize).max(1)) as u32;
     group.max_ctr_len = staged_ctr_len(
@@ -3719,6 +4082,19 @@ fn run_2e_scalar_device<R: Runtime>(
         &pair_shells,
         crate::kernels::pair_table::PairTableOptions { expcutoff },
     );
+    // One row, whose ket range is the whole `(2,3)` span of that table.
+    let kl_slot = (2 * pairs.nbas + 3) as usize;
+    group.quartets.extend_from_slice(&[
+        0,
+        1,
+        2,
+        3,
+        0,
+        class_index,
+        pairs.offset[kl_slot],
+        pairs.offset[kl_slot + 1],
+    ]);
+    group.quartet_cost.push(1);
     let handles = upload_2e_basis::<R>(client, &basis);
     let pair_handles = upload_pair_table::<R>(client, &pairs);
     let mut cart = Vec::new();
@@ -7851,8 +8227,10 @@ mod device_tests {
             2, 2, 1, 1, //
             3, 3, 1, 1, //
         ];
-        // `[si, sj, sk, sl, out_off, class]` — one class, index 0.
-        let quartets: [u32; 6] = [0, 1, 2, 3, 0, 0];
+        // `[si, sj, sk, sl, out_off, class, kl_lo, kl_hi]` — one class, index
+        // 0; the ket `(2,3)` is pair slot `2*4+3 = 11` of an unscreened table
+        // of single-primitive shells, so its one row is row 11.
+        let quartets: [u32; QUARTET_ROW_STRIDE] = [0, 1, 2, 3, 0, 0, 11, 12];
         let class_shape: [u32; TWO_E_SHAPE_STRIDE] = [
             0,
             0,
@@ -7867,9 +8245,17 @@ mod device_tests {
             shape.mmax as u32,
             shape.g2d_ijmax as u32,
             shape.g2d_klmax as u32,
+            // K1: the class's index table starts at 0.
+            0,
         ];
+        // One `(ss|ss)` Cartesian element, whose three G offsets are all 0.
+        let class_idx: [u32; 3] = [0, 0, 0];
+        // K2: one slot, one row; the cooperative arm reads index 0 only.
+        let slot_bounds: [u32; 2] = [0, 1];
 
         let exps_h = client.create_from_slice(f32::as_bytes(&exps));
+        let idx_h = client.create_from_slice(u32::as_bytes(&class_idx));
+        let bounds_h = client.create_from_slice(u32::as_bytes(&slot_bounds));
         let coeffs_h = client.create_from_slice(f32::as_bytes(&coeffs));
         let centers_h = client.create_from_slice(f32::as_bytes(&centers));
         let meta_h = client.create_from_slice(u32::as_bytes(&shell_meta));
@@ -7949,10 +8335,12 @@ mod device_tests {
             unsafe { ArrayArg::from_raw_parts(quartets_h, quartets.len()) },
             unsafe { ArrayArg::from_raw_parts(shape_h, class_shape.len()) },
             unsafe { ArrayArg::from_raw_parts(factor_h, class_factor.len()) },
+            unsafe { ArrayArg::from_raw_parts(idx_h, class_idx.len()) },
             unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
             unsafe { ArrayArg::from_raw_parts(pair_data_h, pair_data.len()) },
             unsafe { ArrayArg::from_raw_parts(pair_index_h, pairs.index.len()) },
             unsafe { ArrayArg::from_raw_parts(pair_offset_h, pairs.offset.len()) },
+            unsafe { ArrayArg::from_raw_parts(bounds_h, slot_bounds.len()) },
             unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
             // Four segmented shells: the staged-contraction scratch is never
             // indexed, so the one-element placeholder is what a real dispatch
@@ -7983,6 +8371,7 @@ mod device_tests {
             // Global G slab: this test hands the kernel its own `3 * g_size`
             // buffer and asserts what lands in it.
             0u32,
+            QUARTET_ROW_STRIDE as u32,
         );
 
         let raw = client.read_one_unchecked(out_h);
@@ -8723,6 +9112,13 @@ pub struct BatchExecutionStats {
     /// Device-to-host readbacks (one per dispatch).
     pub readback_count: usize,
     /// Host-to-device bytes uploaded, basis included.
+    ///
+    /// Everything sized before a launch geometry is chosen: the basis, the
+    /// pair table, the quartet rows, the class shapes and index tables, and
+    /// the device transform's tables. The one upload it omits is the per-unit
+    /// partition's row bounds (K2), `4 * (units + 1)` bytes per launch, which
+    /// exist only once the cube width is known; those reach
+    /// [`Self::device_table_bytes_total`].
     pub transfer_bytes: usize,
     /// The share of [`Self::transfer_bytes`] that was the basis upload.
     ///
@@ -8814,6 +9210,10 @@ pub struct BatchExecutionStats {
     /// The denominator of every arithmetic-per-primitive claim, and the
     /// baseline S1's pair cutoff is measured against.
     pub primitive_quartets_total: u64,
+    /// Widest ket-pair split any dispatch of this run used (G1): `1` when no
+    /// quartet was spread over more than one cube, which is always the case
+    /// on the per-unit shape and under a memory budget.
+    pub kl_split_max: u32,
     /// Primitive quartets the kernel is asked to evaluate.
     ///
     /// Equal to [`Self::primitive_quartets_total`] until S1's `expcutoff` pair
@@ -9294,7 +9694,8 @@ fn plan_2e_stream(
     let mut chunks = Vec::with_capacity(ranges.len());
     for range in ranges {
         let sub = &quartets[range.clone()];
-        let (groups, classes, placement, row_owner) = build_launch_groups(sub, shells, ceiling)?;
+        let (groups, classes, placement, row_owner) =
+            build_launch_groups(sub, shells, &resident.pairs, ceiling)?;
 
         // The pre-flight plan (M1): every term comes from the expression the
         // dispatch allocates from, so a refusal here is a statement about this
@@ -9692,6 +10093,7 @@ type LaunchGrouping = (
 fn build_launch_groups(
     quartets: &[[u32; 4]],
     shells: &[BatchShell],
+    pairs: &crate::kernels::pair_table::PairTable,
     ceiling: usize,
 ) -> Result<LaunchGrouping, cintxRsError> {
     // Group by launch class, preserving the caller's order within a class.
@@ -9784,6 +10186,7 @@ fn build_launch_groups(
                 class: class_index,
                 cart_offset: group.out_len,
             };
+            let kl_slot = (q[2] * pairs.nbas + q[3]) as usize;
             group.quartets.extend_from_slice(&[
                 q[0],
                 q[1],
@@ -9791,7 +10194,14 @@ fn build_launch_groups(
                 q[3],
                 group.out_len as u32,
                 slot_in_group,
+                pairs.offset[kl_slot],
+                pairs.offset[kl_slot + 1],
             ]);
+            let prim =
+                u64::from(pairs.pair_count(q[0], q[1])) * u64::from(pairs.pair_count(q[2], q[3]));
+            group
+                .quartet_cost
+                .push(quartet_cost_estimate(prim, &params, nctr[0]));
             group.out_len += block;
         }
         classes[class_index].group = group_index;
@@ -10806,5 +11216,107 @@ mod chunk_cap_tests {
         // The byte budget still applies underneath the cap.
         let tight = plan_quartet_chunks_capped(&quartets, &shells, 8, Some(4));
         assert_eq!(tight.len(), 10);
+    }
+}
+
+#[cfg(test)]
+mod kl_split_tests {
+    use super::{QUARTET_ROW_STRIDE, expand_kl_split};
+
+    #[test]
+    fn parts_tile_the_ket_range_in_order_and_offset_their_output() {
+        // Two rows: a 7-row ket range and a 2-row one, group output 100 long.
+        let rows = [
+            0, 1, 2, 3, 0, 5, 10, 17, //
+            0, 1, 3, 3, 40, 6, 30, 32,
+        ];
+        let out = expand_kl_split(&rows, 3, 100);
+        assert_eq!(out.len(), 2 * 3 * QUARTET_ROW_STRIDE);
+        let parts: Vec<&[u32]> = out.chunks_exact(QUARTET_ROW_STRIDE).collect();
+        // First quartet: 7 rows over 3 parts → 2, 2, 3, contiguous, in order.
+        assert_eq!(&parts[0][6..], &[10, 12]);
+        assert_eq!(&parts[1][6..], &[12, 14]);
+        assert_eq!(&parts[2][6..], &[14, 17]);
+        // Each part writes its own copy of the output.
+        assert_eq!(parts[0][4], 0);
+        assert_eq!(parts[1][4], 100);
+        assert_eq!(parts[2][4], 200);
+        // Second quartet: 2 rows over 3 parts → one part is empty.
+        assert_eq!(&parts[3][6..], &[30, 30]);
+        assert_eq!(&parts[4][6..], &[30, 31]);
+        assert_eq!(&parts[5][6..], &[31, 32]);
+        assert_eq!(parts[5][4], 40 + 200);
+        // Shells and class carry over unchanged.
+        assert_eq!(&parts[4][..4], &[0, 1, 3, 3]);
+        assert_eq!(parts[4][5], 6);
+    }
+
+    #[test]
+    fn a_split_of_one_is_the_identity() {
+        let rows = [4, 3, 2, 1, 7, 0, 5, 9];
+        assert_eq!(expand_kl_split(&rows, 1, 50), rows.to_vec());
+    }
+}
+
+#[cfg(test)]
+mod partition_tests {
+    use super::{TwoEClassParams, per_unit_slot_bounds, quartet_cost_estimate};
+
+    fn covers_every_row_once(bounds: &[u32], n: usize, n_slots: usize) {
+        assert_eq!(bounds.len(), n_slots + 1);
+        assert_eq!(bounds[0], 0);
+        assert_eq!(*bounds.last().unwrap() as usize, n);
+        assert!(
+            bounds.windows(2).all(|w| w[0] <= w[1]),
+            "monotone: {bounds:?}"
+        );
+    }
+
+    #[test]
+    fn uniform_bounds_reproduce_the_blocked_walk() {
+        // `ceil(n / n_slots)` rows per slot, the last slots possibly empty —
+        // the shape the kernel computed for itself before K2.
+        let cost = vec![1_u64; 10];
+        let bounds = per_unit_slot_bounds(&cost, 4, false);
+        assert_eq!(bounds, vec![0, 3, 6, 9, 10]);
+        let bounds = per_unit_slot_bounds(&cost, 16, false);
+        covers_every_row_once(&bounds, 10, 16);
+        assert_eq!(&bounds[..11], &(0..=10).collect::<Vec<u32>>()[..]);
+    }
+
+    #[test]
+    fn balanced_bounds_give_the_expensive_tail_fewer_rows() {
+        // Rows appended class by class: nine cheap rows then three that each
+        // cost as much as all the cheap ones together.
+        let mut cost = vec![1_u64; 9];
+        cost.extend_from_slice(&[9, 9, 9]);
+        let bounds = per_unit_slot_bounds(&cost, 4, true);
+        covers_every_row_once(&bounds, 12, 4);
+        // Total 36, a quarter is 9: the cheap rows form one slot, and each
+        // expensive row gets a slot of its own.
+        assert_eq!(bounds, vec![0, 9, 10, 11, 12]);
+    }
+
+    #[test]
+    fn balanced_bounds_handle_degenerate_shapes() {
+        covers_every_row_once(&per_unit_slot_bounds(&[], 4, true), 0, 4);
+        covers_every_row_once(&per_unit_slot_bounds(&[5], 4, true), 1, 4);
+        covers_every_row_once(&per_unit_slot_bounds(&[1, 2, 3], 1, true), 3, 1);
+        // A slot count above the row count leaves slots empty, never
+        // double-booked.
+        let bounds = per_unit_slot_bounds(&[3, 1, 4, 1, 5], 16, true);
+        covers_every_row_once(&bounds, 5, 16);
+    }
+
+    #[test]
+    fn cost_estimate_ranks_by_primitives_and_block() {
+        let ssss = TwoEClassParams::new(0, 0, 0, 0);
+        let pppp = TwoEClassParams::new(1, 1, 1, 1);
+        // Same primitive count: the `(pp|pp)` row is far dearer.
+        assert!(quartet_cost_estimate(2401, &pppp, 3) > 20 * quartet_cost_estimate(2401, &ssss, 3));
+        // Same class: cost grows with the screened primitive count.
+        assert!(quartet_cost_estimate(2401, &pppp, 3) > quartet_cost_estimate(625, &pppp, 3));
+        // Never zero, so an empty pair list still takes a row's worth.
+        assert!(quartet_cost_estimate(0, &ssss, 1) > 0);
     }
 }

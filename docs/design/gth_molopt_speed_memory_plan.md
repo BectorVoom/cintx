@@ -1,6 +1,8 @@
 # GTH-MOLOPT (DZVP-MOLOPT-SR / TZVP-MOLOPT) Speed and Memory Plan
 
-Status: executed 2026-09-06 — §8 is the record of what landed and what was measured.
+Status: executed 2026-09-06 — §8 is the record of what landed and what was measured;
+§9 (S3), §10 (the profile-guided pass) and §11 (the GPU decomposition, G1, and
+the T4 measurement package), all 2026-09-07, extend it.
 Scope: the batched `int2e_sph` path over the two GTH-MOLOPT orbital bases
 `cintx-basis` exposes behind the `gth` feature (`DZVP-MOLOPT-SR-GTH`,
 `TZVP-MOLOPT-GTH`). `gth-tzvp-molopt-sr` does not exist upstream (CP2K ships
@@ -531,3 +533,315 @@ the A/B this section leaves in place.
 
 **F2 and F3 are unchanged** and stay open; F2 (private `gctri`) is now bounded
 by the same 73–87 % that bounds F1.
+
+## 10. The profile-guided pass (2026-09-07)
+
+Scope: the same six fixtures, both backends, with the kernel as §9 left it.
+Method: the four steps of the CubeCL profiling manual
+(`16_profiling_and_bottleneck_identification.md`) — verify correctness, time
+portably, attribute, fix one thing per measurement. The host has no hardware
+profiler for the CPU runtime (no `perf`; the kernel is JIT-compiled MLIR), so
+attribution is by the kernel's own runtime switches, alternated inside one
+process, exactly as §9.3 did it. `crates/cintx-oracle/tests/gth_profile.rs` is
+the harness: one table per workload, every row a ratio against the default
+configuration measured in the same process, plus the memory fields of
+`BatchExecutionStats` and a raw-`f64` dump/compare for bit-identity gates.
+
+```text
+CINTX_ORACLE_BUILD_VENDOR=1 cargo test --release -p cintx-oracle \
+  --features cpu,extended-device-rys,gth --test gth_profile -- --ignored --nocapture
+# CINTX_GTH_SCALING=1 adds the unit-count curve; CINTX_GTH_DUMP / CINTX_GTH_COMPARE=<dir>
+# write / check the default output bit for bit; CINTX_GTH_BACKEND=rocm runs the
+# cooperative arm (keep CINTX_2E_CHUNK_QUARTETS set on a display GPU, §8.6).
+```
+
+### 10.1 Attribution before any change (CPU, per-unit arm, 16 units)
+
+| workload | default (ms) | 1 unit | 8 units | naive contraction |
+|---|---|---|---|---|
+| H2O / DZVP-SR | 29.8 | 0.30x | 0.84x | 0.78x |
+| CH4 / DZVP-SR | 90.1 | 0.23x | 0.83x | 0.82x |
+| SO2 / DZVP-SR | 94.7 | 0.20x | 0.81x | 0.67x |
+| H2O / TZVP | 111.3 | 0.29x | 0.91x | 0.62x |
+| CH4 / TZVP | 333.7 | 0.21x | 0.84x | 0.63x |
+| SO2 / TZVP | 405.4 | 0.20x | 0.86x | 0.46x |
+
+Two things stood out. **Sixteen units bought only 3.4–4.9x over one** on an
+8-core/16-thread part whose SMT half is worth 1.1–1.2x (the 8-unit column),
+so a good part of the gap was not arithmetic. And the launch rows are appended
+class by class while the per-unit walk was *blocked* — unit `u` took rows
+`[u·chunk, (u+1)·chunk)` — so on a family basis the last units drew every
+`(pp|pp)`-class row of a dispatch (2 401 primitive quartets, 81 blocks) while
+the first drew `(ss|ss)`. The dispatch waits for the slowest unit.
+
+The second finding was read from the kernel rather than a counter, and it is
+the one that mattered on the GPU. The contraction walked its Cartesian
+elements through a five-deep `(l, k, j, i)` nest of `while` loops per
+primitive quartet, and the cooperative arm split the work by testing
+`q_elem % lanes == lane` *inside* that nest — so on a 32-lane wavefront every
+lane executed all 81 iterations of a `(pp|pp)` block and one lane was live per
+step. That is the "contraction is 73–87% of the kernel" of §9.3, seen from the
+other side: it was 73–87% because it ran at 1/32 utilisation.
+
+### 10.2 K1 — the Cartesian index table
+
+libcint precomputes `idx` once per shell quartet (`CINTg2e_index_xyz`) and
+its inner loop is flat. cintx now does the same on the host:
+`TwoELaunchGroup::push_class` appends three `u32` G offsets per Cartesian
+element, in the exact order the nest walked them, and the shape row carries
+the table's start (`TWO_E_SHAPE_STRIDE` 13 → 14). The kernel's contraction is
+one loop, `q = lane; while q < block_len { …; q += lanes }`, reading its three
+offsets from the table. Each element is the same expression over the same
+roots in the same order, accumulated into the same place; **the output is
+bit-identical** on all six fixtures (0 of 2 313 078 elements differ against a
+dump taken before the change), on both decompositions
+(`two_e_cooperative_arm` holds the 4-lane cooperative arm to the per-unit one
+bit for bit), and every vendor gate is unchanged.
+
+Cost: `3 · block_len · 4` bytes per class per dispatch — 1 KiB for `(pp|pp)`,
+120 KiB for an `(ff|ff)` class — counted in `upload_bytes` and so in
+`transfer_bytes` and the pre-flight plan.
+
+### 10.3 K2 — the cost-balanced per-unit partition
+
+The per-unit walk's bounds now come from the host: `n_slots + 1` row indices
+(`per_unit_slot_bounds`), cut where the prefix sum of a per-row cost estimate
+crosses each `1/n_slots` share of the dispatch. The estimate
+(`quartet_cost_estimate`) is the screened primitive-quartet count from the
+pair table times a per-primitive term — `block_len · (3·nroots + 2·nctr_i)`
+for the contraction and its `i` stage, plus the G build — and only has to
+rank rows. Which unit evaluates a quartet cannot change its value, so the two
+partitions are bit-identical by construction; `CINTX_2E_BALANCE=uniform` /
+`set_two_e_balance` is the A/B. The cooperative arm is untouched (it indexes
+the placeholder at `slot · punit == 0` and keeps its interleaved walk). The
+bounds are `4 · (units + 1)` bytes per launch, charged to the device ledger
+(`device_table_bytes_total`); `transfer_bytes` is documented as omitting them
+because it is summed before a width is chosen.
+
+### 10.4 What the two bought, and what is left (CPU)
+
+In-process A/B rows, best of 3, after K1 + K2 (`gth_profile`, three runs):
+
+| workload | default (ms) | uniform partition | no-contraction probe | G-build share |
+|---|---|---|---|---|
+| H2O / DZVP-SR | 22.0–22.7 | 0.89–0.94x | 2.98x | 34% |
+| CH4 / DZVP-SR | 61.0–62.5 | 0.79–0.93x | 2.19–2.56x | 39–46% |
+| SO2 / DZVP-SR | 71.7–73.0 | 0.75–0.84x | 3.16–3.24x | 31% |
+| H2O / TZVP | 83.8–96.2 | 0.95–0.99x | 3.25–3.49x | 29–31% |
+| CH4 / TZVP | 256–275 | 0.90–0.92x | 2.57–2.61x | 38–39% |
+| SO2 / TZVP | 329–372 | 0.90–0.93x | 3.76x | 27% |
+
+K2 alone (measured before K1, same harness): 1.04–1.14x. The whole pass on
+the same-day A/B harness (`gth_contraction_ab`, staged column, ms):
+30.8 → 20.5, 90.9 → 69.8, 108.7 → 82.4, 117.7 → 90.2, 368.2 → 264.0,
+469.6 → 358.5 — **1.30–1.50x**, bit-identical. The probe — the G build with
+the contraction skipped — says what is left: the contraction and its stages
+are still 54–73% of the per-unit kernel, and it is the honest floor of this
+design on this runtime. The per-element cost is nine G loads, six flops, and
+`nctr_i` read-modify-writes into the `gctri` slab per primitive quartet;
+there is no reuse across elements for a private array to capture. Hoisting
+the `i` coefficients into registers (K3, tried) measured 0.85–1.11x — inside
+this host's noise band — and was removed rather than kept on a hope.
+
+The whole-workload rows, two engines in one process on the identical list
+(`gth_batched_throughput`, `artifacts/cintx_gth_throughput.json`):
+
+| workload | quartets | libcint (s) | cintx (s) | now | §8.4 |
+|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 406 | 0.036 | 0.021 | **1.72x faster** | 1.11x |
+| CH4 / DZVP-MOLOPT-SR | 2 211 | 0.146 | 0.065 | **2.25x faster** | 1.58x |
+| SO2 / DZVP-MOLOPT-SR | 1 035 | 0.167 | 0.075 | **2.22x faster** | 1.47x |
+| H2O / TZVP-MOLOPT | 406 | 0.138 | 0.084 | **1.65x faster** | 1.18x |
+| CH4 / TZVP-MOLOPT | 2 211 | 0.561 | 0.267 | **2.10x faster** | 1.58x |
+| SO2 / TZVP-MOLOPT | 1 035 | 0.697 | 0.352 | **1.98x faster** | 1.51x |
+
+Every max|diff| against the vendor is the §8.4 figure to the digit
+(3.3e-15 … 2.6e-13), which is what bit-identity looks like from the outside.
+
+### 10.5 The cooperative arm (ROCm, gfx1151)
+
+`gth_profile` on H2O with `CINTX_2E_CHUNK_QUARTETS=32` (13 chunks, 112
+launches), best of 3, interleaved:
+
+| workload | default (ms) | naive | no-contraction probe | lane-0 build | §9.1 (128-quartet chunks) |
+|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 1 213 | 0.96x | 1.05x | 0.65x | 1 310 |
+| H2O / TZVP-MOLOPT | 4 609 | 0.82x | 1.06x | 0.65x | 5 084 |
+
+K1 did on the GPU what §10.1 predicted: **the contraction is now 5–6% of the
+cooperative kernel** (the probe), against 73–87% in §9.3, and the naive arm
+— which pays the same `1/lanes` utilisation no longer — is within 4–18% of
+the staged one. The S3 A/B inverted accordingly: with the contraction gone
+from the profile, the lane-0 build costs 1.54x rather than 1.27x. Vendor
+agreement is unchanged (3.3e-15, 2.8e-13); the cooperative output is not
+bit-identical to the CPU's, for the FMA reason §8.3 records, and is held to
+`2 × 1e-12` of it by `gth_contraction_ab`.
+
+What the wall clock did *not* do is fall by the 3–4x the contraction share
+implied, and the harness says why: 69 quartets — one per class — take 31% of
+the whole 406-quartet run. A dispatch is one quartet per cube, and a TZVP
+quartet is 2 401 primitive quartets walked *serially* inside that cube; the
+dispatch lasts as long as its slowest quartet whether it carries four or
+forty. On a 406-quartet molecule the GPU is latency-bound by that serial
+loop, not throughput-bound by anything K1 touches, and the chunk cap §8.6
+makes necessary on a display GPU multiplies the number of such latencies. The
+lever there is the one §5 of the def2 plan sketched and §9.1 deliberately did
+not take: distributing *primitive quartets* across planes with a reduction,
+which is not bit-identical and needs its own gate. It is the next GPU item,
+and it is only worth taking on a discrete GPU where dispatches are not capped.
+
+### 10.6 Memory
+
+Measured, not changed. The GTH host peak is the def2 shape — the spherical
+output plus the retained Cartesian intermediate, 2.1–2.35x the output — and
+both existing levers were timed on GTH in-process:
+
+| lever | host Cartesian peak | time (CPU) | bits |
+|---|---|---|---|
+| default | 0.46–10.67 MiB (1.1–1.25x output) | 1.00x | — |
+| `CINTX_2E_TRANSFORM=device` | 0 on the host | 0.96–1.08x | identical |
+| `memory_limit_bytes` at a quarter of the intermediate (5 chunks) | 0.12–2.66 MiB | 0.60–0.87x | identical |
+
+The device transform is a wash in time on the CPU runtime, as the def2 plan
+found, and on that runtime the "device" spherical buffer it reads back is
+host memory too, so the peak moves rather than shrinks; on ROCm it is 0.99x
+and one ULP from the host transform (FMA). Chunking costs 13–40% on GTH —
+more than on def2, because a chunk's dispatches carry fewer quartets and the
+per-unit partition has less to balance — for a bounded intermediate. Neither
+default moves; both numbers are now on record for a caller who needs the
+bound. What this pass added to the footprint is the index tables (KiB per
+dispatch) and the partition bounds (bytes); the contraction scratch of §8.5 is
+unchanged. A GTH list large enough for memory to matter (benzene/TZVP) is
+where `memory_limit_bytes` was already the answer.
+
+### 10.7 Verification
+
+- Bit-identity: `gth_profile` dump/compare on all six fixtures (K1, K2);
+  `two_e_cooperative_arm` (per-unit vs cooperative, def2 and GTH);
+  `def2_batch_memory_plan::chunked_evaluation_is_bit_identical_to_unchunked`.
+- Vendor: `gth_contraction_ab` (water gate in the default suite; all six under
+  `--ignored`), `general_contraction_device_indexing`,
+  `def2_2e_batch_parity` (its transfer-byte prediction now includes the index
+  tables), the throughput rows above (0 mismatched elements at 1e-9, max|diff|
+  as §8.4).
+- Unit: `partition_tests` (bounds cover every row once, stay monotone,
+  reproduce the blocked walk under `uniform`, give an expensive tail its own
+  slots), the in-file f32 smoke launch with the two new arguments.
+- ROCm: `gth_profile` (above); `gth_contraction_ab` cross-backend on H2O.
+
+## 11. The GPU decomposition: what was investigated, what landed (2026-09-07)
+
+### 11.1 The question §10.5 left
+
+After K1 the cooperative kernel's contraction is 5–6% of its time and the
+wall clock on H2O still did not move, because a dispatch is one quartet per
+cube and each cube walks its 2 401 primitive quartets *serially*: Rys roots,
+a VRR/HRR on `3·nroots ≤ 15` lanes, two barriers, a contraction — per
+primitive quartet. On a 406-quartet molecule a launch carries ~27 cubes for
+16 compute units (gfx1151) or 40 SMs (T4); the dispatch lasts as long as its
+slowest cube's serial walk whatever the rest of the device is doing. The
+kernel is latency-bound per cube, not throughput-bound by anything inside it.
+
+Four ways to put more of the device on one quartet were weighed:
+
+| method | what changes | bit-identical? | verdict |
+|---|---|---|---|
+| **G1 — ket-pair split across cubes** | each quartet becomes `n` rows, each a contiguous slice of its ket-pair range writing its own copy of the output; one reduce kernel sums the copies in order | no (the sum over ket pairs is re-associated); deterministic | **taken** — host-side table change plus a 15-line kernel, verifiable on the CPU's pinned cooperative arm |
+| lane-level primitive-quartet parallelism | lanes own primitive quartets instead of `(axis, root)` slices; each builds its own G tensor and partial `gctri`, reduced through shared memory | no | not taken: a rewrite of the cooperative arm (~500 lines) whose private G tensor (144–1 215 f64 per lane) spills to local memory; G1 reaches the same parallelism through the grid with the kernel untouched |
+| bra-pair split as well | as G1 on the `ij` range too | no | open — the next step if G1's `max_rows` cap binds (§11.3); costs `parts²` partial buffers |
+| shared-memory G slab | on-chip G tensor | yes | measured a wash on AMD (§9.2); the T4 counters (§11.4) decide it for NVIDIA |
+
+### 11.2 G1 — the ket-pair split
+
+- The quartet row grows to eight `u32` (`QUARTET_ROW_STRIDE`): `si, sj, sk,
+  sl, out_off, class, kl_lo, kl_hi`. The kernel reads its ket range from the
+  row instead of `pair_offset`; an unsplit row carries the whole
+  `pair_offset[sk·nbas+sl] ..` span, so the per-unit arm and every existing
+  result are unchanged (bit-identical, all CPU gates).
+- `kl_split_factor` sizes the split per dispatch on a backend with hardware
+  planes: the smallest `n` that gives `8 × parallel_units` cubes, capped by the
+  widest ket range in the group, by a 64 MiB partial-buffer budget and by 64.
+  Never under a `memory_limit_bytes` (the copies are the peak the budget
+  refuses), never on the per-unit shape. `CINTX_2E_KL_SPLIT=off|n` /
+  `set_two_e_kl_split` pin it.
+- `expand_kl_split` builds the split rows at dispatch (`out_off + p·out_len`
+  per part, ket rows in libcint's `(pl, pk)` order inside each part; an empty
+  part zeroes its block and nothing else). `reduce_kl_partials` sums the
+  copies `p = 0, 1, …` in a fixed order. The transform binds the *unsplit*
+  rows against the reduced buffer.
+- The row stride and the shape stride are **comptime kernel parameters**, so a
+  change to either table's layout changes the compiled program's identity.
+  The first ROCm run of G1 page-faulted: the body had changed and the
+  arguments had not, and the HIP cache (keyed by signature, not body —
+  `def2-plan-open-items`) ran the old kernel against the new table. This is
+  the second time that trap has cost a run; the comptime stride is the
+  structural fix.
+
+**Gates.** `two_e_cooperative_arm::ket_split_agrees_on_{def2,gth}` pins the
+4-lane cooperative arm on the CPU backend, forces splits of 2/7 (def2, where
+parts go empty) and 3/8 (GTH), and holds the result to the vendor at 1e-12
+and to the unsplit arm within a sanity bound of 1 024 eps of block scale
+(measured 20 eps DZVP-SR, 77 eps TZVP — the re-association of up to 49 ket
+terms). `kl_split_tests` covers the row expansion. The file's tests now take
+one lock, because they pin process-global switches and the harness runs test
+functions on parallel threads — the first run of the new test read the other
+test's setting.
+
+### 11.3 Measured on ROCm (gfx1151, H2O, `CINTX_2E_CHUNK_QUARTETS=64`, best of 3, interleaved)
+
+| workload | split (ms) | `klsplit=off` (ms) | **G1** | parts | probe | lane-0 build | naive | vendor \|d\| |
+|---|---|---|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 156.6 | 854.2 | **5.45x** | 25 | 1.11x | 0.77x | 1.04x | 3.1e-15 |
+| H2O / TZVP-MOLOPT | 469.8 | 3 256.9 | **6.93x** | 49 | 1.08x | 0.77x | 0.84x | 2.8e-13 |
+
+Against §10.5's numbers from the previous process (1 213 / 4 609 ms at a
+32-quartet cap) the same fixtures now run in 157 / 470 ms; the 7–10x is far
+outside the host's 2x run-to-run band. `gth_contraction_ab` on ROCm holds the
+split result to the CPU at 40.9 / 577.4 eps of block scale — the same figures
+as before the split (49 / 577), so the re-association is invisible under the
+FMA drift §8.3 already carried.
+
+Two things to read off the table. The split went to `max_rows` (25 and 49
+ket pairs) rather than to the occupancy target, so on a molecule this small
+the ket range is the binding cap and the bra-pair split of §11.1 is the next
+lever — at `parts²` partial buffers, which is where the 64 MiB budget starts
+to matter. And with the contraction at 7–10% and the G build 23% (lane-0 A/B),
+what remains per cube is the serial chain *inside* a primitive quartet: Rys
+roots on every lane, the recurrences on ≤ 15 lanes, two barriers. That is the
+profile a hardware counter can attribute (barrier stalls against scoreboard
+stalls against f64 issue), which is what §11.4 sends to the T4.
+
+The staged contraction's GPU advantage over the naive fold (2.45x in §8.3)
+is gone with the split: each part sees at most a couple of `l` primitives, so
+the staging has almost nothing to fold, and on DZVP-SR the naive arm is even
+4% faster. It stays the default for the vendor's association and for the
+per-unit arm, where it is worth 1.4–2.6x (§10.4).
+
+### 11.4 The T4 measurement package
+
+This host has no NVIDIA device, so the T4 measurement is prepared, not
+taken. `ci/colab_t4_profile.sh` and `ci/colab_t4_profile.ipynb` run, on a
+Colab T4, the manual's four steps in order: `def2_cuda_verification` and the
+CPU-pinned split/arm gates (correctness first); `gth_profile` on CUDA with
+`klsplit=off`, `probe:no-ctr`, `coop=lane0`, `naive` and `xform=device` as
+in-process ratios, plus the same profile on the VM's CPU backend and its dump
+for the cross-backend gap; `nsys profile --stats` for the timeline and
+`ncu --kernel-name regex:'two_electron_scalar_kernel.*|reduce_kl_partials.*'
+--launch-skip 4` for the §3.3 metric set — sector counts and hit rates on
+both the load and the store side, bytes per sector, `dfma` issue, and the
+barrier / long-scoreboard / wait stall reasons — and one `--set full` report
+for Nsight Compute; and a `summary.json` collector. The CUDA feature compiles
+here (`cargo check --features cpu,cuda`), and `gth_profile` accepts
+`CINTX_GTH_BACKEND=cuda`. The counters answer the question §11.3 leaves: whether
+the per-primitive-quartet chain is bound by the two barriers, by the G-tensor
+loads (the case for a shared-memory G on NVIDIA), or by f64 issue (a T4's f64
+rate is 1/32 of f32, and then nothing but fewer flops helps).
+
+### 11.5 Verification (this section)
+
+- CPU, bit-identical to §10: `two_e_cooperative_arm` (4 tests),
+  `def2_2e_batch_parity` (row prediction at 8 `u32`), `gth_contraction_ab`
+  water, `general_contraction_device_indexing`, `def2_batch_memory_plan`,
+  the f32 smoke launch, `kl_split_tests`, the full `cintx-cubecl` unit suite.
+- ROCm: `gth_profile` (§11.3), `gth_contraction_ab` cross-backend,
+  `def2_batch_rocm_parity` with the split active by default.

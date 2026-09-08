@@ -1112,19 +1112,19 @@
       "buckets": 69,
       "case": "H2O / DZVP-MOLOPT-SR-GTH (screened 1e-10)",
       "chunk_count": 1,
-      "cintx_seconds": 0.030938083,
+      "cintx_seconds": 0.020797572,
       "comparable": true,
-      "dispatch_ns": 32538602,
+      "dispatch_ns": 22321904,
       "envelope": {
         "fraction_above_base_ceiling": 0.0,
         "quartets_above_base_ceiling": 0,
         "quartets_at_or_below_base_ceiling": 406
       },
-      "host_transform_ns": 718591,
+      "host_transform_ns": 290436,
       "kept_fraction": 1.0,
       "kernel_launch_count": 15,
       "launch_classes": 69,
-      "libcint_seconds": 0.034204234,
+      "libcint_seconds": 0.035767427,
       "max_abs_diff_vs_vendor": 3.3306690738754696e-15,
       "max_g_slab_bytes": 27008,
       "memory": {
@@ -1133,8 +1133,8 @@
         "device_g_slab_bytes_peak": 207872,
         "device_g_slab_bytes_total": 392192,
         "device_out_bytes_peak": 130032,
-        "device_planned_allocs": 63,
-        "device_table_bytes_total": 21052,
+        "device_planned_allocs": 93,
+        "device_table_bytes_total": 111044,
         "device_transform": false,
         "host_cart_bytes_peak": 486096,
         "host_output_bytes": 405224,
@@ -1150,7 +1150,7 @@
         "items_per_class": 16,
         "launches": 15,
         "refused": 0,
-        "seconds": 6.539291223,
+        "seconds": 6.880468684,
         "signatures": 15
       },
       "primitive_work": {
@@ -1163,8 +1163,8 @@
       "readback_count": 15,
       "shells": 7,
       "tolerance": 1e-10,
-      "transfer_bytes": 73884,
-      "warmup_seconds": 6.539300821
+      "transfer_bytes": 163056,
+      "warmup_seconds": 6.880477801
     },
     {
       "bucket_rows": [
@@ -2276,19 +2276,19 @@
       "buckets": 69,
       "case": "CH4 / DZVP-MOLOPT-SR-GTH (screened 1e-10)",
       "chunk_count": 1,
-      "cintx_seconds": 0.090318456,
+      "cintx_seconds": 0.064708865,
       "comparable": true,
-      "dispatch_ns": 88892004,
+      "dispatch_ns": 72291245,
       "envelope": {
         "fraction_above_base_ceiling": 0.0,
         "quartets_above_base_ceiling": 0,
         "quartets_at_or_below_base_ceiling": 2211
       },
-      "host_transform_ns": 1191350,
+      "host_transform_ns": 1797646,
       "kept_fraction": 1.0,
       "kernel_launch_count": 15,
       "launch_classes": 69,
-      "libcint_seconds": 0.142854209,
+      "libcint_seconds": 0.145890868,
       "max_abs_diff_vs_vendor": 3.1086244689504383e-15,
       "max_g_slab_bytes": 27008,
       "memory": {
@@ -2297,8 +2297,8 @@
         "device_g_slab_bytes_peak": 207872,
         "device_g_slab_bytes_total": 392192,
         "device_out_bytes_peak": 489528,
-        "device_planned_allocs": 63,
-        "device_table_bytes_total": 64372,
+        "device_planned_allocs": 93,
+        "device_table_bytes_total": 154412,
         "device_transform": false,
         "host_cart_bytes_peak": 1687416,
         "host_output_bytes": 1486464,
@@ -2314,7 +2314,7 @@
         "items_per_class": 16,
         "launches": 15,
         "refused": 0,
-        "seconds": 1.120548036,
+        "seconds": 1.180809595,
         "signatures": 15
       },
       "primitive_work": {
@@ -2327,8 +2327,8 @@
       "readback_count": 15,
       "shells": 11,
       "tolerance": 1e-10,
-      "transfer_bytes": 204452,
-      "warmup_seconds": 1.120554237
+      "transfer_bytes": 293624,
+      "warmup_seconds": 1.180813483
     },
     {
       "bucket_rows": [
@@ -3632,19 +3632,19 @@
       "buckets": 81,
       "case": "SO2 / DZVP-MOLOPT-SR-GTH (screened 1e-10)",
       "chunk_count": 1,
-      "cintx_seconds": 0.110463184,
+      "cintx_seconds": 0.075266794,
       "comparable": true,
-      "dispatch_ns": 107511945,
+      "dispatch_ns": 86157209,
       "envelope": {
         "fraction_above_base_ceiling": 0.0,
         "quartets_above_base_ceiling": 0,
         "quartets_at_or_below_base_ceiling": 1035
       },
-      "host_transform_ns": 2852704,
+      "host_transform_ns": 3980245,
       "kept_fraction": 1.0,
       "kernel_launch_count": 16,
       "launch_classes": 81,
-      "libcint_seconds": 0.1628944,
+      "libcint_seconds": 0.167155527,
       "max_abs_diff_vs_vendor": 6.439293542825908e-15,
       "max_g_slab_bytes": 27008,
       "memory": {
@@ -3653,8 +3653,8 @@
         "device_g_slab_bytes_peak": 497664,
         "device_g_slab_bytes_total": 929792,
         "device_out_bytes_peak": 684288,
-        "device_planned_allocs": 67,
-        "device_table_bytes_total": 36868,
+        "device_planned_allocs": 99,
+        "device_table_bytes_total": 158280,
         "device_transform": false,
         "host_cart_bytes_peak": 4087680,
         "host_output_bytes": 3032328,
@@ -3670,7 +3670,7 @@
         "items_per_class": 16,
         "launches": 16,
         "refused": 0,
-        "seconds": 2.843299143,
+        "seconds": 3.022836451,
         "signatures": 16
       },
       "primitive_work": {
@@ -3683,8 +3683,8 @@
       "readback_count": 16,
       "shells": 9,
       "tolerance": 1e-10,
-      "transfer_bytes": 115092,
-      "warmup_seconds": 2.8433044130000003
+      "transfer_bytes": 235416,
+      "warmup_seconds": 3.022840729
     },
     {
       "bucket_rows": [
@@ -4796,19 +4796,19 @@
       "buckets": 69,
       "case": "H2O / TZVP-MOLOPT-GTH (screened 1e-10)",
       "chunk_count": 1,
-      "cintx_seconds": 0.116294849,
+      "cintx_seconds": 0.08381002,
       "comparable": true,
-      "dispatch_ns": 128588174,
+      "dispatch_ns": 98842493,
       "envelope": {
         "fraction_above_base_ceiling": 0.0,
         "quartets_above_base_ceiling": 0,
         "quartets_at_or_below_base_ceiling": 406
       },
-      "host_transform_ns": 794374,
+      "host_transform_ns": 780035,
       "kept_fraction": 1.0,
       "kernel_launch_count": 15,
       "launch_classes": 69,
-      "libcint_seconds": 0.13694618,
+      "libcint_seconds": 0.138071773,
       "max_abs_diff_vs_vendor": 2.6489921367556235e-13,
       "max_g_slab_bytes": 27008,
       "memory": {
@@ -4817,8 +4817,8 @@
         "device_g_slab_bytes_peak": 404480,
         "device_g_slab_bytes_total": 588800,
         "device_out_bytes_peak": 301320,
-        "device_planned_allocs": 63,
-        "device_table_bytes_total": 21052,
+        "device_planned_allocs": 93,
+        "device_table_bytes_total": 111044,
         "device_transform": false,
         "host_cart_bytes_peak": 1196856,
         "host_output_bytes": 1044848,
@@ -4834,7 +4834,7 @@
         "items_per_class": 16,
         "launches": 15,
         "refused": 0,
-        "seconds": 0.107677566,
+        "seconds": 0.083684855,
         "signatures": 15
       },
       "primitive_work": {
@@ -4847,8 +4847,8 @@
       "readback_count": 15,
       "shells": 7,
       "tolerance": 1e-10,
-      "transfer_bytes": 130844,
-      "warmup_seconds": 0.107681083
+      "transfer_bytes": 220016,
+      "warmup_seconds": 0.083690205
     },
     {
       "bucket_rows": [
@@ -5960,19 +5960,19 @@
       "buckets": 69,
       "case": "CH4 / TZVP-MOLOPT-GTH (screened 1e-10)",
       "chunk_count": 1,
-      "cintx_seconds": 0.347619038,
+      "cintx_seconds": 0.267441992,
       "comparable": true,
-      "dispatch_ns": 344645897,
+      "dispatch_ns": 270282217,
       "envelope": {
         "fraction_above_base_ceiling": 0.0,
         "quartets_above_base_ceiling": 0,
         "quartets_at_or_below_base_ceiling": 2211
       },
-      "host_transform_ns": 2647679,
+      "host_transform_ns": 2597259,
       "kept_fraction": 1.0,
       "kernel_launch_count": 15,
       "launch_classes": 69,
-      "libcint_seconds": 0.548088641,
+      "libcint_seconds": 0.561070718,
       "max_abs_diff_vs_vendor": 4.085620730620576e-14,
       "max_g_slab_bytes": 27008,
       "memory": {
@@ -5981,8 +5981,8 @@
         "device_g_slab_bytes_peak": 404480,
         "device_g_slab_bytes_total": 588800,
         "device_out_bytes_peak": 1030320,
-        "device_planned_allocs": 63,
-        "device_table_bytes_total": 64372,
+        "device_planned_allocs": 93,
+        "device_table_bytes_total": 154412,
         "device_transform": false,
         "host_cart_bytes_peak": 3945024,
         "host_output_bytes": 3575192,
@@ -5998,7 +5998,7 @@
         "items_per_class": 16,
         "launches": 15,
         "refused": 0,
-        "seconds": 0.114490156,
+        "seconds": 0.077540013,
         "signatures": 15
       },
       "primitive_work": {
@@ -6011,8 +6011,8 @@
       "readback_count": 15,
       "shells": 11,
       "tolerance": 1e-10,
-      "transfer_bytes": 344628,
-      "warmup_seconds": 0.114494965
+      "transfer_bytes": 433800,
+      "warmup_seconds": 0.077543109
     },
     {
       "bucket_rows": [
@@ -7316,19 +7316,19 @@
       "buckets": 81,
       "case": "SO2 / TZVP-MOLOPT-GTH (screened 1e-10)",
       "chunk_count": 1,
-      "cintx_seconds": 0.454755436,
+      "cintx_seconds": 0.352119041,
       "comparable": true,
-      "dispatch_ns": 453211944,
+      "dispatch_ns": 366038914,
       "envelope": {
         "fraction_above_base_ceiling": 0.0,
         "quartets_above_base_ceiling": 0,
         "quartets_at_or_below_base_ceiling": 1035
       },
-      "host_transform_ns": 8268717,
+      "host_transform_ns": 7836999,
       "kept_fraction": 1.0,
       "kernel_launch_count": 16,
       "launch_classes": 81,
-      "libcint_seconds": 0.68491743,
+      "libcint_seconds": 0.697215121,
       "max_abs_diff_vs_vendor": 2.6489921367556235e-13,
       "max_g_slab_bytes": 27008,
       "memory": {
@@ -7337,8 +7337,8 @@
         "device_g_slab_bytes_peak": 871424,
         "device_g_slab_bytes_total": 1303552,
         "device_out_bytes_peak": 2365848,
-        "device_planned_allocs": 67,
-        "device_table_bytes_total": 36868,
+        "device_planned_allocs": 99,
+        "device_table_bytes_total": 158280,
         "device_transform": false,
         "host_cart_bytes_peak": 11183832,
         "host_output_bytes": 8960568,
@@ -7354,7 +7354,7 @@
         "items_per_class": 16,
         "launches": 16,
         "refused": 0,
-        "seconds": 0.134940539,
+        "seconds": 0.104600288,
         "signatures": 16
       },
       "primitive_work": {
@@ -7367,15 +7367,15 @@
       "readback_count": 16,
       "shells": 9,
       "tolerance": 1e-10,
-      "transfer_bytes": 202196,
-      "warmup_seconds": 0.134944065
+      "transfer_bytes": 322520,
+      "warmup_seconds": 0.104604214
     }
   ],
   "device_residency_profiled": false,
   "extended_device_rys": true,
   "quartet_cap": 240,
   "reference_engine": "libcint 6.1.3 (C, 1 thread)",
-  "repeats": 5,
+  "repeats": 9,
   "run": "gth_batched_throughput",
   "schema": "cintx_def2_throughput/2"
 }

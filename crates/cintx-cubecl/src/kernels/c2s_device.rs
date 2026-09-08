@@ -130,6 +130,7 @@ pub fn two_electron_c2s_kernel<F: Float>(
     n_slots: u32,
     scratch_half: u32,
     #[comptime] shape_stride: u32,
+    #[comptime] row_stride: u32,
 ) {
     // Derived rather than taken from `ABSOLUTE_POS`, and the stride from the
     // launch argument rather than `CUBE_COUNT`: cubecl-cpu 0.10 rejects that
@@ -140,7 +141,7 @@ pub fn two_electron_c2s_kernel<F: Float>(
 
     let mut qi = slot;
     while qi < n_quartets {
-        let qrow = qi * 6u32;
+        let qrow = qi * row_stride;
         let si = quartets[qrow as usize];
         let sj = quartets[(qrow + 1u32) as usize];
         let sk = quartets[(qrow + 2u32) as usize];
@@ -628,6 +629,7 @@ pub(crate) fn launch_c2s<R: Runtime>(dispatch: C2sDispatch<'_, R>) {
             geometry.n_slots as u32,
             dispatch.scratch_half,
             dispatch.shape_stride,
+            crate::kernels::two_electron::QUARTET_ROW_STRIDE as u32,
         );
     }
 }
@@ -638,11 +640,38 @@ pub(crate) fn launch_c2s<R: Runtime>(dispatch: C2sDispatch<'_, R>) {
 /// place. Off by default until it is measured on a backend where the readback is
 /// a real transfer — on the CubeCL CPU runtime the "device" is the same cores,
 /// so moving the transform there moves the work without moving the cost.
+///
+/// [`set_device_transform`] overrides the environment for the rest of the
+/// process, so the two transforms can be A/B'd inside one process — the only
+/// comparison the development host's run-to-run variance allows.
 #[must_use]
 pub fn device_transform_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("CINTX_2E_TRANSFORM").is_ok_and(|value| value.eq_ignore_ascii_case("device"))
-    })
+    let current = DEVICE_TRANSFORM.load(std::sync::atomic::Ordering::Relaxed);
+    if current != DEVICE_TRANSFORM_UNRESOLVED {
+        return current == 1;
+    }
+    let from_env = u32::from(
+        std::env::var("CINTX_2E_TRANSFORM").is_ok_and(|value| value.eq_ignore_ascii_case("device")),
+    );
+    DEVICE_TRANSFORM.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env == 1
+}
+
+/// [`DEVICE_TRANSFORM`] until [`device_transform_enabled`] resolves the environment.
+const DEVICE_TRANSFORM_UNRESOLVED: u32 = u32::MAX;
+static DEVICE_TRANSFORM: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(DEVICE_TRANSFORM_UNRESOLVED);
+
+/// Pin the transform placement for the rest of this process: `Some(true)` is
+/// the device transform, `Some(false)` the host one, `None` re-reads
+/// `CINTX_2E_TRANSFORM`. For in-process A/B measurement, as
+/// `set_two_e_per_unit` is; a [`ResidentTwoEBasis`] built after the switch
+/// carries (or omits) the `c2s` tables accordingly.
+///
+/// [`ResidentTwoEBasis`]: crate::ResidentTwoEBasis
+pub fn set_device_transform(device: Option<bool>) {
+    DEVICE_TRANSFORM.store(
+        device.map_or(DEVICE_TRANSFORM_UNRESOLVED, u32::from),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }

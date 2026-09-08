@@ -80,6 +80,8 @@ pub struct DeviceMemoryProbe {
     allocs_baseline: u64,
     /// Has a baseline sample been taken?
     baselined: bool,
+    /// Widest ket-pair split (G1) any dispatch used; `0` until one is noted.
+    kl_split_max: u32,
 }
 
 impl DeviceMemoryProbe {
@@ -99,6 +101,11 @@ impl DeviceMemoryProbe {
         self.g_slab_bytes_total += bytes;
         self.g_slab_bytes_peak = self.g_slab_bytes_peak.max(bytes);
         self.planned_allocs += 1;
+    }
+
+    /// Record one dispatch's ket-pair split factor (G1).
+    pub fn note_kl_split(&mut self, n_split: u32) {
+        self.kl_split_max = self.kl_split_max.max(n_split);
     }
 
     /// Charge `count` table uploads totalling `bytes`.
@@ -151,6 +158,7 @@ impl DeviceMemoryProbe {
         self.planned_allocs += other.planned_allocs;
         self.bytes_in_use_peak = self.bytes_in_use_peak.max(other.bytes_in_use_peak);
         self.allocs_added = self.allocs_added.max(other.allocs_added);
+        self.kl_split_max = self.kl_split_max.max(other.kl_split_max);
     }
 
     /// Fold these totals into a batch's statistics.
@@ -162,6 +170,7 @@ impl DeviceMemoryProbe {
         stats.device_planned_allocs = self.planned_allocs;
         stats.device_bytes_in_use_peak = self.bytes_in_use_peak;
         stats.device_allocs_added = self.allocs_added;
+        stats.kl_split_max = self.kl_split_max.max(1);
     }
 }
 
