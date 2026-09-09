@@ -869,6 +869,109 @@ fn stage_contract_out<F: Float>(
     }
 }
 
+/// One HRR raise chain, at a **comptime** root width.
+///
+/// Every one of the eight raises the cooperative arm can run — two per
+/// `(ibase, kbase)` arm — has the same shape once it is written down:
+///
+/// ```text
+/// for a in 1..=a_max:                  # the index being raised, stride `sa`
+///     for b in 0..=(m_max - a):        # the free index of the 2D block, `sb`
+///         for r in r_lo..r_lo + nr:    # the Rys roots this task owns
+///             g[base + a*sa + b*sb + r] = coef * g[…- sa] + g[…- sa + sb]
+/// ```
+///
+/// `base` carries the axis plane and whichever indices the *task* fixed (the
+/// third index of the first raise, the pair of the second), so the four
+/// `(ibase, kbase)` arms differ only in which strides they hand over — and
+/// `lj2d`'s and `kj2d`'s `nb`-stepping inner loops are the `b` sweep of this
+/// same nest, which is what `CINTg0_kj2d_4d` (g2e.c:552) walks.
+///
+/// **The root width is comptime**, which is the point (plan §23, and the
+/// `#[unroll]` chapter of the CubeCL manual). It was a runtime `while r <
+/// r_hi` bound by a value read from the class row, so the innermost statement
+/// of the recurrence — three index computations, two loads, one FMA, one store
+/// — carried a compare, an add and a backward branch it could not lose, on a
+/// part that is latency-bound per cube. A cooperative task owns exactly one
+/// root (`rw == 1`) or the whole order (`rw == nroots`, one to five), so the
+/// caller picks the width with one branch per *task* and the loop disappears.
+///
+/// Same expressions, same operands, same order: the slab is bit-identical to
+/// the nest this replaces.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn hrr_chain<F: Float>(
+    g: &mut Slice<F, ReadWrite>,
+    base: u32,
+    a_max: u32,
+    m_max: u32,
+    sa: u32,
+    sb: u32,
+    coef: F,
+    r_lo: u32,
+    r_hi: u32,
+    #[comptime] nr: u32,
+) {
+    let mut a = 1u32;
+    while a <= a_max {
+        let arow = base + a * sa;
+        let mut b = 0u32;
+        while b <= (m_max - a) {
+            let pb = arow + b * sb;
+            if comptime!(nr > 0u32) {
+                #[unroll]
+                for r in 0..nr {
+                    let idx = pb + r_lo + r;
+                    g[idx as usize] = coef * g[(idx - sa) as usize] + g[(idx - sa + sb) as usize];
+                }
+            } else {
+                let mut r = r_lo;
+                while r < r_hi {
+                    let idx = pb + r;
+                    g[idx as usize] = coef * g[(idx - sa) as usize] + g[(idx - sa + sb) as usize];
+                    r += 1u32;
+                }
+            }
+            b += 1u32;
+        }
+        a += 1u32;
+    }
+}
+
+/// [`hrr_chain`] at the one width a cooperative task actually takes.
+///
+/// A task owns a single root wherever the lanes of a sub-group share the root
+/// axis (`rw == 1`), which is every cooperative launch the planner makes, and
+/// the whole order only in the `coop=lane0` A/B arm and where a sub-group is
+/// one lane. So the ladder here is **not** the five-arm one F1 (§15) put on
+/// the Rys solvers: emitting widths two to five would compile four copies of
+/// the chain nest per raise site that no dispatch ever enters, and a program
+/// that carries five Rys solvers has no code budget to spend on dead unrolls.
+/// §23.2 measured that: the five-arm form cost 16% on DZVP-MOLOPT-SR.
+///
+/// Width one is unrolled — it is the straight-line body the recurrence wants,
+/// with the compare, the add and the backward branch of the old `while r <
+/// r_hi` gone — and everything else takes the loop it always had.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn hrr_chain_w<F: Float>(
+    g: &mut Slice<F, ReadWrite>,
+    base: u32,
+    a_max: u32,
+    m_max: u32,
+    sa: u32,
+    sb: u32,
+    coef: F,
+    r_lo: u32,
+    r_hi: u32,
+) {
+    if r_hi - r_lo == 1u32 {
+        hrr_chain::<F>(g, base, a_max, m_max, sa, sb, coef, r_lo, r_hi, 1u32);
+    } else {
+        hrr_chain::<F>(g, base, a_max, m_max, sa, sb, coef, r_lo, r_hi, 0u32);
+    }
+}
+
 /// The contraction's per-element Rys sum, `Σ_r gx·gy·gz`, at a **comptime**
 /// root count (F1, §15).
 ///
@@ -897,6 +1000,441 @@ fn root_dot<F: Float>(
         sum += g[(ax + r) as usize] * g[(ay + r) as usize] * g[(az + r) as usize];
     }
     sum
+}
+
+/// The contraction's element walk for one primitive quartet, at a **comptime**
+/// root width (plan §23).
+///
+/// F1 (§15) made `nroots` a runtime column of the class row and kept
+/// [`root_dot`] unrolled by selecting its width with "one branch per element".
+/// That branch sat *inside* the walk over the block's Cartesian elements —
+/// eighty-one of them on a TZVP-MOLOPT `(pp|pp)` — so the hottest loop the
+/// kernel has carried a five-way ladder that no backend can hoist for itself:
+/// `ctr` and `cart_out` are kernel arguments, and a compiler that cannot prove
+/// them unaliased cannot lift a branch across their stores. On the per-unit
+/// shape the contraction is half the kernel (`probe:no-ctr` 2.0x–2.2x), and a
+/// branch in the body is also what stops the walk vectorising.
+///
+/// The ladder moves to the caller ([`contract_block_elems_w`]), which takes it
+/// once per primitive quartet, and the body left behind is straight-line. The
+/// coefficient bases — `coff + p * nctr`, a property of the *primitive
+/// quartet* — come out of the walk with it.
+///
+/// `arm` is the accumulation the quartet uses, decided once where `use_acc`,
+/// `is_uncontracted` and `use_staged` are: `0` the private accumulator (S2),
+/// `1` the segmented read-modify-write, `2` libcint's staged `i` stage (C1),
+/// `3` the naive every-quad arm that `CINTX_2E_CONTRACT=naive` selects. Same
+/// expressions, same operands, same order — bit-identical to the ladder-inside
+/// form.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn contract_block_elems<F: Float>(
+    g_slab: &Slice<F, ReadWrite>,
+    class_idx: &Array<u32>,
+    coeffs: &Array<F>,
+    acc: &mut Slice<F, ReadWrite>,
+    ctr: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    idx_off: u32,
+    gb: u32,
+    g_size: u32,
+    block_len: u32,
+    q_start: u32,
+    lanes: u32,
+    weight: F,
+    out_off: u32,
+    ctr_i_off: u32,
+    mb: u32,
+    iempty: u32,
+    arm: u32,
+    coff_i: u32,
+    pi: u32,
+    nctr_i: u32,
+    coff_j: u32,
+    pj: u32,
+    nctr_j: u32,
+    coff_k: u32,
+    pk: u32,
+    nctr_k: u32,
+    coff_l: u32,
+    pl: u32,
+    nctr_l: u32,
+    #[comptime] shared_tier: u32,
+    #[comptime] nr: u32,
+) {
+    let gby = gb + g_size;
+    let gbz = gb + 2u32 * g_size;
+    let cbi = coff_i + pi * nctr_i;
+    let cbj = coff_j + pj * nctr_j;
+    let cbk = coff_k + pk * nctr_k;
+    let cbl = coff_l + pl * nctr_l;
+    let mut q_elem = q_start;
+    let mut acc_slot: u32 = 0u32;
+    while q_elem < block_len {
+        let t = idx_off + 3u32 * q_elem;
+        let ax = gb + class_idx[t as usize];
+        let ay = gby + class_idx[(t + 1u32) as usize];
+        let az = gbz + class_idx[(t + 2u32) as usize];
+        let sum = root_dot::<F>(g_slab, ax, ay, az, nr);
+        if arm == 0u32 {
+            // Read-modify-write rather than `+=`: a `Slice` index does not
+            // carry the compound-assignment expansion an `Array` does. Same
+            // operands, same order.
+            let prev = acc[acc_slot as usize];
+            acc[acc_slot as usize] = prev + weight * sum;
+        } else if arm == 1u32 {
+            cart_out[(out_off + q_elem) as usize] += weight * sum;
+        } else if arm == 2u32 {
+            // The `i` stage: this primitive quartet into `gctri[ci][q]`.
+            let w = weight * sum;
+            let mut ci = 0u32;
+            while ci < nctr_i {
+                let mut cvi = F::new(1.0_f32);
+                if nctr_i > 1u32 {
+                    cvi = coeffs[(cbi + ci) as usize];
+                }
+                // The meta row carries the first four (§22.5); wider shells
+                // reload.
+                if comptime!(shared_tier > 0u32) {
+                    if ci < 4u32 {
+                        cvi = g_slab[(mb + 4u32 + ci) as usize];
+                    }
+                }
+                let idx = ctr_i_off + ci * block_len + q_elem;
+                if iempty == 1u32 {
+                    ctr[idx as usize] = cvi * w;
+                } else {
+                    ctr[idx as usize] += cvi * w;
+                }
+                ci += 1u32;
+            }
+        } else {
+            naive_quad_accumulate::<F>(
+                coeffs, cart_out, sum, out_off, q_elem, block_len, cbi, nctr_i, cbj, nctr_j, cbk,
+                nctr_k, cbl, nctr_l,
+            );
+        }
+        q_elem += lanes;
+        acc_slot += 1u32;
+    }
+}
+
+/// The naive contraction arm: this element into every one of the quartet's
+/// `nctr_i·nctr_j·nctr_k·nctr_l` output blocks.
+///
+/// Its own function so it is compiled **once** rather than in each of
+/// [`contract_block_elems`]'s five comptime widths. It is the
+/// `CINTX_2E_CONTRACT=naive` A/B arm and no default run enters it, so the code
+/// it costs a program is code spent on nothing; the staged arm (C1) is what
+/// every default dispatch takes. §23.2 is where that mattered.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn naive_quad_accumulate<F: Float>(
+    coeffs: &Array<F>,
+    cart_out: &mut Array<F>,
+    sum: F,
+    out_off: u32,
+    q_elem: u32,
+    block_len: u32,
+    cbi: u32,
+    nctr_i: u32,
+    cbj: u32,
+    nctr_j: u32,
+    cbk: u32,
+    nctr_k: u32,
+    cbl: u32,
+    nctr_l: u32,
+) {
+    let mut ci = 0u32;
+    while ci < nctr_i {
+        let cvi = coeffs[(cbi + ci) as usize];
+        let mut cj = 0u32;
+        while cj < nctr_j {
+            let cvj = coeffs[(cbj + cj) as usize];
+            let mut ck = 0u32;
+            while ck < nctr_k {
+                let cvk = coeffs[(cbk + ck) as usize];
+                let mut cl = 0u32;
+                while cl < nctr_l {
+                    let cvl = coeffs[(cbl + cl) as usize];
+                    let w4 = cvi * cvj * cvk * cvl;
+                    let qbase = (((ci * nctr_j + cj) * nctr_k + ck) * nctr_l + cl) * block_len;
+                    let oidx = out_off + qbase + q_elem;
+                    cart_out[oidx as usize] += w4 * sum;
+                    cl += 1u32;
+                }
+                ck += 1u32;
+            }
+            cj += 1u32;
+        }
+        ci += 1u32;
+    }
+}
+
+/// [`contract_block_elems`] with the root width chosen once per primitive
+/// quartet.
+///
+/// The ladder F1 (§15) put on the Rys solvers, on [`root_dot`] and on
+/// [`hrr_chain_w`], hoisted out of the element walk: a quartet's `nroots` is
+/// the same for every element of its block, so the test belongs here and not
+/// eighty-one levels in. Only the widths this dispatch can carry are emitted.
+/// Above order five the orders are never fused, so `nroots == nr_max`.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn contract_block_elems_w<F: Float>(
+    g_slab: &Slice<F, ReadWrite>,
+    class_idx: &Array<u32>,
+    coeffs: &Array<F>,
+    acc: &mut Slice<F, ReadWrite>,
+    ctr: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    idx_off: u32,
+    gb: u32,
+    g_size: u32,
+    block_len: u32,
+    q_start: u32,
+    lanes: u32,
+    weight: F,
+    out_off: u32,
+    ctr_i_off: u32,
+    mb: u32,
+    iempty: u32,
+    arm: u32,
+    coff_i: u32,
+    pi: u32,
+    nctr_i: u32,
+    coff_j: u32,
+    pj: u32,
+    nctr_j: u32,
+    coff_k: u32,
+    pk: u32,
+    nctr_k: u32,
+    coff_l: u32,
+    pl: u32,
+    nctr_l: u32,
+    nroots: u32,
+    #[comptime] shared_tier: u32,
+    #[comptime] nr_max: u32,
+) {
+    if comptime!(nr_max > 5u32) {
+        contract_block_elems::<F>(
+            g_slab,
+            class_idx,
+            coeffs,
+            acc,
+            ctr,
+            cart_out,
+            idx_off,
+            gb,
+            g_size,
+            block_len,
+            q_start,
+            lanes,
+            weight,
+            out_off,
+            ctr_i_off,
+            mb,
+            iempty,
+            arm,
+            coff_i,
+            pi,
+            nctr_i,
+            coff_j,
+            pj,
+            nctr_j,
+            coff_k,
+            pk,
+            nctr_k,
+            coff_l,
+            pl,
+            nctr_l,
+            shared_tier,
+            comptime!(nr_max),
+        );
+    } else if nroots == 1u32 {
+        contract_block_elems::<F>(
+            g_slab,
+            class_idx,
+            coeffs,
+            acc,
+            ctr,
+            cart_out,
+            idx_off,
+            gb,
+            g_size,
+            block_len,
+            q_start,
+            lanes,
+            weight,
+            out_off,
+            ctr_i_off,
+            mb,
+            iempty,
+            arm,
+            coff_i,
+            pi,
+            nctr_i,
+            coff_j,
+            pj,
+            nctr_j,
+            coff_k,
+            pk,
+            nctr_k,
+            coff_l,
+            pl,
+            nctr_l,
+            shared_tier,
+            1u32,
+        );
+    } else if nroots == 2u32 {
+        if comptime!(nr_max >= 2u32) {
+            contract_block_elems::<F>(
+                g_slab,
+                class_idx,
+                coeffs,
+                acc,
+                ctr,
+                cart_out,
+                idx_off,
+                gb,
+                g_size,
+                block_len,
+                q_start,
+                lanes,
+                weight,
+                out_off,
+                ctr_i_off,
+                mb,
+                iempty,
+                arm,
+                coff_i,
+                pi,
+                nctr_i,
+                coff_j,
+                pj,
+                nctr_j,
+                coff_k,
+                pk,
+                nctr_k,
+                coff_l,
+                pl,
+                nctr_l,
+                shared_tier,
+                2u32,
+            );
+        }
+    } else if nroots == 3u32 {
+        if comptime!(nr_max >= 3u32) {
+            contract_block_elems::<F>(
+                g_slab,
+                class_idx,
+                coeffs,
+                acc,
+                ctr,
+                cart_out,
+                idx_off,
+                gb,
+                g_size,
+                block_len,
+                q_start,
+                lanes,
+                weight,
+                out_off,
+                ctr_i_off,
+                mb,
+                iempty,
+                arm,
+                coff_i,
+                pi,
+                nctr_i,
+                coff_j,
+                pj,
+                nctr_j,
+                coff_k,
+                pk,
+                nctr_k,
+                coff_l,
+                pl,
+                nctr_l,
+                shared_tier,
+                3u32,
+            );
+        }
+    } else if nroots == 4u32 {
+        if comptime!(nr_max >= 4u32) {
+            contract_block_elems::<F>(
+                g_slab,
+                class_idx,
+                coeffs,
+                acc,
+                ctr,
+                cart_out,
+                idx_off,
+                gb,
+                g_size,
+                block_len,
+                q_start,
+                lanes,
+                weight,
+                out_off,
+                ctr_i_off,
+                mb,
+                iempty,
+                arm,
+                coff_i,
+                pi,
+                nctr_i,
+                coff_j,
+                pj,
+                nctr_j,
+                coff_k,
+                pk,
+                nctr_k,
+                coff_l,
+                pl,
+                nctr_l,
+                shared_tier,
+                4u32,
+            );
+        }
+    } else {
+        if comptime!(nr_max >= 5u32) {
+            contract_block_elems::<F>(
+                g_slab,
+                class_idx,
+                coeffs,
+                acc,
+                ctr,
+                cart_out,
+                idx_off,
+                gb,
+                g_size,
+                block_len,
+                q_start,
+                lanes,
+                weight,
+                out_off,
+                ctr_i_off,
+                mb,
+                iempty,
+                arm,
+                coff_i,
+                pi,
+                nctr_i,
+                coff_j,
+                pj,
+                nctr_j,
+                coff_k,
+                pk,
+                nctr_k,
+                coff_l,
+                pl,
+                nctr_l,
+                shared_tier,
+                5u32,
+            );
+        }
+    }
 }
 
 /// The vector VRR arm for one primitive quartet: the three axes' 2D
@@ -1217,7 +1755,10 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     // S2's accumulator, hoisted out of the quartet loop: its capacity is
     // comptime, so it never depended on the quartet, and it is zeroed per
     // quartet below in any case.
-    let mut acc = Array::<F>::new(comptime!(acc_capacity(per_unit)));
+    let mut acc_store = Array::<F>::new(comptime!(acc_capacity(per_unit)));
+    // Handed to [`contract_block_elems`] as a slice, which is what a `#[cube]`
+    // helper can take; every access below goes through it.
+    let mut acc = acc_store.to_slice_mut();
 
     // Grid-stride over the quartet list: one quartet per slot when the grid is
     // wide enough, a strided sweep when it is capped. Under `per_unit == 0`
@@ -1433,6 +1974,18 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                 oi += lanes;
             }
         }
+        // Which accumulation this quartet's element walk takes, decided
+        // here beside the flags it mirrors rather than re-tested per element
+        // (§23): `0` the private accumulator, `1` the segmented
+        // read-modify-write, `2` the staged `i` stage, `3` the naive arm.
+        let mut ctr_arm = 3u32;
+        if use_acc {
+            ctr_arm = 0u32;
+        } else if is_uncontracted {
+            ctr_arm = 1u32;
+        } else if use_staged {
+            ctr_arm = 2u32;
+        }
         if comptime!(per_unit == 0u32) {
             sync_cube();
         }
@@ -1532,6 +2085,86 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         let nrg = (nroots + rw - 1u32) / rw;
         // This sub-group's build sub-slab, and its three axis planes.
         let g_off = slab_base + sub * g3;
+
+        // ── The owned-task decode, hoisted to the quartet (§23) ───────────
+        //
+        // Each of the three phases below deals its tasks out as
+        // `own_lane, own_lane + own_lanes, …` and decodes the *first* one into
+        // its `(axis, root group, chain index)` coordinates, carrying the rest.
+        // That decode is seven unsigned divisions, and every operand of it —
+        // `nrg`, `own_lane`, `builds`, and the class's `l`/`d`/`nmax`/`mmax`
+        // scalars — is fixed for the whole quartet, while the code sat inside
+        // the ket/bra loops and so ran once per *block of primitive quartets*.
+        // For a class too wide for any shared tier a block is one primitive
+        // quartet, which made it seven divisions per primitive quartet on the
+        // longest rows in the list — the rows that set the launch floor. No
+        // backend has an integer divide instruction; each one is a
+        // reciprocal sequence of a dozen or more.
+        //
+        // Same values, computed once. `builds == 0` still parks a lane past
+        // the end of its task list, which is what makes it skip the phase.
+        let n_vrr = 3u32 * nrg;
+        let mut vrr_task0 = own_lane;
+        if builds == 0u32 {
+            vrr_task0 = n_vrr;
+        }
+        let vrr_axis0 = vrr_task0 / nrg;
+        let vrr_rg0 = vrr_task0 - vrr_axis0 * nrg;
+
+        // The two HRR raises are the cooperative arm's alone; on the per-unit
+        // arm the committed nest runs instead and these fold away with it.
+        let mut n_a = 0u32;
+        let mut a_task0 = 0u32;
+        let mut a_axis0 = 0u32;
+        let mut a_rg0 = 0u32;
+        let mut a_p0 = 0u32;
+        let mut n_b = 0u32;
+        let mut b_task0 = 0u32;
+        let mut b_axis0 = 0u32;
+        let mut b_rg0 = 0u32;
+        let mut b_p10 = 0u32;
+        let mut b_p20 = 0u32;
+        let mut pa = 0u32;
+        let mut w1 = 0u32;
+        let mut w2 = 0u32;
+        if comptime!(per_unit == 0u32) {
+            pa = nmax + 1u32;
+            if comptime!(ibase == 0u32) {
+                pa = mmax + 1u32;
+            }
+            n_a = 3u32 * nrg * pa;
+            a_task0 = own_lane;
+            if builds == 0u32 {
+                a_task0 = n_a;
+            }
+            a_axis0 = a_task0 / (nrg * pa);
+            let a_rem = a_task0 - a_axis0 * (nrg * pa);
+            a_rg0 = a_rem / pa;
+            a_p0 = a_rem - a_rg0 * pa;
+
+            // `ni` is libcint's `ptr .. ptr + dk` in steps of `di`
+            // (`CINTg0_kj2d_4d`, g2e.c:552) — the count of `i` planes.
+            let ni = dk / di;
+            let mut pb = (ll + 1u32) * (lk + 1u32);
+            w1 = ll + 1u32;
+            w2 = lk + 1u32;
+            if comptime!(ibase == 0u32) {
+                pb = (lj + 1u32) * ni;
+                w1 = lj + 1u32;
+                w2 = ni;
+            }
+            n_b = 3u32 * nrg * pb;
+            b_task0 = own_lane;
+            if builds == 0u32 {
+                b_task0 = n_b;
+            }
+            b_axis0 = b_task0 / (nrg * pb);
+            let b_rem = b_task0 - b_axis0 * (nrg * pb);
+            b_rg0 = b_rem / pb;
+            let p0 = b_rem - b_rg0 * pb;
+            b_p10 = p0 / w2;
+            b_p20 = p0 - b_p10 * w2;
+        }
 
         // ── Primitive-pair loop (S1) ──────────────────────────────────────
         //
@@ -1943,13 +2576,9 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             // loop control and the modulo were most of what an
                             // idle lane did. The per-root coefficients are
                             // formed per task, by the same expressions.
-                            let n_vrr = 3u32 * nrg;
-                            let mut task = own_lane;
-                            if builds == 0u32 {
-                                task = n_vrr;
-                            }
-                            let mut axis = task / nrg;
-                            let mut rg = task - axis * nrg;
+                            let mut task = vrr_task0;
+                            let mut axis = vrr_axis0;
+                            let mut rg = vrr_rg0;
                             while task < n_vrr {
                                 let r_lo = rg * rw;
                                 let mut r_hi = r_lo + rw;
@@ -2374,19 +3003,10 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                     // `ibase == 0` (it runs over `i`).
                     if comptime!(per_unit == 0u32) {
                         if do_build == 1u32 {
-                            let mut pa = nmax + 1u32;
-                            if comptime!(ibase == 0u32) {
-                                pa = mmax + 1u32;
-                            }
-                            let n_a = 3u32 * nrg * pa;
-                            let mut task = own_lane;
-                            if builds == 0u32 {
-                                task = n_a;
-                            }
-                            let mut axis2 = task / (nrg * pa);
-                            let a_rem = task - axis2 * (nrg * pa);
-                            let mut rg = a_rem / pa;
-                            let mut p = a_rem - rg * pa;
+                            let mut task = a_task0;
+                            let mut axis2 = a_axis0;
+                            let mut rg = a_rg0;
+                            let mut p = a_p0;
                             while task < n_a {
                                 let r_lo = rg * rw;
                                 let mut r_hi = r_lo + rw;
@@ -2404,83 +3024,53 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     rkrl = rkrlz;
                                 }
 
+                                // The chain this task owns, in the one shape all four arms
+                                // share: `a` from 1 to `a_max` at `sa` — the index being
+                                // raised — and `b` from 0 to `m_max - a` at `sb`. The arm
+                                // decides only which strides those are, and which index the
+                                // task fixed into `cbase`; the raise itself is
+                                // [`hrr_chain`], at a comptime root width.
+                                let mut cbase = off + p * di;
+                                let mut a_max = ll;
+                                let mut m_max = mmax;
+                                let mut sa = dl;
+                                let mut sb = dk;
+                                let mut coef = rkrl;
                                 if comptime!(kbase == 1u32 && ibase == 1u32) {
                                     // ik2d, first raise: dl←dk (ll), chain along l, p = i.
-                                    let mut l = 1u32;
-                                    while l <= ll {
-                                        let mut k = 0u32;
-                                        while k <= (mmax - l) {
-                                            let base = l * dl + k * dk + p * di;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rkrl
-                                                    * g_slab[(off + idx - dl) as usize]
-                                                    + g_slab[(off + idx - dl + dk) as usize];
-                                                r += 1u32;
-                                            }
-                                            k += 1u32;
-                                        }
-                                        l += 1u32;
-                                    }
                                 } else if comptime!(kbase == 1u32 && ibase == 0u32) {
                                     // kj2d, first raise: dj←di (li), chain along i, p = k.
-                                    let mut i = 1u32;
-                                    while i <= li {
-                                        let mut j = 0u32;
-                                        while j <= (nmax - i) {
-                                            let base = j * dj + p * dk + i * di;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rirj
-                                                    * g_slab[(off + idx - di) as usize]
-                                                    + g_slab[(off + idx - di + dj) as usize];
-                                                r += 1u32;
-                                            }
-                                            j += 1u32;
-                                        }
-                                        i += 1u32;
-                                    }
+                                    cbase = off + p * dk;
+                                    a_max = li;
+                                    m_max = nmax;
+                                    sa = di;
+                                    sb = dj;
+                                    coef = rirj;
                                 } else if comptime!(kbase == 0u32 && ibase == 1u32) {
                                     // il2d, first raise: dl←dk (lk), chain along k, p = i.
-                                    let mut k = 1u32;
-                                    while k <= lk {
-                                        let mut l = 0u32;
-                                        while l <= (mmax - k) {
-                                            let base = l * dl + k * dk + p * di;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rkrl
-                                                    * g_slab[(off + idx - dk) as usize]
-                                                    + g_slab[(off + idx - dk + dl) as usize];
-                                                r += 1u32;
-                                            }
-                                            l += 1u32;
-                                        }
-                                        k += 1u32;
-                                    }
+                                    a_max = lk;
+                                    sa = dk;
+                                    sb = dl;
                                 } else {
                                     // lj2d, first raise: dj←di (li), chain along i, p = l.
-                                    let mut i = 1u32;
-                                    while i <= li {
-                                        let mut j = 0u32;
-                                        while j <= (nmax - i) {
-                                            let base = j * dj + p * dl + i * di;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rirj
-                                                    * g_slab[(off + idx - di) as usize]
-                                                    + g_slab[(off + idx - di + dj) as usize];
-                                                r += 1u32;
-                                            }
-                                            j += 1u32;
-                                        }
-                                        i += 1u32;
-                                    }
+                                    cbase = off + p * dl;
+                                    a_max = li;
+                                    m_max = nmax;
+                                    sa = di;
+                                    sb = dj;
+                                    coef = rirj;
                                 }
+                                hrr_chain_w::<F>(
+                                    &mut g_slab,
+                                    cbase,
+                                    a_max,
+                                    m_max,
+                                    sa,
+                                    sb,
+                                    coef,
+                                    r_lo,
+                                    r_hi,
+                                );
                                 task += own_lanes;
                                 p += own_lanes;
                                 while p >= pa {
@@ -2507,30 +3097,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                     // (`CINTg0_kj2d_4d`, g2e.c:552).
                     if comptime!(per_unit == 0u32) {
                         if do_build == 1u32 {
-                            let ni = dk / di;
-                            let mut pb = (ll + 1u32) * (lk + 1u32);
-                            if comptime!(ibase == 0u32) {
-                                pb = (lj + 1u32) * ni;
-                            }
-                            let n_b = 3u32 * nrg * pb;
-                            let mut task = own_lane;
-                            if builds == 0u32 {
-                                task = n_b;
-                            }
                             // The task's other pair `(p1, p2)` — `(l, k)` or
-                            // `(j, i)` — is decoded once and then carried.
-                            let mut w1 = ll + 1u32;
-                            let mut w2 = lk + 1u32;
-                            if comptime!(ibase == 0u32) {
-                                w1 = lj + 1u32;
-                                w2 = ni;
-                            }
-                            let mut axis2 = task / (nrg * pb);
-                            let b_rem = task - axis2 * (nrg * pb);
-                            let mut rg = b_rem / pb;
-                            let p0 = b_rem - rg * pb;
-                            let mut p1 = p0 / w2;
-                            let mut p2 = p0 - p1 * w2;
+                            // `(j, i)` — is decoded once per quartet above and
+                            // then carried.
+                            let mut task = b_task0;
+                            let mut axis2 = b_axis0;
+                            let mut rg = b_rg0;
+                            let mut p1 = b_p10;
+                            let mut p2 = b_p20;
                             while task < n_b {
                                 let r_lo = rg * rw;
                                 let mut r_hi = r_lo + rw;
@@ -2548,95 +3122,46 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     rkrl = rkrlz;
                                 }
 
+                                // Same chain, one raise later: the task fixed a *pair* of
+                                // indices this time, and they are what `cbase` carries.
+                                let mut cbase = off + p1 * dl + p2 * dk;
+                                let mut a_max = lj;
+                                let mut m_max = nmax;
+                                let mut sa = dj;
+                                let mut sb = di;
+                                let mut coef = rirj;
                                 if comptime!(kbase == 1u32 && ibase == 1u32) {
                                     // ik2d, second raise: dj←di (lj), chain along j, p = (l, k).
-                                    let l2 = p1;
-                                    let k2 = p2;
-                                    let ptr = l2 * dl + k2 * dk;
-                                    let mut j = 1u32;
-                                    while j <= lj {
-                                        let mut i2 = 0u32;
-                                        while i2 <= (nmax - j) {
-                                            let base = ptr + j * dj + i2 * di;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rirj
-                                                    * g_slab[(off + idx - dj) as usize]
-                                                    + g_slab[(off + idx - dj + di) as usize];
-                                                r += 1u32;
-                                            }
-                                            i2 += 1u32;
-                                        }
-                                        j += 1u32;
-                                    }
                                 } else if comptime!(kbase == 1u32 && ibase == 0u32) {
                                     // kj2d, second raise: dl←dk (ll), chain along l, p = (j, i).
-                                    let j = p1;
-                                    let ib = p2;
-                                    let ptr = j * dj + ib * di;
-                                    let mut l = 1u32;
-                                    while l <= ll {
-                                        let mut k = 0u32;
-                                        while k <= (mmax - l) {
-                                            let base = ptr + l * dl + k * dk;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rkrl
-                                                    * g_slab[(off + idx - dl) as usize]
-                                                    + g_slab[(off + idx - dl + dk) as usize];
-                                                r += 1u32;
-                                            }
-                                            k += 1u32;
-                                        }
-                                        l += 1u32;
-                                    }
+                                    cbase = off + p1 * dj + p2 * di;
+                                    a_max = ll;
+                                    m_max = mmax;
+                                    sa = dl;
+                                    sb = dk;
+                                    coef = rkrl;
                                 } else if comptime!(kbase == 0u32 && ibase == 1u32) {
                                     // il2d, second raise: dj←di (lj), chain along j, p = (l, k).
-                                    let l = p1;
-                                    let k2 = p2;
-                                    let ptr = l * dl + k2 * dk;
-                                    let mut j = 1u32;
-                                    while j <= lj {
-                                        let mut i2 = 0u32;
-                                        while i2 <= (nmax - j) {
-                                            let base = ptr + j * dj + i2 * di;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rirj
-                                                    * g_slab[(off + idx - dj) as usize]
-                                                    + g_slab[(off + idx - dj + di) as usize];
-                                                r += 1u32;
-                                            }
-                                            i2 += 1u32;
-                                        }
-                                        j += 1u32;
-                                    }
                                 } else {
                                     // lj2d, second raise: dl←dk (lk), chain along k, p = (j, i).
-                                    let j2 = p1;
-                                    let ib = p2;
-                                    let ptr = j2 * dj + ib * di;
-                                    let mut k = 1u32;
-                                    while k <= lk {
-                                        let mut l = 0u32;
-                                        while l <= (mmax - k) {
-                                            let base = ptr + l * dl + k * dk;
-                                            let mut r = r_lo;
-                                            while r < r_hi {
-                                                let idx = base + r;
-                                                g_slab[(off + idx) as usize] = rkrl
-                                                    * g_slab[(off + idx - dk) as usize]
-                                                    + g_slab[(off + idx - dk + dl) as usize];
-                                                r += 1u32;
-                                            }
-                                            l += 1u32;
-                                        }
-                                        k += 1u32;
-                                    }
+                                    cbase = off + p1 * dj + p2 * di;
+                                    a_max = lk;
+                                    m_max = mmax;
+                                    sa = dk;
+                                    sb = dl;
+                                    coef = rkrl;
                                 }
+                                hrr_chain_w::<F>(
+                                    &mut g_slab,
+                                    cbase,
+                                    a_max,
+                                    m_max,
+                                    sa,
+                                    sb,
+                                    coef,
+                                    r_lo,
+                                    r_hi,
+                                );
                                 task += own_lanes;
                                 p2 += own_lanes;
                                 while p2 >= w2 {
@@ -2779,143 +3304,69 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             }
                         }
                         if st == 2u32 {
-                            let prim_weight = w_b;
-                            let fold = w_b;
-                            // This row's sub-slab and its three axis planes.
+                            // This row's sub-slab, and where the element walk starts.
                             let gb = slab_base + b * g3;
-                            let gby = gb + g_size;
-                            let gbz = gb + 2u32 * g_size;
+                            let mut q_start = lane_u;
+                            if ctr_mode == 2u32 {
+                                q_start = block_len;
+                            }
 
                             // ── Contract into per-quad Cartesian blocks cooperatively ──
                             //
-                            // K1 (GTH plan §10): the Cartesian elements of a
-                            // class are walked through its index table —
-                            // three G offsets per element, built once on the
-                            // host by `TwoELaunchGroup::push_class` in the
-                            // order the five-deep `(l, k, j, i)` nest walked
-                            // them, `i` fastest — instead of that nest being
-                            // re-run per primitive quartet. libcint does the
-                            // same (`CINTg2e_index_xyz`, `idx` in `cint2e.c`).
-                            // Each lane strides through its own elements, and
-                            // each element is the same expression over the
-                            // same roots in the same order, accumulated into
-                            // the same place, so the result is bit-identical
-                            // (`gth_profile`'s dump comparison is the gate).
-                            // `ctr_mode == 2` is the measurement probe: the G
-                            // build runs and the contraction does not, so the
-                            // difference against the default is the
-                            // contraction's share. The output is undefined
+                            // K1 (GTH plan §10): the Cartesian elements of a class are
+                            // walked through its index table — three G offsets per
+                            // element, built once on the host by
+                            // `TwoELaunchGroup::push_class` in the order the five-deep
+                            // `(l, k, j, i)` nest walked them, `i` fastest — instead of
+                            // that nest being re-run per primitive quartet. libcint does
+                            // the same (`CINTg2e_index_xyz`, `idx` in `cint2e.c`). Each
+                            // lane strides through its own elements, and each element is
+                            // the same expression over the same roots in the same order,
+                            // accumulated into the same place, so the result is
+                            // bit-identical (`gth_profile`'s dump comparison is the gate).
+                            // `ctr_mode == 2` is the measurement probe: the G build runs
+                            // and the contraction does not, so the difference against the
+                            // default is the contraction's share. The output is undefined
                             // under it; only `gth_profile` sets it.
-                            let mut q_elem = lane_u;
-                            if ctr_mode == 2u32 {
-                                q_elem = block_len;
-                            }
-                            while q_elem < block_len {
-                                let t = idx_off + 3u32 * q_elem;
-                                let base_x = class_idx[t as usize];
-                                let base_y = class_idx[(t + 1u32) as usize];
-                                let base_z = class_idx[(t + 2u32) as usize];
-
-                                // F1 (§15): the root sum keeps its unrolled
-                                // form at a comptime width and the width is
-                                // chosen here, once per element. The branch is
-                                // on the quartet's `nroots`, the same for
-                                // every element of the block, so perfectly
-                                // predicted. Only the widths this dispatch can
-                                // carry are emitted.
-                                let ax = gb + base_x;
-                                let ay = gby + base_y;
-                                let az = gbz + base_z;
-                                let mut sum = F::new(0.0_f32);
-                                if comptime!(nr_max > 5u32) {
-                                    // The extended orders are never fused, so
-                                    // `nr_max` is this quartet's own order.
-                                    sum = root_dot::<F>(&g_slab, ax, ay, az, nr_max);
-                                } else if nroots == 1u32 {
-                                    sum = root_dot::<F>(&g_slab, ax, ay, az, 1u32);
-                                } else if nroots == 2u32 {
-                                    if comptime!(nr_max >= 2u32) {
-                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 2u32);
-                                    }
-                                } else if nroots == 3u32 {
-                                    if comptime!(nr_max >= 3u32) {
-                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 3u32);
-                                    }
-                                } else if nroots == 4u32 {
-                                    if comptime!(nr_max >= 4u32) {
-                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 4u32);
-                                    }
-                                } else {
-                                    if comptime!(nr_max >= 5u32) {
-                                        sum = root_dot::<F>(&g_slab, ax, ay, az, 5u32);
-                                    }
-                                }
-
-                                if use_acc {
-                                    acc[(q_elem / lanes_u) as usize] += prim_weight * sum;
-                                } else if is_uncontracted {
-                                    cart_out[(out_off + q_elem) as usize] += prim_weight * sum;
-                                } else if use_staged {
-                                    // The `i` stage: this primitive quartet
-                                    // into `gctri[ci][q]`.
-                                    let w = fold * sum;
-                                    let mut ci = 0u32;
-                                    while ci < nctr_i {
-                                        let mut cvi = F::new(1.0_f32);
-                                        if nctr_i > 1u32 {
-                                            cvi = coeffs[(coff_i + pi * nctr_i + ci) as usize];
-                                        }
-                                        // The meta row carries the first four
-                                        // (§22.5); wider shells reload.
-                                        if comptime!(shared_tier > 0u32) {
-                                            if ci < 4u32 {
-                                                cvi = g_slab[(mb + 4u32 + ci) as usize];
-                                            }
-                                        }
-                                        let idx = ctr_i_off + ci * block_len + q_elem;
-                                        if iempty == 1u32 {
-                                            ctr[idx as usize] = cvi * w;
-                                        } else {
-                                            ctr[idx as usize] += cvi * w;
-                                        }
-                                        ci += 1u32;
-                                    }
-                                } else {
-                                    // Accumulate into every contraction quad
-                                    // block (the naive A/B arm).
-                                    let mut ci = 0u32;
-                                    while ci < nctr_i {
-                                        let cvi = coeffs[(coff_i + pi * nctr_i + ci) as usize];
-                                        let mut cj = 0u32;
-                                        while cj < nctr_j {
-                                            let cvj = coeffs[(coff_j + pj * nctr_j + cj) as usize];
-                                            let mut ck = 0u32;
-                                            while ck < nctr_k {
-                                                let cvk =
-                                                    coeffs[(coff_k + pk * nctr_k + ck) as usize];
-                                                let mut cl = 0u32;
-                                                while cl < nctr_l {
-                                                    let cvl = coeffs
-                                                        [(coff_l + pl * nctr_l + cl) as usize];
-                                                    let weight = cvi * cvj * cvk * cvl;
-                                                    let qbase = (((ci * nctr_j + cj) * nctr_k
-                                                        + ck)
-                                                        * nctr_l
-                                                        + cl)
-                                                        * block_len;
-                                                    let oidx = out_off + qbase + q_elem;
-                                                    cart_out[oidx as usize] += weight * sum;
-                                                    cl += 1u32;
-                                                }
-                                                ck += 1u32;
-                                            }
-                                            cj += 1u32;
-                                        }
-                                        ci += 1u32;
-                                    }
-                                }
-                                q_elem += lanes_u;
-                            }
+                            //
+                            // §23: the walk itself is [`contract_block_elems`], and the
+                            // Rys-width ladder that used to sit inside it is taken here,
+                            // once per primitive quartet.
+                            contract_block_elems_w::<F>(
+                                &g_slab,
+                                class_idx,
+                                coeffs,
+                                &mut acc,
+                                ctr,
+                                cart_out,
+                                idx_off,
+                                gb,
+                                g_size,
+                                block_len,
+                                q_start,
+                                lanes_u,
+                                w_b,
+                                out_off,
+                                ctr_i_off,
+                                mb,
+                                iempty,
+                                ctr_arm,
+                                coff_i,
+                                pi,
+                                nctr_i,
+                                coff_j,
+                                pj,
+                                nctr_j,
+                                coff_k,
+                                pk,
+                                nctr_k,
+                                coff_l,
+                                pl,
+                                nctr_l,
+                                nroots,
+                                shared_tier,
+                                nr_max,
+                            );
                             if use_staged {
                                 iempty = 0u32;
                             }
@@ -2972,9 +3423,11 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         // read-modify-write per primitive quartet.
         if use_acc {
             let mut oi = lane;
+            let mut oslot: u32 = 0u32;
             while oi < out_len {
-                cart_out[(out_off + oi) as usize] = acc[(oi / lanes) as usize];
+                cart_out[(out_off + oi) as usize] = acc[oslot as usize];
                 oi += lanes;
+                oslot += 1u32;
             }
         }
         if comptime!(per_unit == 0u32) {
@@ -3184,9 +3637,50 @@ fn quartet_cost_estimate(prim_quartets: u64, params: &TwoEClassParams, nctr_i: u
         * ncart(params.ll as u8)) as u64;
     let per_prim = block_len * (3 * u64::from(params.nroots) + 2 * u64::from(nctr_i))
         + 10 * u64::from(params.g_size)
-        + 100;
+        + prim_fixed_cost();
     prim_quartets.max(1) * per_prim
 }
+
+/// What a primitive quartet costs *before* any of its arithmetic (§23).
+///
+/// [`quartet_cost_estimate`]'s other two terms are proportional to the work:
+/// the contraction's `3 · nroots` G loads per Cartesian element and the
+/// VRR/HRR over the three axes. This one is what a primitive quartet costs
+/// merely for being one — the pair rows and exponents, the `f64` division and
+/// square root of the screen, the Rys solve, and on the cooperative shape the
+/// four barriers a block pays. It is flat in the class.
+///
+/// # Why it is not small
+///
+/// It was `100`, which put an `(ss|ss)` primitive quartet at a twentieth of a
+/// `(pp|pp)` one. §22.6 measured the ratio on gfx1151 at nearer a third and
+/// left the constant alone because it should be measured rather than guessed;
+/// [§23.2] is that measurement. The term matters because it is what
+/// [`kl_split_plan`] ranks by: under-charging the narrow classes leaves their
+/// rows unsplit, and a dispatch costs as long as its longest row — on
+/// H2O/TZVP-MOLOPT two thirds of the run is the launch floor, and an unsplit
+/// `(ss|ss)` row of 2 401 primitive quartets is what sets it.
+///
+/// Raising it is *not* the same as lowering [`KL_SPLIT_TARGET_PART_COST`].
+/// The target cost scales every class alike, and the classes whose partial
+/// blocks are expensive are the wide ones; this term is flat, so it splits the
+/// narrow rows — whose blocks are a few hundred bytes — and leaves the wide
+/// ones, already at their ket-range cap, where they are.
+///
+/// `CINTX_2E_COST_FIXED` overrides it, which is how it was swept.
+fn prim_fixed_cost() -> u64 {
+    use std::sync::OnceLock;
+    static FIXED: OnceLock<u64> = OnceLock::new();
+    *FIXED.get_or_init(|| {
+        std::env::var("CINTX_2E_COST_FIXED")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(PRIM_FIXED_COST)
+    })
+}
+
+/// The default [`prim_fixed_cost`], swept in §23.2.
+const PRIM_FIXED_COST: u64 = 100;
 
 /// The most [`quartet_cost_estimate`] work one item of the ket-pair split may
 /// carry (G1, §18).
@@ -13091,6 +13585,28 @@ mod partition_tests {
                 }
             }
         }
+    }
+
+    /// The flat term of [`quartet_cost_estimate`] is what decides how far the
+    /// ket-pair split reaches into the *narrow* classes, so it is pinned here
+    /// against a silent change (§23.2 swept it and kept `100`).
+    #[test]
+    fn the_fixed_term_is_what_sets_the_narrow_to_wide_ratio() {
+        let ssss = TwoEClassParams::new(0, 0, 0, 0);
+        let pppp = TwoEClassParams::new(1, 1, 1, 1);
+        // At the default the ranking is the one §22.6 questioned: an `(ss|ss)`
+        // primitive quartet is charged about a twentieth of a `(pp|pp)` one.
+        let narrow = quartet_cost_estimate(1, &ssss, 3);
+        let wide = quartet_cost_estimate(1, &pppp, 3);
+        assert_eq!(narrow, 9 + 10 + super::PRIM_FIXED_COST);
+        assert_eq!(wide, 81 * 15 + 10 * 108 + super::PRIM_FIXED_COST);
+        assert!(wide > 15 * narrow && wide < 25 * narrow);
+        // The term is flat: raising it closes the ratio without moving the
+        // wide class, which is the shape §23.2 tested and why it is not the
+        // same knob as `KL_SPLIT_TARGET_PART_COST`.
+        let lift = 1_100_u64 - super::PRIM_FIXED_COST;
+        assert!((wide + lift) < 4 * (narrow + lift));
+        assert!((wide + lift) < wide * 3 / 2);
     }
 
     #[test]

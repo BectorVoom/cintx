@@ -8,7 +8,9 @@ orders into one dispatch), §16 (F1 on the GPU, and the per-quartet ket-pair
 split it needed), §17 (the split on the per-unit arm) and §18 (one method on both
 backends) and §19 (the cart-to-sph transform moves on-device, and the host
 Cartesian intermediate disappears), §20 (`grids`) and §21 (`deriv34` — the last
-family computing on the host), 2026-09-09.
+family computing on the host), §22 (B1, the tiered shared-memory G tensor and a
+block of primitive quartets per cube) and §23 (F6, the loop control out of the
+recurrence and the contraction), 2026-09-09.
 
 §15.4's account of why the fusion cost time on the GPU is **superseded by §16.1**,
 which measured it: one of the two mechanisms it named does nothing. §17 puts the
@@ -2198,3 +2200,168 @@ form — and the global slab is the worst arm on every workload.
   block gate runs twelve lanes over six quartets (five minutes at 24 lanes
   over eight).
 - The T4 package is still unrun.
+
+## 23. F6 — the loop control out of the recurrence and the contraction (2026-09-09)
+
+The instruction this section answers: *read the CubeCL loop and comptime
+manuals, then optimise the speed of the on-device kernel for
+`gth-dzvp-molopt-sr` and `gth-tzvp-molopt-sr`.* The manuals are
+`cubecl_manual/manual/Cubecl/01_loop_unrolling.md`, `Cubecl_loop_control.md`,
+`comptime_macro.md`, `comptime_specialization.md` and
+`Cubecl_comptime_specialization.md`. What they say, in one line: `#[unroll]`
+needs a comptime bound, `#[comptime]` prunes the untaken branch at JIT time
+before any IR is emitted, and a kernel is cached per comptime value — so the
+question for every loop is *which of its bounds is really a property of the
+work rather than of the run*.
+
+Method as §22: verify first, one change per measurement, every claim a ratio
+measured inside one process or an alternated in-process A/B. This host has no
+`rocprofv3`, and the two arms below are two *compiled programs*, so the
+comparison is the committed binary and this one built side by side and
+alternated in one session, cache cleared between runs (the CubeCL cache is
+keyed by signature, not body).
+
+### 23.1 What landed
+
+All three are the same observation: a bound that is fixed for the whole
+quartet was being re-read, re-divided or re-branched per element.
+
+- **The HRR raise is one chain, and its root span is comptime.** The
+  cooperative arm carried eight raise bodies — two per `(ibase, kbase)` arm —
+  and they are all the same nest once written down: `a` from 1 to `a_max` at
+  stride `sa` (the index being raised), `b` from 0 to `m_max - a` at `sb`, and
+  the roots the task owns. They are now one `#[cube]` helper, `hrr_chain`,
+  which each arm reaches by handing over its two strides and whichever indices
+  the task fixed. The innermost `while r < r_hi` is gone: a cooperative task
+  owns exactly one root under every split the planner makes, and that width is
+  `#[unroll]`ed.
+- **The contraction's Rys-width ladder is out of the element walk.** F1 (§15)
+  chose `root_dot`'s comptime width "with one branch per element". The branch
+  sat inside the walk over the block's Cartesian elements — eighty-one of them
+  on a TZVP-MOLOPT `(pp|pp)` — where no backend can hoist it for itself,
+  because `ctr` and `cart_out` are kernel arguments it cannot prove unaliased.
+  The walk is now `contract_block_elems` and the ladder is taken once per
+  primitive quartet. The coefficient bases `coff + p · nctr` came out with it.
+- **The owned-task decode is hoisted to the quartet.** Each of the three build
+  phases decoded its first task into `(axis, root group, chain index)` — seven
+  unsigned divisions — and every operand of that decode is fixed for the
+  quartet, while the code sat inside the ket and bra loops and so ran once per
+  *block*. For a class too wide for any shared tier a block is one primitive
+  quartet, which made it seven divisions per primitive quartet on the longest
+  rows in the list. No backend has an integer divide instruction. Two more
+  divisions went the same way: `dk / di`, and the accumulator's slot index,
+  which was a counter written as `q_elem / lanes_u` in the innermost loop the
+  kernel has.
+
+**Bit-identical.** Against a dump taken from the committed binary,
+`CINTX_GTH_COMPARE` reports **0 of 2 313 078 elements differ, max |d| =
+0.000e0**, on all six workloads. `cooperative_g_build_is_bit_identical_on_*`,
+`cooperative_block_is_bit_identical_on_gth`, the four forced-split gates,
+`general_contraction_device_indexing` and the def2 CPU parity suite all pass;
+`def2_2e_batch_matches_between_cpu_and_rocm` passes. (`def2_batch_rocm_parity`'s
+`def2_pair_and_triple_*` and `def2_derivative_*` still fail exactly as they do
+on `main` — §22.6's pre-existing HIP `double_3` alignment bug on the 3c2e/2c2e
+path, which this section does not touch.)
+
+### 23.2 Measured — and the one that had to be undone
+
+**ROCm, alternated with the committed binary, two rounds, best of 2:**
+
+| workload | before (ms) | after (ms) | speed |
+|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 63.6 | 53.4 | **1.19x** |
+| CH4 / DZVP-MOLOPT-SR | 172.6 | 168.4 | 1.03x |
+| SO2 / DZVP-MOLOPT-SR | 156.4 | 150.4 | 1.04x |
+| H2O / TZVP-MOLOPT | 166.9 | 159.0 | 1.05x |
+| CH4 / TZVP-MOLOPT | 617.0 | 616.8 | 1.00x |
+| SO2 / TZVP-MOLOPT | 632.4 | 625.5 | 1.01x |
+
+The new arm wins **10 of the 12 paired rounds**, and a separate three-round
+H2O A/B won 6 of 6. Nothing regresses. On the CPU the alternated A/B straddles
+1.0x (8 of 18 paired rounds) inside this host's process-to-process band, which
+is what it should do: the per-unit arm keeps its committed HRR nest, and only
+the contraction ladder and the accumulator counter reach it.
+
+**The measurement that mattered most was of a first version that was worse.**
+Written the obvious way — the F1 ladder, five comptime widths at every site —
+the change was **0.84x on H2O/DZVP-MOLOPT-SR**, consistently, in all three
+paired rounds, while gaining 1.06x on TZVP. The mechanism is code size and
+nothing else: a cooperative task's root span is *always one*, so widths two to
+five of `hrr_chain` were four dead copies of the chain nest per raise site, in
+a program that already carries five Rys solvers. Emitting width one plus the
+loop it always had recovered it and turned the regression into the table
+above. The naive contraction arm — the `CINTX_2E_CONTRACT=naive` A/B, which no
+default run enters — moved out of the five-times-duplicated element walk for
+the same reason.
+
+**The lesson to carry:** `#[comptime]` prunes the untaken branch, but a
+*runtime* ladder over comptime widths emits every arm. Specialise the case
+that actually occurs and leave the rest a loop. A dead unroll is not free on a
+part whose kernels are already large.
+
+**Two null results, both closing open items.**
+
+- **§22.6's split constant, measured.** `quartet_cost_estimate`'s flat term was
+  `100`, which charges an `(ss|ss)` primitive quartet a twentieth of a
+  `(pp|pp)` one; §22.6 put the true ratio nearer a third and left the constant
+  alone because it should be measured. It now can be
+  (`CINTX_2E_COST_FIXED`). Raising it is the *right shape* — the term is flat,
+  so it splits the narrow rows, whose partial blocks are a few hundred bytes,
+  and leaves the wide ones already at their ket-range cap — and it does what it
+  was supposed to: on H2O/TZVP the launch floor falls from 93 ms to 65 ms, a
+  **1.4x on the floor**. It does not pay, because **the floor is only the
+  binding constraint on the smallest list**. At 100 / 400 / 1 200 the full
+  runs are 160.8 / 157.8 / 157.0 (H2O/TZ), 608.6 / 598.4 / 615.3 (CH4/TZ),
+  630.9 / 621.4 / 618.7 (SO2/TZ) — inside the band — while the shared G slab
+  grows 7.5 → 10.4 MiB, and at 3 000 a realistic `memory_limit_bytes` becomes
+  infeasible outright (the `chunk=cart/4` variant refuses). CH4 and SO2 spend
+  only 10–15% of their time at the launch floor; H2O spends 60–70% because it
+  has 406 quartets and cannot fill the part either way. **Default stays 100**,
+  the knob and this paragraph are the record, and
+  `the_fixed_term_is_what_sets_the_narrow_to_wide_ratio` pins it.
+- **Cube width, re-confirmed on the final kernel.** §22.3's null was measured
+  on the division-decoded form, and §22.5 showed one of that era's nulls
+  (the lane split) had gone stale. This one has not: on CH4, heuristic /
+  32 / 64 / 128 give 168 / 186 / 193 / 191 (DZVP) and 594 / 618 / 621 / 616
+  (TZVP). The heuristic default is best or tied, and the redundant per-lane
+  Rys solve — every lane of a sub-group computes the same roots — costs
+  nothing, which is what says again that this part is latency-bound and not
+  `f64`-throughput-bound.
+
+### 23.3 A correction to §22.3: the grid cap is *not* free
+
+§22.3 recorded "grid cap 8 or 512 cubes per unit: identical times". On the
+final kernel it is a real trade, and a good one on the memory axis:
+
+| `CINTX_2E_CUBES_PER_UNIT` | SO2/DZ ms | SO2/DZ device | SO2/TZ ms | SO2/TZ device |
+|---|---|---|---|---|
+| **64** (default) | 150.9 | 34.9 MiB | 608.2 | 79.6 MiB |
+| 16 | 168.2 | 14.2 MiB | 631.4 | 19.9 MiB |
+| 8 | 169.2 | 7.1 MiB | 668.8 | 9.9 MiB |
+
+The cap bounds the per-cube contraction scratch, which §22.6 left as the whole
+of the cooperative arm's global footprint. Dropping it to 16 costs 4–11% of
+the time and buys **4x** of the device peak; to 8, ~10% for **8x**. The
+default stays 64 because this section was asked for speed, but a caller under
+memory pressure now has a measured curve rather than a guess.
+
+### 23.4 What is left
+
+- **The Rys roots are the largest single phase on a throughput-bound list**:
+  `probe:no-roots` is 1.70x–1.73x on CH4/TZVP, so the root solve is ~40% of
+  it. It is a serial dependency chain of tens of `f64` operations per
+  primitive quartet, and the two things that would shorten it — a
+  lower-latency evaluation order such as Estrin's, or splitting the five
+  solvers back into separate programs — cost bit-identity and launches
+  respectively. This is where the next real gain is, and it wants counters.
+- Everything else the host can attribute is now measured out: loop control in
+  the HRR, the integer divisions of the decode and the accumulator index, the
+  per-element Rys-width ladder (§23.1–2), the lane split, cube width, the grid
+  cap, the contraction's uniform loads (§22.3–4) and the split cost model
+  (§23.2). What is left inside the block is the `f64` division and
+  square-root sequences, register pressure, and the four barriers — and
+  separating those three needs `rocprofv3`, which this host does not have.
+- §22.6's remaining items stand: the contraction stages stay in global memory
+  (they are too wide for any tier), `B_TARGET_DEFAULT` and
+  `SHARED_G_TIER_CAP` were swept on this APU only, and the T4 package is
+  still unrun.
