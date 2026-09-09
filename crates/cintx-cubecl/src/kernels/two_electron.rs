@@ -3735,6 +3735,14 @@ pub struct TwoELaunchGroup {
     pub max_ctr_len: u32,
     /// One [`quartet_cost_estimate`] per quartet row, in row order (K2).
     pub quartet_cost: Vec<u64>,
+    /// Contraction quads (`nctr_i·nctr_j·nctr_k·nctr_l`) per quartet row, in
+    /// row order (§19).
+    ///
+    /// The device cart-to-sph transform's unit of work is one `(quartet, quad)`
+    /// pair, not a whole quartet, and only the grouping knows the shells' `nctr`
+    /// — so it is recorded here rather than re-derived from `shell_meta` on the
+    /// device or from the basis on the host.
+    pub quad_count: Vec<u32>,
 }
 
 impl TwoELaunchGroup {
@@ -3753,6 +3761,7 @@ impl TwoELaunchGroup {
             max_block_len: 0,
             max_ctr_len: 0,
             quartet_cost: Vec::new(),
+            quad_count: Vec::new(),
         }
     }
 
@@ -3885,9 +3894,17 @@ fn c2s_scratch_widest_len<R: Runtime>(
         if group.len() == 0 {
             continue;
         }
+        // The transform's work items, not its quartets (§19). Sizing this from
+        // `group.len()` while `launch_c2s` sizes its geometry from the item
+        // count is the same disagreement §18.3 found between M4.1's shared G
+        // slab and the split rows — except here the slab is *written*, so a
+        // short one is not a lost allocation but an out-of-bounds store. It
+        // showed up as `vendor|d|` of 3e-2 … 8e-1 on ROCm the moment the
+        // transform started handing out `(quartet, quad)` pairs.
+        let n_items: usize = group.quad_count.iter().map(|&q| q.max(1) as usize).sum();
         len = len.max(crate::kernels::c2s_device::c2s_scratch_len(
             client,
-            group.len(),
+            n_items,
             group.max_block_len,
         ));
     }
@@ -4206,10 +4223,22 @@ fn run_2e_batches<R: Runtime>(
                 .lock()
                 .expect("device memory probe poisoned")
                 .charge_tables(offsets.len() * std::mem::size_of::<u32>(), 1);
+            // §19: one work item per `(quartet, contraction quad)`, built here
+            // beside the offsets it travels with.
+            let items = crate::kernels::c2s_device::c2s_work_items(&group.quad_count);
+            let n_items = (items.len() / 2) as u32;
+            let items_h = client.create_from_slice(u32::as_bytes(&items));
+            probe
+                .lock()
+                .expect("device memory probe poisoned")
+                .charge_tables(std::mem::size_of_val(items.as_slice()), 1);
             crate::kernels::c2s_device::launch_c2s(crate::kernels::c2s_device::C2sDispatch {
                 client,
                 cart: out_h,
                 cart_len: group.out_len,
+                items: items_h,
+                items_len: items.len(),
+                n_items,
                 quartets: quartets_h_for_c2s,
                 quartets_len: group.quartets.len(),
                 sph_offsets: offsets_h,
@@ -4221,7 +4250,6 @@ fn run_2e_batches<R: Runtime>(
                 tables: plan.tables,
                 sph: plan.sph.clone(),
                 sph_len: plan.sph_len,
-                n_quartets: n_quartets as u32,
                 scratch_half: group.max_block_len,
                 shape_stride: TWO_E_SHAPE_STRIDE as u32,
                 scratch: c2s_scratch
@@ -10587,7 +10615,12 @@ fn plan_2e_chunks(
             } else {
                 0
             };
-            let plan = plan_batch_bytes(&groups, planned_output_len, c2s_scratch_bytes);
+            let plan = plan_batch_bytes(
+                &groups,
+                planned_output_len,
+                c2s_scratch_bytes,
+                device_transform,
+            );
             if plan.peak_bytes > limit {
                 return Ok(Err(cintxRsError::MemoryLimitExceeded {
                     requested: plan.peak_bytes,
@@ -11070,6 +11103,7 @@ fn build_launch_groups(
             group
                 .quartet_cost
                 .push(quartet_cost_estimate(prim, &params, nctr[0]));
+            group.quad_count.push(nctr_product as u32);
             group.out_len += block;
         }
         classes[class_index].group = group_index;
@@ -11237,11 +11271,12 @@ struct BatchMemoryPlan {
 /// expressions rather than two, so this plan and the real allocations cannot
 /// drift apart independently.
 ///
-/// The Cartesian block is counted twice — once for the device buffer and once
-/// for the host `Vec` its readback lands in — because both are live at the
-/// moment the readback returns. On a unified-memory backend they are the same
-/// physical bytes and this over-counts by one block; over-counting a limit is
-/// the safe direction.
+/// Under the host transform the Cartesian block is counted twice — once for the
+/// device buffer and once for the host `Vec` its readback lands in — because
+/// both are live at the moment the readback returns. On a unified-memory backend
+/// they are the same physical bytes and this over-counts by one block;
+/// over-counting a limit is the safe direction. The device transform (§19) has
+/// no host `Vec` at all, and is charged once.
 ///
 /// `output_len` is elements, not bytes, and is the caller's chosen
 /// [`StreamFootprint`] applied to this run — the whole list for a whole-list
@@ -11256,6 +11291,7 @@ fn plan_batch_bytes(
     groups: &[TwoELaunchGroup],
     output_len: usize,
     c2s_scratch_bytes: usize,
+    device_transform: bool,
 ) -> BatchMemoryPlan {
     let group_cart_bytes = groups
         .iter()
@@ -11295,7 +11331,12 @@ fn plan_batch_bytes(
         scratch_bytes,
         c2s_scratch_bytes,
         peak_bytes: host_output_bytes
-            + 2 * group_cart_bytes
+            // The Cartesian block is live once on the device and, under the
+            // host transform, again in the `Vec` its readback lands in. The
+            // device transform (§19) has no such `Vec` — the block is consumed
+            // where it was written and only spherical comes back — so charging
+            // it twice there would refuse budgets the run can honour.
+            + group_cart_bytes * if device_transform { 1 } else { 2 }
             + group_split_bytes
             + table_bytes
             + scratch_bytes

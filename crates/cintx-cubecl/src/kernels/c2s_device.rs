@@ -124,9 +124,10 @@ pub fn two_electron_c2s_kernel<F: Float>(
     shell_meta: &Array<u32>,
     c2s_table: &Array<F>,
     c2s_offset: &Array<u32>,
+    items: &Array<u32>,
     scratch: &mut Array<F>,
     sph: &mut Array<F>,
-    n_quartets: u32,
+    n_items: u32,
     n_slots: u32,
     scratch_half: u32,
     #[comptime] shape_stride: u32,
@@ -139,8 +140,24 @@ pub fn two_electron_c2s_kernel<F: Float>(
     let scratch_a = slot * 2u32 * scratch_half;
     let scratch_b = scratch_a + scratch_half;
 
-    let mut qi = slot;
-    while qi < n_quartets {
+    // §19: the unit of work is one `(quartet, contraction quad)` pair, not a
+    // whole quartet.
+    //
+    // A quartet used to be one work item, and it walked its own
+    // `nctr_i·nctr_j·nctr_k·nctr_l` quads serially — one on a segmented basis,
+    // up to eighty-one on TZVP-MOLOPT, where each is four ping-pong axis passes
+    // over a block of up to 1 296 elements. That is the same latency shape G1
+    // found in the 2e kernel (§10.5): plenty of work, almost none of it
+    // parallel, and it cost the device transform 9% on SO2/TZVP-MOLOPT against
+    // the host one. The pairs are independent — each reads its own Cartesian
+    // block, uses its own scratch and writes its own spherical block — so they
+    // are simply handed out, `items` naming the pair for each. Segmented work
+    // lists are unaffected: one quad per quartet means one item per quartet,
+    // which is what this was.
+    let mut item = slot;
+    while item < n_items {
+        let qi = items[(item * 2u32) as usize];
+        let quad = items[(item * 2u32 + 1u32) as usize];
         let qrow = qi * row_stride;
         let si = quartets[qrow as usize];
         let sj = quartets[(qrow + 1u32) as usize];
@@ -191,15 +208,16 @@ pub fn two_electron_c2s_kernel<F: Float>(
         let dj = nctr_j * nsj;
         let dk = nctr_k * nsk;
 
-        let mut ci = 0u32;
-        while ci < nctr_i {
-            let mut cj = 0u32;
-            while cj < nctr_j {
-                let mut ck = 0u32;
-                while ck < nctr_k {
-                    let mut cl = 0u32;
-                    while cl < nctr_l {
-                        let quad = ((ci * nctr_j + cj) * nctr_k + ck) * nctr_l + cl;
+        // The four contraction indices this item owns, inverting the layout
+        // the nest used to build: `quad = ((ci·nctr_j + cj)·nctr_k + ck)·nctr_l + cl`.
+        let cl = quad % nctr_l;
+        let ck = (quad / nctr_l) % nctr_k;
+        let cj = (quad / (nctr_l * nctr_k)) % nctr_j;
+        let ci = quad / (nctr_l * nctr_k * nctr_j);
+        {
+            {
+                {
+                    {
                         let src0 = cart_off + quad * cart_block;
 
                         // `cur` names where the current intermediate lives: `0`
@@ -403,17 +421,12 @@ pub fn two_electron_c2s_kernel<F: Float>(
                             }
                             ml += 1u32;
                         }
-
-                        cl += 1u32;
                     }
-                    ck += 1u32;
                 }
-                cj += 1u32;
             }
-            ci += 1u32;
         }
 
-        qi += n_slots;
+        item += n_slots;
     }
 }
 
@@ -513,10 +526,14 @@ pub(crate) struct C2sDispatch<'a, R: Runtime> {
     pub(crate) class_shape_len: usize,
     pub(crate) shell_meta: cubecl::server::Handle,
     pub(crate) shell_meta_len: usize,
+    /// Two `u32` per work item — `[quartet, contraction quad]` (§19).
+    pub(crate) items: cubecl::server::Handle,
+    pub(crate) items_len: usize,
+    /// Work items in this group: `Σ_quartets nctr_i·nctr_j·nctr_k·nctr_l`.
+    pub(crate) n_items: u32,
     pub(crate) tables: &'a C2sHandles,
     pub(crate) sph: cubecl::server::Handle,
     pub(crate) sph_len: usize,
-    pub(crate) n_quartets: u32,
     /// Widest Cartesian contraction block in this group — one ping-pong half.
     pub(crate) scratch_half: u32,
     pub(crate) shape_stride: u32,
@@ -528,6 +545,26 @@ pub(crate) struct C2sDispatch<'a, R: Runtime> {
 
 /// Ceiling on the transform's ping-pong scratch, matched to the 2e path's own.
 const MAX_C2S_SCRATCH_BYTES: usize = 256 * 1024 * 1024;
+
+/// The device transform's work items for one group: two `u32` each, naming a
+/// quartet and one of its contraction quads (§19).
+///
+/// Built on the host for the reason `expand_kl_split` is: which quads exist is
+/// a property of the shells' `nctr`, the grouping already knows it
+/// ([`TwoELaunchGroup::quad_count`]), and a flat list is what lets the kernel
+/// hand out `(quartet, quad)` pairs with no search and no per-quartet
+/// serialisation. On a segmented work list there is one quad per quartet and
+/// this is the identity the kernel had before.
+pub(crate) fn c2s_work_items(quad_count: &[u32]) -> Vec<u32> {
+    let mut items = Vec::with_capacity(quad_count.iter().map(|&q| 2 * q as usize).sum());
+    for (quartet, &quads) in quad_count.iter().enumerate() {
+        for quad in 0..quads.max(1) {
+            items.push(quartet as u32);
+            items.push(quad);
+        }
+    }
+    items
+}
 
 /// Launch geometry for one group's transform: how many cubes, what shape, and
 /// how many ping-pong slots that implies.
@@ -544,15 +581,16 @@ struct C2sLaunchGeometry {
 
 fn c2s_launch_geometry<R: Runtime>(
     client: &ComputeClient<R>,
-    n_quartets: usize,
+    n_items: usize,
     scratch_half: u32,
 ) -> C2sLaunchGeometry {
     let hardware = crate::plane::launch_hardware(client);
     let per_slot_bytes = 2 * scratch_half as usize * std::mem::size_of::<f64>();
     let by_memory = (MAX_C2S_SCRATCH_BYTES / per_slot_bytes.max(1)).max(1);
 
-    // One slot per quartet is the ceiling that matters; beyond that slots idle.
-    let want = n_quartets.min(by_memory).max(1);
+    // One slot per `(quartet, quad)` work item is the ceiling that matters;
+    // beyond that slots idle (§19).
+    let want = n_items.min(by_memory).max(1);
     let cube_dim = if hardware.has_planes {
         crate::plane::standard_plane_cube_dim()
     } else {
@@ -582,21 +620,22 @@ fn c2s_launch_geometry<R: Runtime>(
 /// made for the 2e kernel's own G-tensor slab.
 pub(crate) fn c2s_scratch_len<R: Runtime>(
     client: &ComputeClient<R>,
-    n_quartets: usize,
+    n_items: usize,
     scratch_half: u32,
 ) -> usize {
-    c2s_launch_geometry(client, n_quartets, scratch_half).n_slots * 2 * scratch_half as usize
+    c2s_launch_geometry(client, n_items, scratch_half).n_slots * 2 * scratch_half as usize
 }
 
 /// Launch the device transform for one dispatch group.
 ///
-/// The work items are independent quartets, so the geometry is the plain one:
-/// as many slots as the device will run and the scratch will hold, walked
-/// grid-stride. No barriers, so no cooperative shape and no `per_unit` split.
+/// The work items are independent `(quartet, contraction quad)` pairs (§19), so
+/// the geometry is the plain one: as many slots as the device will run and the
+/// scratch will hold, walked grid-stride. No barriers, so no cooperative shape
+/// and no `per_unit` split.
 pub(crate) fn launch_c2s<R: Runtime>(dispatch: C2sDispatch<'_, R>) {
     let geometry = c2s_launch_geometry(
         dispatch.client,
-        dispatch.n_quartets as usize,
+        dispatch.n_items as usize,
         dispatch.scratch_half,
     );
     let scratch_len = geometry.n_slots * 2 * dispatch.scratch_half as usize;
@@ -623,9 +662,10 @@ pub(crate) fn launch_c2s<R: Runtime>(dispatch: C2sDispatch<'_, R>) {
             ArrayArg::from_raw_parts(dispatch.shell_meta, dispatch.shell_meta_len),
             ArrayArg::from_raw_parts(dispatch.tables.table.clone(), dispatch.tables.table_len),
             ArrayArg::from_raw_parts(dispatch.tables.offset.clone(), dispatch.tables.offset_len),
+            ArrayArg::from_raw_parts(dispatch.items, dispatch.items_len),
             ArrayArg::from_raw_parts(dispatch.scratch, scratch_len),
             ArrayArg::from_raw_parts(dispatch.sph, dispatch.sph_len),
-            dispatch.n_quartets,
+            dispatch.n_items,
             geometry.n_slots as u32,
             dispatch.scratch_half,
             dispatch.shape_stride,
@@ -634,12 +674,28 @@ pub(crate) fn launch_c2s<R: Runtime>(dispatch: C2sDispatch<'_, R>) {
     }
 }
 
-/// Does `CINTX_2E_TRANSFORM` ask for the device transform?
+/// Is the cart-to-sph transform run on the device? **Yes, by default** (§19).
 ///
-/// `device` turns it on; anything else (and unset) leaves the host transform in
-/// place. Off by default until it is measured on a backend where the readback is
-/// a real transfer — on the CubeCL CPU runtime the "device" is the same cores,
-/// so moving the transform there moves the work without moving the cost.
+/// `CINTX_2E_TRANSFORM=host` restores the host transform; anything else, and
+/// unset, keeps the device one.
+///
+/// # Why the default moved
+///
+/// It was off — the host transform read the whole Cartesian buffer back and
+/// transformed it there — "until it is measured on a backend where the readback
+/// is a real transfer". The reason it was not worth turning on had nothing to
+/// do with readbacks: the kernel's work item was a whole *quartet*, which walks
+/// its `nctr_i·nctr_j·nctr_k·nctr_l` contraction quads serially, and on
+/// TZVP-MOLOPT that is up to eighty-one four-pass transforms in one work item.
+/// It cost up to 9% on ROCm. With the item split into `(quartet, quad)` pairs
+/// (§19) it is 0.996x–1.023x there, and the last stage of a GPU run is no
+/// longer a host loop.
+///
+/// What that buys everywhere is the **host Cartesian intermediate**: it is not
+/// allocated at all, so the host peak falls from 2.10x–2.35x the spherical
+/// output to the output itself, and the readback carries spherical rather than
+/// Cartesian. On the CubeCL CPU runtime the "device" is the same cores, so the
+/// time is a wash there (0.84x–1.15x, bit-identical) and the memory is not.
 ///
 /// [`set_device_transform`] overrides the environment for the rest of the
 /// process, so the two transforms can be A/B'd inside one process — the only
@@ -651,7 +707,7 @@ pub fn device_transform_enabled() -> bool {
         return current == 1;
     }
     let from_env = u32::from(
-        std::env::var("CINTX_2E_TRANSFORM").is_ok_and(|value| value.eq_ignore_ascii_case("device")),
+        !std::env::var("CINTX_2E_TRANSFORM").is_ok_and(|value| value.eq_ignore_ascii_case("host")),
     );
     DEVICE_TRANSFORM.store(from_env, std::sync::atomic::Ordering::Relaxed);
     from_env == 1

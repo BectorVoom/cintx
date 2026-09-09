@@ -6,7 +6,8 @@ the T4 measurement package), all 2026-09-07, extend it; §12–§14 (V1, the roo
 vector VRR, and what it does not apply to), 2026-09-08; §15 (F1, fusing the Rys
 orders into one dispatch), §16 (F1 on the GPU, and the per-quartet ket-pair
 split it needed), §17 (the split on the per-unit arm) and §18 (one method on both
-backends), 2026-09-09.
+backends) and §19 (the cart-to-sph transform moves on-device, and the host
+Cartesian intermediate disappears), 2026-09-09.
 
 §15.4's account of why the fusion cost time on the GPU is **superseded by §16.1**,
 which measured it: one of the two mechanisms it named does nothing. §17 puts the
@@ -1718,3 +1719,126 @@ scale on H2O, the §11.3 figures to the tenth).
   `CINTX_2E_KL_SPLIT=off` is the arm to compare against and §18.4 is the sweep
   to redo; nothing about the rule is CPU-specific, so turning it off there would
   reintroduce exactly the backend divergence this section removed.
+
+## 19. The last host stage: the transform moves on-device (2026-09-09)
+
+### 19.1 What was not on the device
+
+Every batched 2e run ended on the host. The Cartesian buffer was read back and
+`cart_to_sph_2e_into` transformed it there — the final stage of a GPU pipeline,
+running on the CPU, moving *more* bytes across the bus than the answer needs
+(Cartesian is larger than spherical). The device implementation has existed
+since M3 (`c2s_device.rs`), gated behind `CINTX_2E_TRANSFORM=device` and left
+off: "until it is measured on a backend where the readback is a real transfer".
+
+It had been measured, and it was slower — 0.910x–0.988x on ROCm. The reason had
+nothing to do with readbacks.
+
+### 19.2 One work item was a whole quartet
+
+The transform's work item was a quartet, and a quartet walks its
+`nctr_i·nctr_j·nctr_k·nctr_l` contraction quads **serially**, each four
+ping-pong axis passes over a block of up to 1 296 elements. On a segmented basis
+that is one quad and the shape is fine. On TZVP-MOLOPT it is up to eighty-one,
+and the worst row was exactly the most generally contracted one — SO2/TZVP at
+0.910x, against 0.988x for the segmented-ish DZVP-SR rows.
+
+That is the same latency shape G1 found in the 2e kernel itself (§10.5): plenty
+of work per item, almost none of it parallel. The quads are independent — each
+reads its own Cartesian block, uses its own ping-pong scratch and writes its own
+spherical block — so the work item is now a **`(quartet, quad)` pair**, handed
+out from a host-built table, exactly as `expand_kl_split` hands out ket-pair
+parts. The four contraction indices come from inverting the layout the nest used
+to build. A segmented work list has one quad per quartet and gets back precisely
+the kernel it had.
+
+### 19.3 The bug that found itself
+
+The first run after the change was fast and **wrong**: `vendor|d|` of 3e-2 … 8e-1
+on ROCm, against 1e-12. `def2_device_c2s_parity` had passed — it is a def2
+fixture, `nctr == 1`, where the change is the identity.
+
+`c2s_scratch_widest_len` (M4.3) sized the shared ping-pong slab from the group's
+**quartet** count while `launch_c2s` sized its geometry from the item count.
+This is §18.3's M4.1 bug again, one slab over — and worse, because this slab is
+*written*: a short one is not a lost allocation but an out-of-bounds store. Both
+now read the same item count. That two independent slabs had the same defect,
+found two different ways, is the argument for deriving a slab's size from the
+geometry expression rather than from a count that happens to match it.
+
+### 19.4 The pre-flight plan was double-charging
+
+`plan_batch_bytes` counts the Cartesian block twice — "once for the device
+buffer and once for the host `Vec` its readback lands in". Under the device
+transform there is no such `Vec`: the block is consumed where it was written and
+only spherical comes back. It is charged once there, which is what let the
+budgeted arms keep working once the transform became the default.
+
+### 19.5 Measured
+
+In-process A/B, `default` (device transform) against `xform=host`:
+
+| workload | ROCm | CPU |
+|---|---|---|
+| H2O / DZVP-MOLOPT-SR | **1.012x** | 1.048x |
+| CH4 / DZVP-MOLOPT-SR | — | 0.983x |
+| SO2 / DZVP-MOLOPT-SR | — | 1.008x |
+| H2O / TZVP-MOLOPT | **1.013x** | 1.070x |
+| CH4 / TZVP-MOLOPT | — | 1.019x |
+| SO2 / TZVP-MOLOPT | — | 1.015x |
+
+Before the split into `(quartet, quad)` items the ROCm column was
+0.910x–0.988x. It is now at or slightly past parity on both backends, and
+`transform=0.0ms` — there is no host transform left to time. **The default
+moved**: `CINTX_2E_TRANSFORM=host` is the opt-out.
+
+**What it buys is the memory.** The host Cartesian intermediate is not allocated
+at all:
+
+| workload | host peak before | after |
+|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 0.9 MiB (2.20x output) | 0.4 MiB (**1.00x**) |
+| SO2 / TZVP-MOLOPT | 19.2 MiB (2.25x) | 8.5 MiB (**1.00x**) |
+| SO2 / def2-TZVP | 269.4 MiB (2.79x) | 96.6 MiB (**1.00x**) |
+
+Every workload, both bases, def2 included: **1.00x the spherical output**, where
+M1's whole chunking apparatus existed to bound a 2.1x–2.8x peak. The readback
+carries spherical rather than Cartesian (1.00x rather than 1.10x–1.25x the
+output). The def2 throughput rows moved with it — H2O/def2-SVP screened 1.71x →
+2.30x, CH4 2.51x → 3.35x, SO2/def2-TZVP 1.72x → 2.00x faster than
+single-threaded libcint — and the GTH rows sit at 2.40x–2.82x.
+
+### 19.6 Verification
+
+- `def2_device_c2s_parity::the_device_transform_reproduces_the_host_bit_for_bit`
+  and `negative_zero_survives_the_host_transform_convention`.
+- `gth_profile`: `xform=host` is `=bits` against the device default on all six
+  GTH workloads, so the two transforms agree exactly on the CPU backend; on ROCm
+  they differ by the FMA the device kernel introduces (3.44e-15 against
+  3.33e-15, inside 1e-12).
+- The §18.5 invariants re-checked with the new default: `fuse=off` and
+  `chunk=cart/4` both `=bits`, the unsplit arm still bit-identical to the pre-F1
+  dump, `chunked_evaluation_is_bit_identical_to_unchunked`,
+  `tuned_and_untuned_dispatches_agree_bit_for_bit`.
+- `def2_batch_rocm_parity`, `gth_contraction_ab` cross-backend, both throughput
+  artifacts, and both full suites.
+
+`gth_profile`'s chunked variant now runs the **host** transform deliberately, and
+says why in its own comment: chunking exists to bound the host Cartesian
+intermediate, the device transform removes that intermediate outright, and the
+two are alternative answers to the same problem. With the device transform its
+budget would be spent instead on the ping-pong scratch, which is per-slot times
+the widest block and does *not* shrink with the chunk.
+
+### 19.7 What is still on the host, and why
+
+- **Planning and marshaling** — the pair table, K1's Cartesian index tables, K2's
+  partition bounds, the split's row expansion and the transform's item table.
+  That is where the project's architecture constraint puts host work, libcint
+  builds its own `idx` on the host for the same reason, and all of it is
+  `O(quartets)` against `O(primitive quartets · block)` of device work.
+- **`deriv34` and the `grids` family** compute on the host by documented design:
+  the bra/ket headroom elevates the nuclear Rys order past
+  `MAX_DEVICE_NROOTS = 5`, which the comptime device kernel cannot serve.
+  Those are the remaining "GPU family that is not on the device", and moving
+  them needs the extended-order solver wired into those kernels, not a switch.

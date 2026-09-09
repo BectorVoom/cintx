@@ -22,8 +22,11 @@
 //! - `naive`        — `set_staged_contraction(false)`: the contraction arm.
 //! - `balance=…`    — `set_two_e_balance`: uniform vs cost-balanced per-unit
 //!                    partition (K2), when the kernel carries it.
-//! - `xform=device` — `set_device_transform(Some(true))`: M3 on the CPU
-//!                    runtime, for the memory column as much as the time.
+//! - `xform=host`   — `set_device_transform(Some(false))`: the transform back
+//!                    on the host, which is where it ran by default until §19.
+//!                    Read the `cart MiB` column as much as the time — the
+//!                    device transform never allocates a host Cartesian
+//!                    intermediate.
 //! - `fuse=off`     — `set_two_e_nroots_fusion(false)`: one dispatch per Rys
 //!                    order, the grouping before F1 (§15). It is the one
 //!                    variant that is a different *compiled program* rather
@@ -181,7 +184,7 @@ fn reset() {
     set_cooperative_build_split(true);
     set_two_e_kl_split(None);
     set_two_e_nroots_fusion(None);
-    set_device_transform(Some(false));
+    set_device_transform(None);
 }
 
 fn resident(backend: &ResolvedBackend, shells: &[cintx_cubecl::BatchShell]) -> ResidentTwoEBasis {
@@ -277,18 +280,31 @@ fn variants() -> Vec<Variant> {
         });
     }
     out.push(Variant {
-        name: "xform=device",
+        name: "xform=host",
         apply: |b, s| {
             reset();
-            set_device_transform(Some(true));
+            set_device_transform(Some(false));
             resident(b, s)
         },
         limited: false,
     });
+    // The chunked variant runs the **host** transform deliberately.
+    //
+    // Chunking exists to bound the host Cartesian intermediate (M1); the device
+    // transform removes that intermediate outright (§19), so the two are
+    // alternative answers to the same problem and this variant should measure
+    // chunking against the arrangement that still has something to chunk. With
+    // the device transform its budget would instead be spent on the ping-pong
+    // scratch, which is per-slot times the widest block and so does *not* shrink
+    // with the chunk — on H2O/DZVP-MOLOPT-SR that scratch alone is 0.33 MiB
+    // against a 0.46 MiB Cartesian intermediate, and no budget both forces
+    // chunks and clears the floor. The two transforms are bit-identical, so the
+    // `=bits` column still says chunked and unchunked agree.
     out.push(Variant {
         name: "chunk=cart/4",
         apply: |b, s| {
             reset();
+            set_device_transform(Some(false));
             resident(b, s)
         },
         limited: true,

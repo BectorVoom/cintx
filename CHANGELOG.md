@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the cart-to-sph transform runs on the device, and the host Cartesian intermediate is gone (2026-09-09)
+
+Every batched 2e run used to end on the host: the Cartesian buffer was read back and transformed
+there — the last stage of a GPU pipeline, running on the CPU, and moving *more* bytes across the
+bus than the answer needs. The device implementation has existed since M3, gated behind
+`CINTX_2E_TRANSFORM=device` and left off because it measured slower (0.910x–0.988x on ROCm).
+
+The reason had nothing to do with readbacks. Its work item was a whole **quartet**, and a quartet
+walks its `nctr_i·nctr_j·nctr_k·nctr_l` contraction quads serially — one on a segmented basis, up
+to eighty-one on TZVP-MOLOPT, each four ping-pong axis passes over a block of up to 1 296
+elements. The worst row was exactly the most generally contracted one. That is the same latency
+shape G1 found in the 2e kernel itself: plenty of work per item, almost none of it parallel.
+
+The work item is now a **`(quartet, contraction quad)` pair**, handed out from a host-built table
+exactly as the ket-pair split hands out its parts. On ROCm the transform goes to 1.012x–1.013x
+against the host one, on the CPU 0.98x–1.07x, and **the default moved** —
+`CINTX_2E_TRANSFORM=host` is now the opt-out. A segmented work list has one quad per quartet and
+gets back precisely the kernel it had.
+
+What it buys is the memory. The host Cartesian intermediate is not allocated at all:
+
+| workload | host peak before | after |
+|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 0.9 MiB (2.20x output) | 0.4 MiB (**1.00x**) |
+| SO2 / TZVP-MOLOPT | 19.2 MiB (2.25x) | 8.5 MiB (**1.00x**) |
+| SO2 / def2-TZVP | 269.4 MiB (2.79x) | 96.6 MiB (**1.00x**) |
+
+Every workload, both bases, def2 included: **1.00x the spherical output**, where M1's chunking
+apparatus existed to bound a 2.1x–2.8x peak. The readback carries spherical rather than Cartesian.
+The throughput rows moved with it — H2O/def2-SVP screened 1.71x → 2.30x, CH4/def2-SVP 2.51x →
+3.35x, SO2/def2-TZVP 1.72x → 2.00x faster than single-threaded libcint; the GTH rows sit at
+2.40x–2.82x — and every `max|diff|` against the vendor is unchanged.
+
+**Two bugs found on the way.** The first run after the change was fast and *wrong* — `vendor|d|`
+of 3e-2 … 8e-1 on ROCm — because `c2s_scratch_widest_len` sized the shared ping-pong slab from the
+group's **quartet** count while the launch sized its geometry from the item count. That is the
+same defect the previous entry found in M4.1's shared G slab, one slab over, and worse: this slab
+is *written*, so a short one is an out-of-bounds store rather than a lost allocation. (The
+existing parity gate missed it because it is a def2 fixture, `nctr == 1`, where the change is the
+identity.) And `plan_batch_bytes` charged the Cartesian block twice — once for the device buffer,
+once for the host `Vec` its readback lands in — which is right under the host transform and wrong
+under the device one, where there is no such `Vec`.
+
+`gth_profile`'s chunked variant now runs the host transform deliberately: chunking exists to bound
+the host Cartesian intermediate, the device transform removes that intermediate outright, and the
+two are alternative answers to the same problem.
+
+Still on the host, and deliberately: planning and marshaling (pair tables, the Cartesian index
+tables, the partition bounds, the split and transform work-item tables) — all `O(quartets)`
+against `O(primitive quartets · block)` of device work — and the `deriv34` / `grids` families,
+whose bra/ket headroom elevates the nuclear Rys order past the comptime device ceiling of 5.
+
+Record: `docs/design/gth_molopt_speed_memory_plan.md` §19.
+
+
 ### Changed — one method on CPU and GPU: the ket-pair split is a pure function of the quartet (2026-09-09)
 
 Enabling the ket-pair split on the per-unit (CPU) arm broke two contracts —
