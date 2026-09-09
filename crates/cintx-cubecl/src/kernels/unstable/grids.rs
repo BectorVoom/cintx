@@ -51,7 +51,7 @@ use super::shared::{apply_nabla_i_3axis, apply_nabla_j_3axis, cart_comps, common
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_2e_step_host};
 use crate::math::pdata::compute_pdata_host;
-use crate::math::rys::{rys_root1, rys_root2, rys_roots_host};
+use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5, rys_roots_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::cintxRsError;
@@ -62,8 +62,14 @@ use cubecl::prelude::*;
 
 /// Rys `PIE4 = pi/4` passed into the device `rys_root{1,2}` kernels.
 const GRIDS_PIE4: f64 = 0.78539816339744827900_f64;
-/// Fail-closed device guard: the scalar grids path uses nroots ∈ {1,2}.
-const GRIDS_MAX_DEVICE_NROOTS: u32 = 2;
+/// Fail-closed device guard: the highest Rys order the grids kernels wire (§20).
+///
+/// It was **2**, which is `l_i + l_j <= 3` — s and p shells only. Everything
+/// above fell back to `grids_contract_nuclear_like` on the host, so a d or f
+/// grid integral was a "device" family computed on the CPU. Both kernels now
+/// wire `rys_root1..5`, which is `l_i + l_j <= 9` with the derivative headroom
+/// on top — every shell pair `c2s` supports.
+const GRIDS_MAX_DEVICE_NROOTS: u32 = 5;
 
 /// Compute the Rys-quadrature G-tensor for one primitive pair and one "nuclear" center.
 ///
@@ -302,10 +308,18 @@ fn grids_scalar_kernel<F: Float + CubeElement>(
         let crijz = rcz - rpz;
         let x_boys = zeta_ab * (crijx * crijx + crijy * crijy + crijz * crijz);
 
+        // §20: the fixed-order solvers this dispatch may need, selected at
+        // comptime so only one is emitted per specialization.
         if comptime!(nroots == 1u32) {
             rys_root1::<F>(x_boys, urys, wrys, pie4);
-        } else {
+        } else if comptime!(nroots == 2u32) {
             rys_root2::<F>(x_boys, urys, wrys, pie4);
+        } else if comptime!(nroots == 3u32) {
+            rys_root3::<F>(x_boys, urys, wrys, pie4);
+        } else if comptime!(nroots == 4u32) {
+            rys_root4::<F>(x_boys, urys, wrys, pie4);
+        } else {
+            rys_root5::<F>(x_boys, urys, wrys, pie4);
         }
 
         let fac1 = two_pi * fac / zeta_ab;
@@ -459,10 +473,13 @@ fn run_grids_nuclear_device<R: Runtime>(
             )
         };
     }
-    if nroots == 1 {
-        launch_with!(1u32);
-    } else {
-        launch_with!(2u32);
+    // §20: one compiled program per Rys order, up to the wired ceiling.
+    match nroots {
+        1 => launch_with!(1u32),
+        2 => launch_with!(2u32),
+        3 => launch_with!(3u32),
+        4 => launch_with!(4u32),
+        _ => launch_with!(5u32),
     }
 
     let raw = client.read_one_unchecked(out_h);
@@ -694,10 +711,18 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
         let crijz = rcz - rpz;
         let x_boys = zeta_ab * (crijx * crijx + crijy * crijy + crijz * crijz);
 
+        // §20: the fixed-order solvers this dispatch may need, selected at
+        // comptime so only one is emitted per specialization.
         if comptime!(nroots == 1u32) {
             rys_root1::<F>(x_boys, urys, wrys, pie4);
-        } else {
+        } else if comptime!(nroots == 2u32) {
             rys_root2::<F>(x_boys, urys, wrys, pie4);
+        } else if comptime!(nroots == 3u32) {
+            rys_root3::<F>(x_boys, urys, wrys, pie4);
+        } else if comptime!(nroots == 4u32) {
+            rys_root4::<F>(x_boys, urys, wrys, pie4);
+        } else {
+            rys_root5::<F>(x_boys, urys, wrys, pie4);
         }
 
         let fac1 = two_pi * fac / zeta_ab;
@@ -981,10 +1006,13 @@ fn run_grids_deriv_device<R: Runtime>(
             }
         };
     }
-    if nroots == 1 {
-        dispatch_op!(1u32);
-    } else {
-        dispatch_op!(2u32);
+    // §20: one compiled program per Rys order, up to the wired ceiling.
+    match nroots {
+        1 => dispatch_op!(1u32),
+        2 => dispatch_op!(2u32),
+        3 => dispatch_op!(3u32),
+        4 => dispatch_op!(4u32),
+        _ => dispatch_op!(5u32),
     }
 
     let raw = client.read_one_unchecked(out_h);
@@ -2002,8 +2030,15 @@ mod tests {
 
     /// Device-vs-host cross-check (CpuRuntime, f64): the on-device
     /// `grids_scalar_kernel` reproduces the host `grids_contract_nuclear_like`
-    /// nuclear-like Cartesian block within atol=1e-12 / rtol=1e-10, for shell
-    /// pairs (s,s),(p,s),(s,p),(p,p) against two distinct grid points.
+    /// nuclear-like Cartesian block within atol=1e-12 / rtol=1e-10.
+    ///
+    /// The pair list walks **every Rys order the kernel wires**, one through
+    /// five (§20): `nroots = (l_i + l_j)/2 + 1`, so `(0,0)` is order one and
+    /// `(4,4)` is order five. It covered only `(s,s)…(p,p)` — orders one and two
+    /// — while the kernel wired only those, and a d or f pair fell back to the
+    /// host. Both the asymmetric and the diagonal pairs are here because the
+    /// HRR walks `l_j` and the VRR `l_i + l_j`, and a fault in one is invisible
+    /// on a symmetric pair.
     #[test]
     fn test_device_matches_host_grids() {
         let client = cpu_client();
@@ -2012,7 +2047,20 @@ mod tests {
         let ri = [0.0_f64, 0.0, 0.0];
         let rj = [0.6_f64, 0.5, 0.7];
         for rc in [[0.3_f64, -0.4, 0.8], [-0.7_f64, 0.2, 1.1]] {
-            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1)] {
+            for &(li, lj) in &[
+                (0u8, 0u8), // nroots 1
+                (1, 0),
+                (0, 1),
+                (1, 1), // nroots 2
+                (2, 0),
+                (2, 2), // nroots 3
+                (3, 1),
+                (0, 4),
+                (3, 3), // nroots 4
+                (4, 2),
+                (2, 4),
+                (4, 4), // nroots 5
+            ] {
                 let pd =
                     compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
                 let host = grids_contract_nuclear_like(&pd, ri, rj, rc, li, lj, 0, 0);
@@ -2155,8 +2203,9 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────
 
     /// Per-op device dispatch params, mirroring the `launch_grids` derivative
-    /// closures. Returns None when the (li,lj) pair needs nroots>2 (device wires
-    /// only rys_root{1,2}; those pairs fall back to host and aren't device-tested).
+    /// closures. Returns None when the (li,lj) pair needs a Rys order past
+    /// [`GRIDS_MAX_DEVICE_NROOTS`] — those pairs fall back to the host and are
+    /// not device-tested.
     fn deriv_params(op: u32, li: u8, lj: u8) -> Option<(u32, u32, u32, u32, u32, u32, u32, u32)> {
         let (nmax, lj_hrr, g_per_axis, ncomp, nroots) = match op {
             GRIDS_OP_IP => {
@@ -2232,11 +2281,28 @@ mod tests {
         let ri = [0.0_f64, 0.0, 0.0];
         let rj = [0.6_f64, 0.5, 0.7];
         let mut tested = 0usize;
+        // §20: the derivative ops carry +1/+2 of bra/ket headroom, so a pair
+        // reaches a higher Rys order than its own `l_i + l_j` — `(3,3)` under
+        // `ipvip` is order five. The list walks up to that ceiling; anything
+        // past it still falls back to the host and `device_deriv_block` returns
+        // `None`, which is what the `tested > 0` assertion guards against
+        // silently testing nothing.
         for rc in [[0.3_f64, -0.4, 0.8], [-0.7_f64, 0.2, 1.1]] {
-            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1)] {
+            for &(li, lj) in &[
+                (0u8, 0u8),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 0),
+                (0, 2),
+                (2, 2),
+                (3, 1),
+                (1, 3),
+                (3, 3),
+            ] {
                 let dev = match device_deriv_block(&client, op, ai, aj, ri, rj, rc, li, lj) {
                     Some(d) => d,
-                    None => continue, // nroots>2 falls back to host; not device-tested
+                    None => continue, // past the wired Rys ceiling: host fallback
                 };
                 let pd =
                     compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
