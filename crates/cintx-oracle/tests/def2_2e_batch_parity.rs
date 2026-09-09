@@ -72,19 +72,33 @@ fn batch_shells(arrays: &RawArrays) -> Vec<BatchShell> {
     shells
 }
 
-/// The kernel's comptime signature for an l-quartet: `(ibase, kbase, nroots)`.
+/// The dispatch an l-quartet lands in: `(ibase, kbase, rys bucket)`.
 ///
-/// Mirrors `build_2e_shape` rather than calling it — `cintx-cubecl` does not
-/// export the shape builder, and an independent transcription is what makes
-/// this a check on the merge rather than a restatement of it. libcint picks the
-/// HRR base by which side of a pair carries more angular momentum
-/// (`g2e.c` `CINTinit_int2e_EnvVars`), and `nroots = (sum l)/2 + 1`.
+/// Mirrors `build_2e_shape` and `TwoELaunchSignature::of` rather than calling
+/// them — `cintx-cubecl` exports neither, and an independent transcription is
+/// what makes this a check on the grouping rather than a restatement of it.
+/// libcint picks the HRR base by which side of a pair carries more angular
+/// momentum (`g2e.c` `CINTinit_int2e_EnvVars`), and `nroots = (sum l)/2 + 1`.
+///
+/// The **bucket** is the F1 fusion (GTH plan §15): every class the fixed-order
+/// Rys solvers serve (`nroots <= 5`) shares one dispatch per `(ibase, kbase)`
+/// and carries its own order in its class row, so it buckets to `0`; a class
+/// above that keeps a dispatch of its own and buckets to its order. This
+/// function said `nroots` unconditionally until §21, which made the assertion
+/// below expect the *pre-fusion* dispatch count.
 fn launch_signature(li: u8, lj: u8, lk: u8, ll: u8) -> (usize, usize, usize) {
+    /// The widest Rys order the fused dispatch serves — `MAX_FUSED_NROOTS`.
+    const MAX_FUSED_NROOTS: usize = 5;
     // Strict `>`, as libcint has it — `li == lj` takes the `false` branch.
     let ibase = usize::from(li > lj);
     let kbase = usize::from(lk > ll);
     let nroots = (li as usize + lj as usize + lk as usize + ll as usize) / 2 + 1;
-    (ibase, kbase, nroots)
+    let bucket = if nroots <= MAX_FUSED_NROOTS {
+        0
+    } else {
+        nroots
+    };
+    (ibase, kbase, bucket)
 }
 
 fn water(basis: StandardBasis) -> Molecule {
@@ -153,7 +167,7 @@ fn def2_svp_batch_matches_vendor_and_per_quartet() {
     assert_eq!(
         batched.stats.kernel_launch_count,
         signatures.len(),
-        "batched run must launch once per (ibase, kbase, nroots) signature"
+        "batched run must launch once per (ibase, kbase, rys bucket) dispatch"
     );
     assert!(
         batched.stats.kernel_launch_count < classes.len(),
@@ -187,7 +201,12 @@ fn def2_svp_batch_matches_vendor_and_per_quartet() {
                     * cintx_cubecl::transform::c2s::ncart(lj)
                     * cintx_cubecl::transform::c2s::ncart(lk)
                     * cintx_cubecl::transform::c2s::ncart(ll);
-                (14 + 3 * cart_block) * std::mem::size_of::<u32>() + std::mem::size_of::<f64>()
+                // Fifteen `u32` per shape row since the F1 fusion (GTH plan
+                // §15): the class carries its own Rys order now, because the
+                // dispatch it rides in serves every order up to its widest and
+                // no longer *is* one order. It was fourteen, and this
+                // prediction said so until §21.
+                (15 + 3 * cart_block) * std::mem::size_of::<u32>() + std::mem::size_of::<f64>()
             })
             .sum::<usize>();
     // The residency also carries the primitive-pair table (S1): five `f64` and
@@ -204,6 +223,11 @@ fn def2_svp_batch_matches_vendor_and_per_quartet() {
     // coefficient tables, once per residency, and one destination index per
     // quartet. Both are real transfers and both are counted, so the prediction
     // gains them rather than the assertion being weakened.
+    //
+    // The transform's `(quartet, quad)` work-item table (§19) is deliberately
+    // *not* here: like the per-unit partition bounds, it is charged to the
+    // device-table ledger rather than to `transfer_bytes`, which is summed
+    // before a launch geometry is chosen.
     let c2s_bytes = if cintx_cubecl::device_transform_enabled() {
         cintx_cubecl::transform::c2s_data::C2S_TABLE.len() * std::mem::size_of::<f64>()
             + cintx_cubecl::transform::c2s_data::C2S_OFFSET.len() * std::mem::size_of::<u32>()

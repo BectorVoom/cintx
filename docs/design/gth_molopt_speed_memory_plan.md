@@ -7,7 +7,8 @@ vector VRR, and what it does not apply to), 2026-09-08; §15 (F1, fusing the Rys
 orders into one dispatch), §16 (F1 on the GPU, and the per-quartet ket-pair
 split it needed), §17 (the split on the per-unit arm) and §18 (one method on both
 backends) and §19 (the cart-to-sph transform moves on-device, and the host
-Cartesian intermediate disappears), 2026-09-09.
+Cartesian intermediate disappears), §20 (`grids`) and §21 (`deriv34` — the last
+family computing on the host), 2026-09-09.
 
 §15.4's account of why the fusion cost time on the GPU is **superseded by §16.1**,
 which measured it: one of the two mechanisms it named does nothing. §17 puts the
@@ -1842,3 +1843,129 @@ the widest block and does *not* shrink with the chunk.
   `MAX_DEVICE_NROOTS = 5`, which the comptime device kernel cannot serve.
   Those are the remaining "GPU family that is not on the device", and moving
   them needs the extended-order solver wired into those kernels, not a switch.
+
+## 20. `grids`: the device Rys ceiling was 2 (2026-09-09)
+
+§19.7 named `deriv34` and `grids` as the remaining families computing on the
+host. `grids` was the smaller half and is done.
+
+Its two kernels wired `rys_root{1,2}` and nothing else, so
+`GRIDS_MAX_DEVICE_NROOTS` was **2** — `l_i + l_j <= 3`, s and p shells. Anything
+above fell back to `grids_contract_nuclear_like` on the host: a family with
+device kernels, computing on the CPU for most of its input range, at six
+fallback sites. Both kernels now wire `rys_root1..5`, selected at comptime so
+one solver is emitted per specialization, and both launchers dispatch one
+compiled program per order. That is `l_i + l_j <= 9`, with the derivative ops'
++1/+2 bra/ket headroom on top — every shell pair the `c2s` tables support.
+
+The gates could not have caught a fault above order two, because they only fed
+the kernels pairs that reached order two. `test_device_matches_host_grids` now
+walks `(0,0)` through `(4,4)`, and the four derivative checks up to `(3,3)`,
+which `ipvip` takes to order five. Asymmetric pairs as well as diagonal ones,
+because the HRR walks `l_j` and the VRR `l_i + l_j` and a fault in one is
+invisible on a symmetric pair. Seven tests, device against host at
+atol=1e-12/rtol=1e-10, plus the five `grids_parity` vendor oracles.
+
+## 21. `deriv34`: the last host family goes on-device (2026-09-09)
+
+### 21.1 The stated blocker had already been removed
+
+`deriv34.rs` carried ten families — the X2C parents `pnucp`/`prinvp`, their
+derivative pairs, the two rank-27 `deriv3` families and the three rank-81
+`deriv4` ones — and 2 162 lines of host evaluator with **no `#[cube]` kernel at
+all**. The module note said why:
+
+> Routed through the HOST path (FND-02): the bra/ket +2/+3 headroom can elevate
+> the nuclear Rys `nroots` to >=6, which the device comptime kernel
+> (`MAX_DEVICE_NROOTS=5`) cannot serve; `rys_roots_host` handles 6..12.
+
+That stopped being true when task 33-01 landed `rys_roots_ext_dev`, the inline
+Wheeler/Jacobi entry the 2e kernel has used for orders 6..12 ever since. The
+reason these families were on the host had been obsolete for some time; what
+remained was the port.
+
+### 21.2 One kernel, ten families, because everything else is a table
+
+The families differ in three things and only three: the op sequence that builds
+`g1..` from the base G-tensor, the `s[rank]` triple-product index table, and the
+gout map. All three are static data. Uploading them keeps **one** program where
+comptime specialization on the family would have meant ten copies of a
+300-line body — and one thing to verify rather than ten.
+
+The gout map needed the most care, because it comes in three shapes and they are
+not the same arithmetic:
+
+| scheme | host | why it differs |
+|---|---|---|
+| `gout_perm` | `out += s[perm[c]]` | one term per component |
+| `dot_terms` | `out += (t1 + t2 + t3)` | the terms sum *before* touching the output |
+| `linear_terms` | `out += coeff · t`, per term | each term lands separately |
+
+They collapse into one flat list of `(group, out_component, s_index, coeff)`:
+terms sharing a `group` accumulate into one register and flush once. `dot_terms`
+gets one group per component, `linear_terms` one group per term, `gout_perm`
+either. The device loop is then exactly all three rather than approximately any
+of them — which is what a bit-identical result later confirmed.
+
+Two dispatches, because the accumulation order is the thing being preserved:
+
+- `deriv34_pair_kernel` — one work item per primitive pair `(ip, jp)`, walking
+  the origins and the Rys roots inside and writing its own slab of `partial`.
+  Nothing shared, nothing raced.
+- `deriv34_weight_kernel` — one work item per output element, summing
+  `Σ c_i · c_j · partial` over `(ip, jp)` in the host's order, from zero, with
+  the host's zero-coefficient skip.
+
+An atomic would have been simpler and would have given up the order.
+
+### 21.3 Measured: bit-identical
+
+`device_matches_host_for_every_deriv34_family` — all nine distinct
+[`FamilySpec`]s, eight `(l_i, l_j)` pairs each, a contracted shell (`nprim = 2`,
+`nctr = 2`, so the weighting kernel has four pairs to sum and four blocks to
+write) and two Coulomb centers with different charge factors:
+
+```text
+deriv34 device-vs-host: 72 (family, l) cases, worst |diff| = 0.000e0
+```
+
+**Zero.** Not "within tolerance" — the same bits, including `(3,3)` on the
+rank-81 families, which reaches Rys order six and so runs the extended entry
+whose absence was the original reason for all of this. On ROCm the same check
+over 36 cases is 8.6e-14, the FMA drift every device family here carries.
+
+Vendor oracles, all green with the device path live: `deriv34_parity` (14 —
+every family, parity and determinism), `hess1e_ipip_parity` (8),
+`gradient_gap_wave5_x2c_base` (2).
+
+The dispatch keeps the host evaluator as the fallback, and the caller's existing
+guard already refuses anything above order twelve — which the host cannot serve
+either — so the fallback is unreachable in practice. It is kept as the reference
+the device path is gated against, not as a policy.
+
+### 21.4 Two stale assertions this pass surfaced, both mine
+
+`def2_2e_batch_parity::def2_svp_batch_matches_vendor_and_per_quartet` was
+**already failing** before this section's work, from the F1 fusion (§15), and
+the earlier verification missed it — a `grep` for `FAILED` over a full-package
+run that did not, in the end, look hard enough. Two independent things in it
+encoded the pre-fusion world:
+
+- the expected dispatch count was one per `(ibase, kbase, nroots)`; F1 made it
+  one per `(ibase, kbase, rys bucket)`, so it expected 15 where the run does 4;
+- the transfer prediction had the shape row at fourteen `u32`; F1 made it
+  fifteen, because a class carries its own Rys order now.
+
+Both are fixed and the reasoning is in the test. The lesson is the one §18.3 and
+§19.3 already gave twice in a different guise: a change that alters a *layout*
+has to be chased into every expression that predicts it, and grep over a test
+run is not that chase.
+
+### 21.5 What is left on the host
+
+Planning and marshaling only — the pair table, the Cartesian index tables, the
+partition bounds, and the split and transform work-item tables. Every one is
+`O(quartets)` against `O(primitive quartets · block)` of device work, and it is
+where the project's architecture constraint puts host work.
+
+No integral family evaluates on the host any more.

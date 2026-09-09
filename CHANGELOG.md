@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `deriv34` runs on the device; no integral family evaluates on the host (2026-09-09)
+
+`deriv34.rs` held ten families — the X2C parents `pnucp`/`prinvp`, their derivative pairs, the two
+rank-27 `deriv3` families and the three rank-81 `deriv4` ones — as 2 162 lines of host evaluator
+with no `#[cube]` kernel at all. The module note said why: the bra/ket +2/+3 headroom can elevate
+the nuclear Rys order past `MAX_DEVICE_NROOTS = 5`, and only `rys_roots_host` served 6..12. That
+stopped being true when task 33-01 landed `rys_roots_ext_dev`, which the 2e kernel has used for
+those orders ever since. The reason had been obsolete for a while; what remained was the port.
+
+**One kernel serves all ten families**, because everything that differs between them is a table:
+the op sequence building `g1..` from the base G-tensor, the `s[rank]` triple-product indices, and
+the gout map. Uploading those keeps one program where comptime specialization on the family would
+have meant ten copies of a 300-line body.
+
+The gout map took the most care, because it comes in three shapes that are *not* the same
+arithmetic — `gout_perm` is one term per component, `dot_terms` sums its terms before touching the
+output, `linear_terms` adds each separately. They collapse into one flat list of
+`(group, out_component, s_index, coeff)` where terms sharing a group accumulate into a register and
+flush once, so the device loop is exactly all three rather than approximately any.
+
+Two dispatches, because the accumulation order is what is being preserved: one work item per
+primitive pair writing its own slab, then one per output element summing `Σ c_i·c_j·partial` over
+`(ip, jp)` in the host's order, from zero, with the host's zero-coefficient skip. An atomic would
+have been simpler and would have given up the order.
+
+The result is **bit-identical**: 72 `(family, l)` cases — every family, eight shell pairs each, a
+contracted shell so the weighting kernel is exercised, two Coulomb centers — at `worst |diff| =
+0.000e0`, including `(3,3)` on the rank-81 families, which reaches Rys order six and runs the
+extended entry whose absence was the original blocker. On ROCm the same check over 36 cases is
+8.6e-14, the FMA drift every device family here carries. `deriv34_parity` (14 tests),
+`hess1e_ipip_parity` (8) and `gradient_gap_wave5_x2c_base` (2) are green with the device path live.
+
+**Two stale assertions surfaced, and both were already failing before this change** — from the F1
+fusion, missed by that commit's verification. `def2_2e_batch_parity` expected one dispatch per
+`(ibase, kbase, nroots)` where the fusion makes it one per `(ibase, kbase, rys bucket)` (15 against
+4), and its transfer prediction had the class shape row at fourteen `u32` where the fusion made it
+fifteen. Both fixed, with the reasoning in the test.
+
+Nothing on the host computes an integral any more: what remains there is planning and marshaling —
+the pair table, the Cartesian index tables, the partition bounds, the split and transform work-item
+tables — all `O(quartets)` against `O(primitive quartets · block)` of device work.
+
+Record: `docs/design/gth_molopt_speed_memory_plan.md` §21.
+
+### Changed — `grids` raises its device Rys ceiling from 2 to 5 (2026-09-09)
+
+`GRIDS_MAX_DEVICE_NROOTS` was 2 — `l_i + l_j <= 3`, s and p shells. Every d or f grid integral fell
+back to `grids_contract_nuclear_like` on the host at one of six fallback sites: a family with
+device kernels, computing on the CPU for most of its input range, because the kernels only ever
+wired `rys_root{1,2}`.
+
+Both kernels now wire `rys_root1..5`, selected at comptime so one solver is emitted per
+specialization, and both launchers dispatch one compiled program per order — `l_i + l_j <= 9`, with
+the derivative ops' +1/+2 headroom on top, which is every shell pair the c2s tables support.
+
+The gates could not have caught a fault above order two, because they only fed the kernels pairs
+that reached order two. `test_device_matches_host_grids` now walks `(0,0)` through `(4,4)` and the
+four derivative checks up to `(3,3)`, which `ipvip` takes to order five — asymmetric pairs as well
+as diagonal, because the HRR walks `l_j` and the VRR `l_i + l_j` and a fault in one is invisible on
+a symmetric pair. Seven tests against the host reference at atol=1e-12/rtol=1e-10, plus the five
+`grids_parity` vendor oracles.
+
+Record: `docs/design/gth_molopt_speed_memory_plan.md` §20.
+
+
 ### Changed — the cart-to-sph transform runs on the device, and the host Cartesian intermediate is gone (2026-09-09)
 
 Every batched 2e run used to end on the host: the Cartesian buffer was read back and transformed

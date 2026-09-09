@@ -13753,9 +13753,10 @@ fn launch_one_electron_typed<F: CintFloat>(
     // ─────────────────────────────────────────────────────────────────────────
     // Phase 25 HESS-04 3rd/4th-order path (deriv3.c rank 27, deriv4.c rank 81):
     // ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip (27),
-    // ipipipiprinv/ipiprinvipip/ipipiprinvip (81). HOST-routed (FND-02): the
-    // bra/ket +2/+3 headroom can elevate the nuclear Rys nroots beyond the device
-    // MAX_DEVICE_NROOTS=5 cap; the host `rys_roots_host` Wheeler path serves 6..12.
+    // ipipipiprinv/ipiprinvipip/ipipiprinvip (81). **On-device since §21**; the
+    // FND-02 note that follows explained why they were host-routed, and the
+    // reason it gives — no device solver above order five — stopped being true
+    // when task 33-01 landed `rys_roots_ext_dev` for 6..12.
     // ─────────────────────────────────────────────────────────────────────────
     if is_deriv34 {
         use crate::kernels::deriv34::{contract_deriv34_block, deriv34_rank, nuclear_origins};
@@ -13806,10 +13807,26 @@ fn launch_one_electron_typed<F: CintFloat>(
             });
         }
 
-        let mut cart = contract_deriv34_block(
-            op_name, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, n_ctr_i, n_ctr_j,
-            &origins,
+        // §21: on the device, with the host evaluator as the fallback.
+        //
+        // These families were host-routed because the bra/ket headroom can push
+        // the nuclear Rys order past five and only `rys_roots_host` served
+        // 6..12. Task 33-01 put that entry on the device
+        // (`rys_roots_ext_dev`), so the kernel serves the whole range the host
+        // reference does and `contract_deriv34_block_device` declines only past
+        // it — the guard above has already refused anything the *host* cannot
+        // serve either, so in practice the fallback is unreachable and kept as
+        // the reference the device path is gated against, not as a policy.
+        let mut cart = crate::kernels::deriv34::contract_deriv34_block_device(
+            backend, op_name, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, n_ctr_i,
+            n_ctr_j, &origins,
         )
+        .or_else(|| {
+            contract_deriv34_block(
+                op_name, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, n_ctr_i, n_ctr_j,
+                &origins,
+            )
+        })
         .ok_or_else(|| cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{op_name}' is not a deriv34 family"),
         })?;

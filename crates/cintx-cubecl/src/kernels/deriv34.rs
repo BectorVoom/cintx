@@ -2160,3 +2160,1015 @@ pub fn nuclear_origins(atoms: &[Atom]) -> Vec<([f64; 3], f64)> {
         .map(|a| (a.coord_bohr, -(a.atomic_number as f64)))
         .collect()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DEVICE: the deriv3/deriv4 families on-device (§21).
+//
+//  These families were host-only "(FND-02)": the bra/ket +2/+3 headroom can
+//  elevate the nuclear Rys order past `MAX_DEVICE_NROOTS = 5`, and only
+//  `rys_roots_host` served 6..12. That stopped being true when task 33-01 put
+//  the inline Wheeler/Jacobi entry (`rys_roots_ext_dev`) on the device — the
+//  stated blocker is gone, and what remained was the port.
+//
+//  ONE kernel serves all ten families. Everything that differs between them is
+//  a *table*: the op sequence, the `s[rank]` triple-product indices, and the
+//  gout map. Uploading those rather than specializing on the family keeps a
+//  single program (and a single thing to verify) where ten comptime variants of
+//  a 300-line body would otherwise be needed.
+//
+//  The three gout schemes — `gout_perm`, `dot_terms`, `linear_terms` — collapse
+//  into one flat term list of `(group, out_component, s_index, coeff)`. Terms
+//  sharing a `group` accumulate into one register and flush once, which is what
+//  makes the collapse *exact*: a `dot_terms` component is `out += (t1+t2+t3)`
+//  and a `linear_terms` one is `out += c*t` per term, and grouping reproduces
+//  each rather than approximating both.
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::backend::ResolvedBackend;
+use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys_wheeler::{
+    EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, ext_rys_tables, rys_roots_ext_dev,
+};
+use cubecl::prelude::*;
+
+/// Per-axis vertical recurrence at stride one — [`vrr_2e_step_host`] on device.
+#[cube]
+fn d34_vrr_axis<F: Float>(g: &mut Array<F>, off: u32, c00: F, b10: F, nmax: u32) {
+    if nmax >= 1u32 {
+        g[(off + 1u32) as usize] = c00 * g[off as usize];
+        let mut n = 1u32;
+        while n < nmax {
+            g[(off + n + 1u32) as usize] =
+                F::cast_from(n) * b10 * g[(off + n - 1u32) as usize] + c00 * g[(off + n) as usize];
+            n += 1u32;
+        }
+    }
+}
+
+/// Per-axis horizontal recurrence at `di = 1` — [`hrr_step_host`] on device.
+#[cube]
+fn d34_hrr_axis<F: Float>(g: &mut Array<F>, off: u32, rirj: F, dj: u32, li_max: u32, lj: u32) {
+    let mut j = 1u32;
+    while j <= lj {
+        let i_max = li_max - j;
+        let mut i = 0u32;
+        while i <= i_max {
+            let out = off + j * dj + i;
+            let hi = off + (j - 1u32) * dj + i + 1u32;
+            let lo = off + (j - 1u32) * dj + i;
+            g[out as usize] = g[hi as usize] + rirj * g[lo as usize];
+            i += 1u32;
+        }
+        j += 1u32;
+    }
+}
+
+/// Bra-center nabla `D_I` on one axis block — [`apply_di`] on device.
+///
+/// `src` and `dst` are offsets into the same slab and name *different*
+/// g-buffers, which is what makes reading one while writing the other sound;
+/// the host states the same invariant through `borrow_two`'s `assert_ne!`.
+#[cube]
+fn d34_apply_di<F: Float>(
+    g: &mut Array<F>,
+    src: u32,
+    dst: u32,
+    dj: u32,
+    j_max: u32,
+    i_max: u32,
+    ai2: F,
+) {
+    let mut j = 0u32;
+    while j <= j_max {
+        let jb = j * dj;
+        g[(dst + jb) as usize] = ai2 * g[(src + jb + 1u32) as usize];
+        let mut i = 1u32;
+        while i <= i_max {
+            g[(dst + jb + i) as usize] = F::cast_from(i) * g[(src + jb + i - 1u32) as usize]
+                + ai2 * g[(src + jb + i + 1u32) as usize];
+            i += 1u32;
+        }
+        j += 1u32;
+    }
+}
+
+/// Ket-center nabla `D_J` on one axis block — [`apply_dj`] on device.
+#[cube]
+fn d34_apply_dj<F: Float>(
+    g: &mut Array<F>,
+    src: u32,
+    dst: u32,
+    dj: u32,
+    j_max: u32,
+    i_max: u32,
+    aj2: F,
+) {
+    let mut i = 0u32;
+    while i <= i_max {
+        g[(dst + i) as usize] = aj2 * g[(src + dj + i) as usize];
+        let mut j = 1u32;
+        while j <= j_max {
+            let jb = j * dj;
+            g[(dst + jb + i) as usize] = F::cast_from(j) * g[(src + jb - dj + i) as usize]
+                + aj2 * g[(src + jb + dj + i) as usize];
+            j += 1u32;
+        }
+        i += 1u32;
+    }
+}
+
+/// One primitive pair of a deriv3/deriv4 family, on device (§21).
+///
+/// The work item is one `(ip, jp)` primitive pair; it walks the origins and the
+/// Rys roots inside and writes its own `rank · nci · ncj` slab of `partial`, so
+/// nothing is shared and nothing races. [`deriv34_weight_kernel`] then applies
+/// the contraction coefficients — separating the two is what keeps the
+/// accumulation order the host's, and so the result bit-comparable, without
+/// atomics.
+///
+/// Statement for statement this is [`contract_deriv34_pair`], with the family's
+/// `ops` / `s_table` / gout map read from uploaded tables instead of matched on.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn deriv34_pair_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    origins: &Array<F>,
+    ops: &Array<u32>,
+    s_table: &Array<u32>,
+    term_idx: &Array<u32>,
+    term_coeff: &Array<F>,
+    cart_i: &Array<u32>,
+    cart_j: &Array<u32>,
+    rys_tab: &Array<f64>,
+    g: &mut Array<F>,
+    partial: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    pie4: F,
+    two_pi: F,
+    n_prim_j: u32,
+    n_pairs: u32,
+    n_origins: u32,
+    n_ops: u32,
+    n_terms: u32,
+    li: u32,
+    lj: u32,
+    nci: u32,
+    ncj: u32,
+    dj: u32,
+    g_per_axis: u32,
+    nmax: u32,
+    j_top: u32,
+    rank: u32,
+    n_slots: u32,
+    g_stride: u32,
+    #[comptime] nroots: u32,
+) {
+    let slot = (CUBE_POS as u32) * (CUBE_DIM as u32) + (UNIT_POS as u32);
+    let three = 3u32 * g_per_axis;
+    let block_len = nci * ncj;
+    let total = rank * block_len;
+
+    // The Rys roots are per work item and read only here, so they are private
+    // arrays rather than buffers — the 2e kernel's `urys`/`wrys` for the same
+    // reason. The extended entry is f64-only (its double-double arms are what
+    // buy the accuracy above order five), so it lands in its own pair.
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+
+    let mut pair = slot;
+    while pair < n_pairs {
+        let ip = pair / n_prim_j;
+        let jp = pair % n_prim_j;
+        let ai = exps_i[ip as usize];
+        let aj = exps_j[jp as usize];
+
+        let out_base = pair * total;
+        let mut k = 0u32;
+        while k < total {
+            partial[(out_base + k) as usize] = F::new(0.0_f32);
+            k += 1u32;
+        }
+
+        let gbase = slot * g_stride;
+
+        let zeta = ai + aj;
+        let aij2 = F::new(0.5_f32) / zeta;
+        let rirjx = rix - rjx;
+        let rirjy = riy - rjy;
+        let rirjz = riz - rjz;
+        let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+        let fac = F::exp(F::new(0.0_f32) - ai * aj / zeta * rr);
+        let rpx = (ai * rix + aj * rjx) / zeta;
+        let rpy = (ai * riy + aj * rjy) / zeta;
+        let rpz = (ai * riz + aj * rjz) / zeta;
+        let ai2 = F::new(0.0_f32) - F::new(2.0_f32) * ai;
+        let aj2 = F::new(0.0_f32) - F::new(2.0_f32) * aj;
+
+        let mut oi = 0u32;
+        while oi < n_origins {
+            let ob = oi * 4u32;
+            let crijx = origins[ob as usize] - rpx;
+            let crijy = origins[(ob + 1u32) as usize] - rpy;
+            let crijz = origins[(ob + 2u32) as usize] - rpz;
+            let charge = origins[(ob + 3u32) as usize];
+            let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+            if comptime!(nroots == 1u32) {
+                rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
+            } else if comptime!(nroots == 2u32) {
+                rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
+            } else if comptime!(nroots == 3u32) {
+                rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
+            } else if comptime!(nroots == 4u32) {
+                rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
+            } else if comptime!(nroots == 5u32) {
+                rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+            } else {
+                // Orders six through twelve: the inline Wheeler/Jacobi entry
+                // (task 33-01). This is the arm whose absence routed these
+                // families to the host in the first place.
+                rys_roots_ext_dev(
+                    rys_tab,
+                    f64::cast_from(x_boys),
+                    &mut uext,
+                    &mut wext,
+                    nroots,
+                );
+                #[unroll]
+                for e in 0..nroots {
+                    urys[e as usize] = F::cast_from(uext[e as usize]);
+                    wrys[e as usize] = F::cast_from(wext[e as usize]);
+                }
+            }
+
+            let fac1 = two_pi * charge * fac / zeta;
+
+            let mut nr = 0u32;
+            while nr < comptime!(nroots) {
+                let u_n = urys[nr as usize];
+                let w_n = wrys[nr as usize];
+                let tau = u_n / (F::new(1.0_f32) + u_n);
+                let rt = aij2 * (F::new(1.0_f32) - tau);
+
+                // g0 is zeroed and re-seeded per root, exactly as the host does.
+                let mut t = 0u32;
+                while t < three {
+                    g[(gbase + t) as usize] = F::new(0.0_f32);
+                    t += 1u32;
+                }
+                g[gbase as usize] = F::new(1.0_f32);
+                g[(gbase + g_per_axis) as usize] = F::new(1.0_f32);
+                g[(gbase + 2u32 * g_per_axis) as usize] = fac1 * w_n;
+
+                let c00x = (rpx - rix) + tau * crijx;
+                let c00y = (rpy - riy) + tau * crijy;
+                let c00z = (rpz - riz) + tau * crijz;
+                d34_vrr_axis::<F>(g, gbase, c00x, rt, nmax);
+                d34_vrr_axis::<F>(g, gbase + g_per_axis, c00y, rt, nmax);
+                d34_vrr_axis::<F>(g, gbase + 2u32 * g_per_axis, c00z, rt, nmax);
+
+                if j_top >= 1u32 {
+                    d34_hrr_axis::<F>(g, gbase, rirjx, dj, nmax, j_top);
+                    d34_hrr_axis::<F>(g, gbase + g_per_axis, rirjy, dj, nmax, j_top);
+                    d34_hrr_axis::<F>(g, gbase + 2u32 * g_per_axis, rirjz, dj, nmax, j_top);
+                }
+
+                // The family's op sequence: each op fills exactly its target
+                // range from the source one level above on its axis.
+                let mut op = 0u32;
+                while op < n_ops {
+                    let opb = op * 5u32;
+                    let is_di = ops[opb as usize];
+                    let dst = ops[(opb + 1u32) as usize];
+                    let src = ops[(opb + 2u32) as usize];
+                    let i_tgt = li + ops[(opb + 3u32) as usize];
+                    let j_tgt = lj + ops[(opb + 4u32) as usize];
+                    let mut axis = 0u32;
+                    while axis < 3u32 {
+                        let so = gbase + src * three + axis * g_per_axis;
+                        let dof = gbase + dst * three + axis * g_per_axis;
+                        let mut z = 0u32;
+                        while z < g_per_axis {
+                            g[(dof + z) as usize] = F::new(0.0_f32);
+                            z += 1u32;
+                        }
+                        if is_di == 1u32 {
+                            d34_apply_di::<F>(g, so, dof, dj, j_tgt, i_tgt, ai2);
+                        } else {
+                            d34_apply_dj::<F>(g, so, dof, dj, j_tgt, i_tgt, aj2);
+                        }
+                        axis += 1u32;
+                    }
+                    op += 1u32;
+                }
+
+                // Contract `s[rank]` and scatter through the flat term list.
+                let mut cj = 0u32;
+                while cj < ncj {
+                    let jb = cj * 3u32;
+                    let jx = cart_j[jb as usize];
+                    let jy = cart_j[(jb + 1u32) as usize];
+                    let jz = cart_j[(jb + 2u32) as usize];
+                    let mut ci = 0u32;
+                    while ci < nci {
+                        let ib = ci * 3u32;
+                        let nx = jx * dj + cart_i[ib as usize];
+                        let ny = jy * dj + cart_i[(ib + 1u32) as usize];
+                        let nz = jz * dj + cart_i[(ib + 2u32) as usize];
+                        let bn = cj * nci + ci;
+
+                        // Terms sharing a `group` sum into `acc` and flush once.
+                        let mut acc = F::new(0.0_f32);
+                        let mut acc_out: u32 = 0u32;
+                        let mut acc_group: u32 = 0u32;
+                        let mut have: u32 = 0u32;
+                        let mut ti: u32 = 0u32;
+                        while ti < n_terms {
+                            let tb = ti * 3u32;
+                            let group = term_idx[tb as usize];
+                            let out_comp = term_idx[(tb + 1u32) as usize];
+                            let sb = term_idx[(tb + 2u32) as usize] * 3u32;
+                            let sx = s_table[sb as usize];
+                            let sy = s_table[(sb + 1u32) as usize];
+                            let sz = s_table[(sb + 2u32) as usize];
+                            if have == 1u32 && group != acc_group {
+                                partial[(out_base + acc_out * block_len + bn) as usize] += acc;
+                                acc = F::new(0.0_f32);
+                            }
+                            let val = g[(gbase + sx * three + nx) as usize]
+                                * g[(gbase + sy * three + g_per_axis + ny) as usize]
+                                * g[(gbase + sz * three + 2u32 * g_per_axis + nz) as usize];
+                            acc += term_coeff[ti as usize] * val;
+                            acc_out = out_comp;
+                            acc_group = group;
+                            have = 1u32;
+                            ti += 1u32;
+                        }
+                        if have == 1u32 {
+                            partial[(out_base + acc_out * block_len + bn) as usize] += acc;
+                        }
+                        ci += 1u32;
+                    }
+                    cj += 1u32;
+                }
+                nr += 1u32;
+            }
+            oi += 1u32;
+        }
+        pair += n_slots;
+    }
+}
+
+/// Apply the contraction coefficients to [`deriv34_pair_kernel`]'s partials.
+///
+/// One work item per output element. The sum walks `(ip, jp)` in the host's
+/// order and starts from zero, and a zero coefficient is skipped rather than
+/// multiplied — both because that is what `contract_family_block` does, and the
+/// point of this kernel is to be the same arithmetic in the same sequence.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn deriv34_weight_kernel<F: Float + CubeElement>(
+    partial: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    out: &mut Array<F>,
+    n_prim_i: u32,
+    n_prim_j: u32,
+    n_ctr_i: u32,
+    n_ctr_j: u32,
+    total: u32,
+    n_items: u32,
+    n_slots: u32,
+) {
+    let slot = (CUBE_POS as u32) * (CUBE_DIM as u32) + (UNIT_POS as u32);
+    let mut item = slot;
+    while item < n_items {
+        let k = item % total;
+        let cc = item / total;
+        let ci = cc / n_ctr_j;
+        let cj = cc % n_ctr_j;
+        let mut acc = F::new(0.0_f32);
+        let mut ip = 0u32;
+        while ip < n_prim_i {
+            let cci = coeff_i[(ip * n_ctr_i + ci) as usize];
+            if cci != F::new(0.0_f32) {
+                let mut jp = 0u32;
+                while jp < n_prim_j {
+                    let ccj = coeff_j[(jp * n_ctr_j + cj) as usize];
+                    if ccj != F::new(0.0_f32) {
+                        acc += cci * ccj * partial[((ip * n_prim_j + jp) * total + k) as usize];
+                    }
+                    jp += 1u32;
+                }
+            }
+            ip += 1u32;
+        }
+        out[(cc * total + k) as usize] = acc;
+        item += n_slots;
+    }
+}
+
+/// Everything one family's device dispatch needs that is not a scalar (§21).
+struct Deriv34Tables {
+    /// Five `u32` per op: `is_di, dst, src, i_off, j_off`.
+    ops: Vec<u32>,
+    /// Three `u32` per `s[]` entry: the g-buffer index read on x / y / z.
+    s_table: Vec<u32>,
+    /// Three `u32` per term: `group, out_component, s_index`.
+    term_idx: Vec<u32>,
+    /// One coefficient per term.
+    term_coeff: Vec<f64>,
+    /// g-buffers this family uses.
+    nbuf: u32,
+}
+
+/// Flatten a [`FamilySpec`] for the device (§21).
+///
+/// The three gout schemes become one term list. Terms that must sum before
+/// touching the output share a `group`; terms that must be added separately get
+/// one each. That is the whole difference between `dot_terms`
+/// (`out += t1 + t2 + t3`) and `linear_terms` (`out += c·t`, per term), and
+/// encoding it as grouping is what lets one device loop be exactly both.
+fn deriv34_tables(spec: &FamilySpec) -> Deriv34Tables {
+    let mut ops = Vec::with_capacity(spec.ops.len() * 5);
+    for op in spec.ops {
+        let (is_di, dst, src, i_off, j_off) = match *op {
+            Op::DI {
+                dst,
+                src,
+                i_off,
+                j_off,
+            } => (1u32, dst, src, i_off, j_off),
+            Op::DJ {
+                dst,
+                src,
+                i_off,
+                j_off,
+            } => (0u32, dst, src, i_off, j_off),
+        };
+        ops.extend_from_slice(&[is_di, dst as u32, src as u32, i_off, j_off]);
+    }
+
+    let mut s_table = Vec::with_capacity(spec.s_table.len() * 3);
+    for &(sx, sy, sz) in spec.s_table {
+        s_table.extend_from_slice(&[sx as u32, sy as u32, sz as u32]);
+    }
+
+    let mut term_idx = Vec::new();
+    let mut term_coeff = Vec::new();
+    if let Some(linear) = spec.linear_terms {
+        // Each term flushes on its own, as the host adds it on its own.
+        for (group, term) in linear.iter().enumerate() {
+            term_idx.extend_from_slice(&[group as u32, term.out as u32, term.s as u32]);
+            term_coeff.push(term.coeff);
+        }
+    } else if let Some(dot) = spec.dot_terms {
+        for (comp, terms) in dot.iter().enumerate() {
+            for &t in terms {
+                term_idx.extend_from_slice(&[comp as u32, comp as u32, t as u32]);
+                term_coeff.push(1.0);
+            }
+        }
+    } else {
+        for (comp, &perm) in spec.gout_perm.iter().enumerate() {
+            term_idx.extend_from_slice(&[comp as u32, comp as u32, perm as u32]);
+            term_coeff.push(1.0);
+        }
+    }
+
+    Deriv34Tables {
+        ops,
+        s_table,
+        term_idx,
+        term_coeff,
+        nbuf: spec.nbuf as u32,
+    }
+}
+
+/// The G-tensor geometry one family and shell pair implies (§21).
+///
+/// The same expressions `contract_deriv34_pair` computes — one place, so the
+/// scratch the host allocates and the extents the kernel indexes cannot drift.
+struct Deriv34Geometry {
+    nmax: u32,
+    j_top: u32,
+    dj: u32,
+    g_per_axis: u32,
+    nroots: u32,
+}
+
+fn deriv34_geometry(spec: &FamilySpec, li: u8, lj: u8) -> Deriv34Geometry {
+    let mut max_i_off = 0u32;
+    let mut max_j_off = 0u32;
+    for op in spec.ops {
+        let (io, jo) = match *op {
+            Op::DI { i_off, j_off, .. } | Op::DJ { i_off, j_off, .. } => (i_off, j_off),
+        };
+        max_i_off = max_i_off.max(io);
+        max_j_off = max_j_off.max(jo);
+    }
+    let i_top = li as u32 + max_i_off + 1;
+    let j_top = lj as u32 + max_j_off + 1;
+    let nmax = i_top + j_top;
+    Deriv34Geometry {
+        nmax,
+        j_top,
+        dj: nmax + 1,
+        g_per_axis: (nmax + 1) * (j_top + 1),
+        nroots: nmax / 2 + 1,
+    }
+}
+
+/// Cartesian exponent triples for `l`, flattened three `u32` per component, in
+/// [`cart_comps`]'s order — the order the contraction's `ci`/`cj` walk assumes.
+fn deriv34_cart_table(l: u8) -> Vec<u32> {
+    let mut out = Vec::with_capacity(ncart(l) * 3);
+    for (x, y, z) in cart_comps(l) {
+        out.extend_from_slice(&[x, y, z]);
+    }
+    out
+}
+
+/// Rys `PIE4 = pi/4`, passed into the fixed-order solvers as the 2e and grids
+/// kernels pass their own copies.
+const DERIV34_PIE4: f64 = 0.78539816339744827900_f64;
+
+/// Highest Rys order the device deriv34 kernel wires (§21).
+///
+/// One through five are the fixed-order polynomial solvers; six through twelve
+/// are `rys_roots_ext_dev`'s inline Wheeler/Jacobi entry. Twelve is where the
+/// host reference stops too (`HOST_RYS_NROOTS_CEILING_1E`), because above it
+/// libcint needs the quadmath path that the vendor build does not compile.
+pub const DERIV34_MAX_DEVICE_NROOTS: u32 = 12;
+
+/// Run one deriv3/deriv4 family for one shell pair on `client` (§21).
+///
+/// Two dispatches. The first gives every primitive pair its own work item and
+/// its own slab of `partial`; the second applies the contraction coefficients,
+/// one work item per output element. Splitting them is what keeps the
+/// accumulation order the host's — over origins and roots inside a pair, then
+/// over `(ip, jp)` in the weighting — without an atomic anywhere.
+#[allow(clippy::too_many_arguments)]
+fn run_deriv34_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    spec: &FamilySpec,
+    li: u8,
+    lj: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    origins: &[([f64; 3], f64)],
+) -> Vec<f64> {
+    let tables = deriv34_tables(spec);
+    let geom = deriv34_geometry(spec, li, lj);
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let total = spec.rank * nci * ncj;
+    let n_prim_i = exps_i.len();
+    let n_prim_j = exps_j.len();
+    let n_pairs = n_prim_i * n_prim_j;
+    let out_len = n_ctr_i * n_ctr_j * total;
+
+    let three = 3 * geom.g_per_axis as usize;
+    let g_stride = tables.nbuf as usize * three;
+
+    // One slot per primitive pair is the ceiling that matters; the width follows
+    // the backend's parallelism, as every other kernel here does.
+    let hw = crate::plane::launch_hardware(client);
+    let cube_dim = if hw.has_planes {
+        crate::plane::backend_plane_cube_dim::<R>(client)
+    } else {
+        CubeDim::new_1d(crate::plane::per_unit_width(client, n_pairs, 1, usize::MAX))
+    };
+    let per_cube = cube_dim.num_elems() as usize;
+    let cubes = if hw.has_planes {
+        crate::plane::grid_cube_count(client, n_pairs.div_ceil(per_cube.max(1)))
+    } else {
+        1
+    };
+    let n_slots = (cubes as usize * per_cube).max(1);
+
+    let origin_flat: Vec<f64> = origins
+        .iter()
+        .flat_map(|&(c, f)| [c[0], c[1], c[2], f])
+        .collect();
+    let cart_i = deriv34_cart_table(li);
+    let cart_j = deriv34_cart_table(lj);
+    let rys_tables = ext_rys_tables();
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let origins_h = client.create_from_slice(f64::as_bytes(&origin_flat));
+    let ops_h = client.create_from_slice(u32::as_bytes(&tables.ops));
+    let s_h = client.create_from_slice(u32::as_bytes(&tables.s_table));
+    let tidx_h = client.create_from_slice(u32::as_bytes(&tables.term_idx));
+    let tco_h = client.create_from_slice(f64::as_bytes(&tables.term_coeff));
+    let ci_h = client.create_from_slice(u32::as_bytes(&cart_i));
+    let cj_h = client.create_from_slice(u32::as_bytes(&cart_j));
+    let tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+    let g_h = client.empty(n_slots * g_stride * std::mem::size_of::<f64>());
+    let partial_h = client.empty(n_pairs * total * std::mem::size_of::<f64>());
+
+    let n_terms = (tables.term_idx.len() / 3) as u32;
+    let n_ops = (tables.ops.len() / 5) as u32;
+
+    macro_rules! launch_pairs {
+        ($nr:expr) => {
+            deriv34_pair_kernel::launch::<f64, R>(
+                client,
+                crate::plane::cube_count_1d(cubes),
+                cube_dim,
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), n_prim_i) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), n_prim_j) },
+                unsafe { ArrayArg::from_raw_parts(origins_h.clone(), origin_flat.len()) },
+                unsafe { ArrayArg::from_raw_parts(ops_h.clone(), tables.ops.len().max(1)) },
+                unsafe { ArrayArg::from_raw_parts(s_h.clone(), tables.s_table.len()) },
+                unsafe { ArrayArg::from_raw_parts(tidx_h.clone(), tables.term_idx.len()) },
+                unsafe { ArrayArg::from_raw_parts(tco_h.clone(), tables.term_coeff.len()) },
+                unsafe { ArrayArg::from_raw_parts(ci_h.clone(), cart_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(cj_h.clone(), cart_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(tab_h.clone(), EXT_TABLES_LEN) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), n_slots * g_stride) },
+                unsafe { ArrayArg::from_raw_parts(partial_h.clone(), n_pairs * total) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                DERIV34_PIE4,
+                2.0 * std::f64::consts::PI,
+                n_prim_j as u32,
+                n_pairs as u32,
+                origins.len() as u32,
+                n_ops,
+                n_terms,
+                li as u32,
+                lj as u32,
+                nci as u32,
+                ncj as u32,
+                geom.dj,
+                geom.g_per_axis,
+                geom.nmax,
+                geom.j_top,
+                spec.rank as u32,
+                n_slots as u32,
+                g_stride as u32,
+                $nr,
+            )
+        };
+    }
+
+    // One compiled program per Rys order; `nroots` has to be comptime because
+    // the fixed-order solvers and the extended entry both take it that way.
+    match geom.nroots {
+        1 => launch_pairs!(1u32),
+        2 => launch_pairs!(2u32),
+        3 => launch_pairs!(3u32),
+        4 => launch_pairs!(4u32),
+        5 => launch_pairs!(5u32),
+        6 => launch_pairs!(6u32),
+        7 => launch_pairs!(7u32),
+        8 => launch_pairs!(8u32),
+        9 => launch_pairs!(9u32),
+        10 => launch_pairs!(10u32),
+        11 => launch_pairs!(11u32),
+        _ => launch_pairs!(12u32),
+    }
+
+    // ── Weighting ────────────────────────────────────────────────────────────
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
+    let w_cube_dim = if hw.has_planes {
+        crate::plane::backend_plane_cube_dim::<R>(client)
+    } else {
+        CubeDim::new_1d(crate::plane::per_unit_width(client, out_len, 1, usize::MAX))
+    };
+    let w_per_cube = w_cube_dim.num_elems() as usize;
+    let w_cubes = if hw.has_planes {
+        crate::plane::grid_cube_count(client, out_len.div_ceil(w_per_cube.max(1)))
+    } else {
+        1
+    };
+    let w_slots = (w_cubes as usize * w_per_cube).max(1);
+    deriv34_weight_kernel::launch::<f64, R>(
+        client,
+        crate::plane::cube_count_1d(w_cubes),
+        w_cube_dim,
+        unsafe { ArrayArg::from_raw_parts(partial_h, n_pairs * total) },
+        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        n_prim_i as u32,
+        n_prim_j as u32,
+        n_ctr_i as u32,
+        n_ctr_j as u32,
+        total as u32,
+        out_len as u32,
+        w_slots as u32,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// Five-arm backend dispatch for [`run_deriv34_device`].
+#[allow(clippy::too_many_arguments)]
+fn run_deriv34_on_backend(
+    backend: &ResolvedBackend,
+    spec: &FamilySpec,
+    li: u8,
+    lj: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    origins: &[([f64; 3], f64)],
+) -> Vec<f64> {
+    macro_rules! run {
+        ($rt:ty, $client:expr) => {
+            run_deriv34_device::<$rt>(
+                $client, spec, li, lj, ri, rj, exps_i, exps_j, coeff_i, coeff_j, n_ctr_i, n_ctr_j,
+                origins,
+            )
+        };
+    }
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run!(cubecl::cpu::CpuRuntime, client),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run!(cubecl_wgpu::WgpuRuntime, client),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run!(cubecl_cuda::CudaRuntime, client),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run!(cubecl_hip::HipRuntime, client),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run!(cubecl_wgpu::WgpuRuntime, client),
+    }
+}
+
+/// [`contract_deriv34_block`] on the device (§21).
+///
+/// `None` when `op_name` is not a deriv34 family, or when the shell pair needs a
+/// Rys order past [`DERIV34_MAX_DEVICE_NROOTS`] — the caller then has the host
+/// reference to fall back to, which is also where the order ceiling is enforced
+/// for the whole family.
+#[allow(clippy::too_many_arguments)]
+pub fn contract_deriv34_block_device(
+    backend: &ResolvedBackend,
+    op_name: &str,
+    li: u8,
+    lj: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    origins: &[([f64; 3], f64)],
+) -> Option<Vec<f64>> {
+    let spec = family_spec(op_name)?;
+    if deriv34_geometry(&spec, li, lj).nroots > DERIV34_MAX_DEVICE_NROOTS {
+        return None;
+    }
+    Some(run_deriv34_on_backend(
+        backend, &spec, li, lj, ri, rj, exps_i, exps_j, coeff_i, coeff_j, n_ctr_i, n_ctr_j, origins,
+    ))
+}
+
+#[cfg(test)]
+#[cfg(feature = "cpu")]
+mod device_tests {
+    use super::*;
+
+    fn cpu_backend() -> ResolvedBackend {
+        ResolvedBackend::from_intent(&cintx_runtime::BackendIntent {
+            backend: cintx_runtime::BackendKind::Cpu,
+            ..Default::default()
+        })
+        .expect("cpu backend")
+    }
+
+    /// Every family the device kernel is expected to serve.
+    ///
+    /// The full `family_spec` list: the two X2C parents, their two derivative
+    /// pairs, the two deriv3 (rank 27) families and the three deriv4 (rank 81)
+    /// ones. One name per distinct [`FamilySpec`] — the `nuc`/`rinv` pairs share
+    /// a spec and differ only in the origin list the caller builds.
+    const FAMILIES: &[&str] = &[
+        "pnucp",
+        "ippnucp",
+        "ippnucpip",
+        "ipippnucp",
+        "ipipipnuc",
+        "ipipnucip",
+        "ipipipiprinv",
+        "ipiprinvipip",
+        "ipipiprinvip",
+    ];
+
+    /// Device-vs-host cross-check on the CPU runtime (§21).
+    ///
+    /// The host evaluator is the reference these families were written against,
+    /// so this is the gate that says the port is the same arithmetic: every
+    /// family, several `(l_i, l_j)` pairs, a contracted shell (`nprim > 1`,
+    /// `nctr > 1`, so the weighting kernel is exercised rather than bypassed),
+    /// and two Coulomb centers with different charge factors.
+    ///
+    /// Tolerance is `atol = 1e-12 / rtol = 1e-10`, matching the grids
+    /// device-vs-host checks. Orders one through five use the same polynomial
+    /// solvers on both sides; six and up use `rys_roots_ext_dev` against
+    /// `rys_roots_host`'s Wheeler path, which is where the tolerance rather than
+    /// bit-identity earns its keep.
+    #[test]
+    fn device_matches_host_for_every_deriv34_family() {
+        let backend = cpu_backend();
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.55_f64, -0.4, 0.7];
+        // Two primitives and two contractions on each side: the weighting
+        // kernel has four `(ip, jp)` pairs to sum and four output blocks.
+        let exps_i = [1.7_f64, 0.42];
+        let exps_j = [2.3_f64, 0.61];
+        let coeff_i = [0.6_f64, -0.25, 0.31, 0.87];
+        let coeff_j = [0.44_f64, 0.72, -0.19, 0.53];
+        let origins = [
+            ([0.31_f64, -0.22, 0.64], -3.0_f64),
+            ([-0.8, 0.5, -0.3], 1.0),
+        ];
+
+        let mut checked = 0usize;
+        let mut worst = 0.0_f64;
+        for op in FAMILIES {
+            // `(3, 3)` on a rank-81 family reaches Rys order six, which is the
+            // `rys_roots_ext_dev` arm — the one whose absence is why these
+            // families were routed to the host in the first place. Covering it
+            // is the point of going this high.
+            for &(li, lj) in &[
+                (0u8, 0u8),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 1),
+                (2, 2),
+                (3, 2),
+                (3, 3),
+            ] {
+                let host = contract_deriv34_block(
+                    op, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, 2, 2, &origins,
+                )
+                .expect("host family");
+                let dev = contract_deriv34_block_device(
+                    &backend, op, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, 2, 2,
+                    &origins,
+                )
+                .expect("device family");
+                assert_eq!(host.len(), dev.len(), "{op} li={li} lj={lj}: length");
+                let mut any_nonzero = false;
+                for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+                    if h.abs() > 1e-18 {
+                        any_nonzero = true;
+                    }
+                    let diff = (h - d).abs();
+                    worst = worst.max(diff);
+                    assert!(
+                        diff <= 1e-12 + 1e-10 * h.abs(),
+                        "{op} li={li} lj={lj} idx={idx}: host={h:.17e} dev={d:.17e} \
+                         diff={diff:.3e}"
+                    );
+                }
+                assert!(
+                    any_nonzero,
+                    "{op} li={li} lj={lj}: host reference is all zero — the case proves nothing"
+                );
+                checked += 1;
+            }
+        }
+        println!("deriv34 device-vs-host: {checked} (family, l) cases, worst |diff| = {worst:.3e}");
+        assert!(checked >= FAMILIES.len() * 8);
+    }
+
+    /// The same cross-check on a real AMD GPU (§21).
+    ///
+    /// The CPU-runtime test above proves the *arithmetic*; this one proves the
+    /// kernel survives HIP codegen, which is a separate question here — the
+    /// 3c2e/2c2e vector VRR compiles fine on the CPU runtime and is rejected
+    /// outright by HIP at an odd `Vector<f64, 3>` width (`__align__(24)`), so a
+    /// kernel that has only ever been type-checked for ROCm has not been shown
+    /// to run on it. `#[ignore]` + `CINTX_ROCM_ORACLE=1` gated, as the other
+    /// GPU oracles here are.
+    #[cfg(feature = "rocm")]
+    #[test]
+    #[ignore = "needs a ROCm device; run with CINTX_ROCM_ORACLE=1 --ignored"]
+    fn device_matches_host_on_rocm() {
+        assert_eq!(
+            std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+            Ok("1"),
+            "ROCm oracle must be invoked with CINTX_ROCM_ORACLE=1"
+        );
+        let backend = ResolvedBackend::from_intent(&cintx_runtime::BackendIntent {
+            backend: cintx_runtime::BackendKind::Rocm,
+            ..Default::default()
+        })
+        .expect("rocm backend");
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.55_f64, -0.4, 0.7];
+        let exps_i = [1.7_f64, 0.42];
+        let exps_j = [2.3_f64, 0.61];
+        let coeff_i = [0.6_f64, -0.25, 0.31, 0.87];
+        let coeff_j = [0.44_f64, 0.72, -0.19, 0.53];
+        let origins = [
+            ([0.31_f64, -0.22, 0.64], -3.0_f64),
+            ([-0.8, 0.5, -0.3], 1.0),
+        ];
+        let mut worst = 0.0_f64;
+        let mut checked = 0usize;
+        for op in FAMILIES {
+            for &(li, lj) in &[(0u8, 0u8), (1, 1), (2, 2), (3, 3)] {
+                let host = contract_deriv34_block(
+                    op, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, 2, 2, &origins,
+                )
+                .expect("host family");
+                let dev = contract_deriv34_block_device(
+                    &backend, op, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, 2, 2,
+                    &origins,
+                )
+                .expect("device family");
+                for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+                    let diff = (h - d).abs();
+                    worst = worst.max(diff);
+                    assert!(
+                        diff <= 1e-12 + 1e-10 * h.abs(),
+                        "{op} li={li} lj={lj} idx={idx}: host={h:.17e} dev={d:.17e}"
+                    );
+                }
+                checked += 1;
+            }
+        }
+        println!("deriv34 rocm device-vs-host: {checked} cases, worst |diff| = {worst:.3e}");
+    }
+
+    /// The order ceiling is a refusal, not a wrong answer (§21).
+    #[test]
+    fn a_shell_pair_past_the_device_rys_ceiling_is_declined() {
+        let backend = cpu_backend();
+        // `nroots = nmax/2 + 1` with `nmax = (li + max_i_off + 1) + (lj + 1)`;
+        // rank-81 `ipipipiprinv` carries `max_i_off = 3`, so `l_i = l_j = 12`
+        // is far past twelve roots and must come back `None` rather than
+        // indexing a solver that is not wired.
+        let out = contract_deriv34_block_device(
+            &backend,
+            "ipipipiprinv",
+            12,
+            12,
+            [0.0; 3],
+            [0.5, 0.0, 0.0],
+            &[1.0],
+            &[1.0],
+            &[1.0],
+            &[1.0],
+            1,
+            1,
+            &[([0.2, 0.1, 0.3], 1.0)],
+        );
+        assert!(out.is_none(), "past the wired ceiling must decline");
+        assert!(
+            contract_deriv34_block_device(
+                &backend,
+                "not_a_deriv34_family",
+                0,
+                0,
+                [0.0; 3],
+                [0.0; 3],
+                &[1.0],
+                &[1.0],
+                &[1.0],
+                &[1.0],
+                1,
+                1,
+                &[([0.0; 3], 1.0)],
+            )
+            .is_none(),
+            "an unknown operator must decline"
+        );
+    }
+}
