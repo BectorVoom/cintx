@@ -20,6 +20,9 @@
 //!                    the core count means load imbalance or contention, not
 //!                    arithmetic (a different compiled program per width).
 //! - `naive`        — `set_staged_contraction(false)`: the contraction arm.
+//! - `probe:no-build` / `probe:no-roots` / `probe:no-ctr` — the G build, the
+//!                    Rys roots, or the contraction skipped (output undefined):
+//!                    the per-phase attribution, §22.
 //! - `balance=…`    — `set_two_e_balance`: uniform vs cost-balanced per-unit
 //!                    partition (K2), when the kernel carries it.
 //! - `xform=host`   — `set_device_transform(Some(false))`: the transform back
@@ -40,7 +43,9 @@
 //!                    restores bit-identity, on either decomposition, since the
 //!                    split is the only thing in the 2e path that re-associates
 //!                    a sum (§17).
-//! - `coop=lane0`   — GPU only: the pre-S3 G build.
+//! - `coop=lane0`   — GPU only: the pre-S3 G build (lane 0 of each sub-group).
+//! - `gslab=global` — GPU only: the per-slot global G slab, one primitive
+//!                    quartet per cube — the shape before B1 (§22).
 //!
 //! Memory: the planned-bytes fields of `BatchExecutionStats` for every
 //! variant, plus backend residency when `CINTX_BATCH_MEMORY_PROFILE=1`.
@@ -70,7 +75,7 @@ use cintx_cubecl::backend::ResolvedBackend;
 use cintx_cubecl::{
     ResidentTwoEBasis, TwoEBatchOptions, TwoEBatchOutput, TwoEBatchStats as BatchExecutionStats,
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_work_list,
-    set_contraction_probe, set_cooperative_build_split, set_device_transform,
+    set_contraction_probe, set_cooperative_build_split, set_device_transform, set_shared_g_enabled,
     set_staged_contraction, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
     set_two_e_nroots_fusion,
 };
@@ -185,6 +190,7 @@ fn reset() {
     set_two_e_kl_split(None);
     set_two_e_nroots_fusion(None);
     set_device_transform(None);
+    set_shared_g_enabled(true);
 }
 
 fn resident(backend: &ResolvedBackend, shells: &[cintx_cubecl::BatchShell]) -> ResidentTwoEBasis {
@@ -250,6 +256,24 @@ fn variants() -> Vec<Variant> {
         limited: false,
     });
     out.push(Variant {
+        name: "probe:no-build",
+        apply: |b, s| {
+            reset();
+            cintx_cubecl::set_contraction_mode(3);
+            resident(b, s)
+        },
+        limited: false,
+    });
+    out.push(Variant {
+        name: "probe:no-roots",
+        apply: |b, s| {
+            reset();
+            cintx_cubecl::set_contraction_mode(4);
+            resident(b, s)
+        },
+        limited: false,
+    });
+    out.push(Variant {
         name: "probe:no-ctr",
         apply: |b, s| {
             reset();
@@ -264,6 +288,19 @@ fn variants() -> Vec<Variant> {
             apply: |b, s| {
                 reset();
                 set_cooperative_build_split(false);
+                resident(b, s)
+            },
+            limited: false,
+        });
+        // GPU only: the cooperative G tensor back in the per-slot global slab,
+        // one primitive quartet per cube — the shape before B1 (plan §22). A
+        // different *compiled program* (`shared_tier` is comptime), prewarmed
+        // like `fuse=off`.
+        out.push(Variant {
+            name: "gslab=global",
+            apply: |b, s| {
+                reset();
+                set_shared_g_enabled(false);
                 resident(b, s)
             },
             limited: false,
@@ -500,7 +537,7 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
         );
     }
     println!(
-        "  launches={} classes={} chunks={} kl_split={} prim evaluated/total={}/{} dispatch={:.1}ms transform={:.1}ms",
+        "  launches={} classes={} chunks={} kl_split={} prim evaluated/total={}/{} dispatch={:.1}ms transform={:.1}ms device-peak={:.1}MiB",
         base.stats.kernel_launch_count,
         base.stats.launch_classes,
         base.stats.chunk_count,
@@ -509,6 +546,15 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
         base.stats.primitive_quartets_total,
         base.stats.dispatch_ns as f64 / 1e6,
         base.stats.host_transform_ns as f64 / 1e6,
+        base.stats.device_bytes_in_use_peak as f64 / 1048576.0,
+    );
+    println!(
+        "  device: out+partials peak={:.1}MiB  g+ctr slab peak={:.1}MiB (total {:.1}MiB)  tables={:.1}MiB  allocs={}",
+        base.stats.device_out_bytes_peak as f64 / 1048576.0,
+        base.stats.device_g_slab_bytes_peak as f64 / 1048576.0,
+        base.stats.device_g_slab_bytes_total as f64 / 1048576.0,
+        base.stats.device_table_bytes_total as f64 / 1048576.0,
+        base.stats.device_planned_allocs,
     );
 
     let (_, over) = vendor_gap(&vendor, &base.values);

@@ -66,6 +66,18 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
 /// three of the four do — while staying cheap enough to run in CI.
 const COOPERATIVE_LANES: u32 = 4;
 
+/// Lanes per cube for the block gate (B1, plan §22): wide enough that a cube
+/// builds several primitive quartets at once — at twelve lanes an
+/// `nroots == 1` class blocks four and `nroots == 2` two — and no wider,
+/// because on the CPU runtime every lane is an OS thread spinning at each of
+/// the block's four barriers (24 lanes took five minutes).
+const COOPERATIVE_BLOCK_LANES: u32 = 12;
+
+/// The cooperative cube width [`evaluate_pinned`] pins; the block gate widens
+/// it for its own run and restores it.
+static PINNED_LANES: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(COOPERATIVE_LANES);
+
 fn cpu_backend() -> ResolvedBackend {
     ResolvedBackend::from_intent(&BackendIntent {
         backend: BackendKind::Cpu,
@@ -108,7 +120,7 @@ fn evaluate_pinned(
     set_two_e_cube_dim(if per_unit {
         None
     } else {
-        Some(COOPERATIVE_LANES)
+        Some(PINNED_LANES.load(std::sync::atomic::Ordering::Relaxed))
     });
     // The residency is tagged by backend, not by decomposition, but it is
     // rebuilt per arm anyway so neither arm can inherit the other's device
@@ -251,6 +263,35 @@ fn cooperative_g_build_is_bit_identical_on_gth() {
         println!("\n{label}: {} quartets, one per class", list.len());
         assert_arms_agree(&label, &arrays, &list);
     }
+}
+
+/// B1 (plan §22): a cube wide enough to build a *block* of primitive quartets
+/// at once — one per lane sub-group, into the shared tier's sub-slabs — and
+/// then contract the block in row order. The claim is the same as S3's: every
+/// element is still its own expression over the same operands, and the
+/// accumulation order is the serial walk's, so the block is bit-identical to
+/// the per-unit arm. The four-lane gates above never reach a block wider than
+/// one; this one does, on the CPU runtime, where both arms can be pinned.
+#[cfg(feature = "gth")]
+#[test]
+fn cooperative_block_is_bit_identical_on_gth() {
+    let _serial = serial();
+    PINNED_LANES.store(
+        COOPERATIVE_BLOCK_LANES,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    for (label, arrays) in def2_fixtures::gth_workloads() {
+        if !label.starts_with("H2O") {
+            continue;
+        }
+        let list = one_quartet_per_class(&arrays, 2, 6);
+        println!(
+            "\n{label}: {} quartets, one per class, {COOPERATIVE_BLOCK_LANES} lanes",
+            list.len()
+        );
+        assert_arms_agree(&label, &arrays, &list);
+    }
+    PINNED_LANES.store(COOPERATIVE_LANES, std::sync::atomic::Ordering::Relaxed);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -499,7 +540,7 @@ fn split_g_build_beats_lane0_on_rocm() {
         // `g_in_shared` is comptime, so the shared-slab setting is a second
         // compiled program: warm both before timing either, or the first pass
         // measures the JIT rather than the kernel.
-        for shared in [false, true] {
+        for shared in [true, false] {
             cintx_cubecl::set_shared_g_enabled(shared);
             let _ = evaluate_2e_quartet_batch_resident(&backend, &resident, &list)
                 .expect("rocm warm-up");
@@ -514,7 +555,9 @@ fn split_g_build_beats_lane0_on_rocm() {
         for _ in 0..repeats {
             for mode in 0..3u32 {
                 set_cooperative_build_split(mode != 0);
-                cintx_cubecl::set_shared_g_enabled(mode == 2);
+                // B1 (§22): the shared tier is the default; mode 2 is the
+                // global-slab arm it replaced.
+                cintx_cubecl::set_shared_g_enabled(mode != 2);
                 let start = std::time::Instant::now();
                 let out = evaluate_2e_quartet_batch_resident(&backend, &resident, &list)
                     .expect("rocm 2e batch");
@@ -532,7 +575,7 @@ fn split_g_build_beats_lane0_on_rocm() {
             }
         }
         set_cooperative_build_split(true);
-        cintx_cubecl::set_shared_g_enabled(false);
+        cintx_cubecl::set_shared_g_enabled(true);
 
         let identical = lane0_values.len() == split_values.len()
             && lane0_values

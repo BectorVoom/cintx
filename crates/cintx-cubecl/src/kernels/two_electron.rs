@@ -1000,7 +1000,8 @@ fn vrr_build_axes_roots<F: Float, N: Size>(
 ///   di,dk,dl,dj,g_size,nmax,mmax,g2d_ijmax,g2d_klmax`;
 /// - `class_factor` — one `common_factor` per class.
 ///
-/// `g` is a per-slot slab of `3 * g_size_max` over the group; the Rys roots and weights are
+/// `g` is a per-slot slab of `3 * g_size_max` over the group, bound only by
+/// a dispatch whose `shared_tier` is `0` (B1, §22); the Rys roots and weights are
 /// **kernel-local** arrays (every read of them sits inside the same
 /// `lane == 0` region that writes them), so they need neither a buffer nor
 /// a per-slot offset.
@@ -1045,6 +1046,7 @@ fn vrr_build_axes_roots<F: Float, N: Size>(
 /// | the vector VRR width (§12) | it folds the roots into lanes, which is free where a slot *is* one lane and costs S3's `3·nroots` tasks where a slot is a cube |
 /// | [`acc_capacity`] 256 vs 64 slots | private storage is per work item, and a 256-wide cube holding 256 slots each would spill |
 /// | cube width and count | `cooperative_cube_dim` sizes a cube from the Cartesian block; `per_unit_cube_dim` sizes a thread pool from the rows |
+/// | the G tensor's home and the block of primitive quartets per cube (B1, §22) | shared memory is per cube, so the cooperative arm keeps the G tensor in a comptime-tiered `SharedMemory` region and builds `b_max` primitive quartets at once, one per lane sub-group; a unit has no cube to share with, so the per-unit arm keeps its global slab and a block of one — the contraction still walks the block in row order, so the sums are the same sums |
 ///
 /// What is deliberately *not* on that list any more: which Rys orders share a
 /// dispatch (F1, §15 — both fuse), whether a quartet's ket range is split (G1,
@@ -1099,7 +1101,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     // own program.
     #[comptime] nr_max: u32,
     #[comptime] per_unit: u32,
-    #[comptime] g_in_shared: u32,
+    #[comptime] shared_tier: u32,
     #[comptime] row_stride: u32,
 ) {
     let cube_pos = CUBE_POS as u32;
@@ -1135,95 +1137,69 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     let lane = unit_pos * coop;
     let lanes = (cube_dim - 1u32) * coop + 1u32;
 
-    // ── S3: who builds the G tensor ──────────────────────────────────────
+    // ── S3 / B1: who builds the G tensor ──────────────────────────────────
     //
-    // `split` (the default) hands the `3 * nroots` independent `(axis, root)`
-    // slices out across the cube; `lane0` restores the shape S3 replaced,
-    // where lane 0 built the whole tensor and the rest of the cube waited at
-    // the barrier. A runtime scalar rather than a comptime one, for the
-    // reason `accumulator_slots_max` gives: an A/B that recompiled the kernel
-    // would be measuring the JIT as much as the change.
-    //
-    // `builds` is whether this lane takes any slice at all; `build_lane` and
-    // `build_lanes` are its residue and the stride through the task space.
-    // Under `lane0` that is lane 0 taking every task at stride one. Under the
-    // per-unit decomposition all three collapse to the same values whichever
-    // mode is set, so the switch cannot perturb the CPU default.
-    // Rebased onto plain `u32` rather than initialised from `lane`/`lanes`:
-    // those carry the builtins' `NativeExpand` type, which will not unify with
-    // the `u32` literals the `lane0` arm assigns.
-    let mut builds: u32 = 1u32;
-    let mut build_lane = 0u32;
-    build_lane += lane;
-    let mut build_lanes = 0u32;
-    build_lanes += lanes;
-    if coop_build == 0u32 {
-        build_lane = 0u32;
-        build_lanes = 1u32;
-        if lane != 0u32 {
-            builds = 0u32;
-        }
-    }
+    // Decided per quartet now, inside the loop below: the lanes of a cube are
+    // cut into `b_max` sub-groups (B1, plan §22), one primitive quartet each,
+    // and the S3 `(axis, root)` ownership — `split` by default, `lane0` for
+    // the A/B — is taken *within* a sub-group. Both collapse to "one group of
+    // one lane, owning everything" under the per-unit decomposition.
 
-    // Per-slot G-tensor slab: slot `s` owns `g[s*g_stride .. s*g_stride + 3*g_size]`,
-    // so concurrent slots never alias. `g_stride >= 3 * g_size` is padded by the
-    // host to a cache line: under `per_unit == 1` the slots are concurrent OS
-    // threads writing the G tensor in the innermost loop, and unpadded slabs of
-    // a low-`l` class are only a few words apart — pure false sharing.
-    // `g_size` is now per-class (Task 35-M1), so only the slab base can be
-    // hoisted; the y/z planes are located inside the quartet loop.
-    // ── S3: the G tensor in shared memory, when the class fits ────────────
+    // ── B1: the G tensor's home — a tiered shared-memory region, or the
+    //        per-slot global slab ──────────────────────────────────────────
     //
-    // The Rys recurrences read and write this slab in their innermost loops.
-    // In the cooperative decomposition it has always lived in *global* memory,
-    // which on a GPU is the slowest resource the kernel touches and the first
-    // thing to fix; on-chip shared memory is the natural home for a scratch
-    // buffer one workgroup owns for the length of a quartet.
+    // The Rys recurrences read and write the G tensor in their innermost
+    // loops, and every step of a recurrence depends on the one before it. In
+    // the cooperative decomposition that slab lived in *global* memory, so a
+    // `(pp|pp)` primitive quartet was a chain of a few dozen dependent
+    // global-memory round trips on nine lanes of a ninety-six-lane cube
+    // (plan §22.1). Shared memory is where such a chain belongs.
     //
-    // The choice is comptime, so a dispatch compiles exactly one of the two and
-    // pays no runtime branch for it. The host sets `g_in_shared` only when the
-    // dispatch's widest class fits [`SHARED_G_SLOTS`] *and* the backend reports
-    // room for it; every wider class keeps the global slab it always had.
+    // `shared_tier` is the comptime extent of the shared G region in `f64`
+    // slots, `0` for the global slab. It is *tiered* rather than sized to the
+    // class ([`SHARED_G_TIERS`]): `SharedMemory::new` takes a comptime extent,
+    // so a per-class size would be a program per class — the merge that
+    // Task 35-M1 undid — while a single 48 KiB allocation admits one workgroup
+    // per compute unit and was measured at 0.31x–0.57x (§22.1). A tier is the
+    // smallest of three that holds the dispatch's widest class, and every
+    // narrower class in the dispatch fills the rest of it with *more
+    // primitive quartets in flight* (`b_max` below), which is what buys the
+    // latency back.
+    //
+    // The region's first [`G_META_SLOTS`] entries carry, per primitive
+    // quartet of the block in flight, the state its builder found it in
+    // (screened out, under tolerance, live); the sub-slabs follow.
     //
     // `Slice<F, ReadWrite>` is what makes this a selection rather than a second
     // copy of the recurrences: `Array` and `SharedMemory` both produce one, so
-    // the ~700 lines below are written once and bind whichever they were given.
-    // The capacity is written inline rather than through a `const fn`: the
-    // isolation probe in `shared_memory::tests` establishes that this shape
-    // lowers correctly, and a helper call inside `comptime!` is one more thing
-    // between the source and that evidence.
-    //
-    // Every access to the G tensor below must go through `g_slab`, never
-    // through the `g` parameter. Indexing `g` directly still compiles — it is a
-    // live kernel argument — and is correct only in the global configuration,
-    // where `g_slab` aliases it. Under `g_in_shared` a stray `g[..]` splits the
-    // recurrence across two buffers and reads uninitialised LDS. That is what
-    // `.planning/notes/rocm-shared-memory-miscompile.md` records.
-    let mut shared_g = SharedMemory::<F>::new(comptime!(if g_in_shared == 1u32 {
-        SHARED_G_SLOTS
+    // the recurrences below are written once and bind whichever they were
+    // given. Every access to the G tensor below must go through `g_slab`,
+    // never through the `g` parameter: indexing `g` directly still compiles
+    // and is correct only in the global configuration, where `g_slab` aliases
+    // it. That is what `.planning/notes/rocm-shared-memory-miscompile.md`
+    // records.
+    let mut shared_g = SharedMemory::<F>::new(comptime!(if shared_tier > 0u32 {
+        (shared_tier + G_META_SLOTS) as usize
     } else {
         1usize
     }));
-    let mut g_slab = if comptime!(g_in_shared == 1u32) {
+    let mut g_slab = if comptime!(shared_tier > 0u32) {
         shared_g.to_slice_mut()
     } else {
         g.to_slice_mut()
     };
 
-    // Shared memory is per cube, so the cooperative slab is the whole of it and
-    // the offset is zero; the global slab is one per slot and is indexed.
-    // Written as arithmetic on a comptime-folded flag rather than as a
-    // conditional assignment, for the same reason `coop`/`punit` above are:
-    // the `if comptime!` form mutating a runtime-initialised variable is not a
-    // shape this frontend is reliable on.
-    // Written as arithmetic on a comptime-folded flag rather than as a
-    // conditional assignment, for the same reason `coop`/`punit` above are.
-    let global_slab = if comptime!(g_in_shared == 1u32) {
+    // Shared memory is per cube, so the cooperative region starts after its
+    // meta slots; the global slab is one per slot and is indexed. Written as
+    // arithmetic on a comptime-folded flag rather than as a conditional
+    // assignment, for the same reason `coop`/`punit` above are.
+    let global_slab = if comptime!(shared_tier > 0u32) {
         0u32
     } else {
         1u32
     };
-    let gx_off = slot * g_stride * global_slab;
+    let in_shared = 1u32 - global_slab;
+    let slab_base = slot * g_stride * global_slab + comptime!(G_META_SLOTS) * in_shared;
 
     // Rys roots/weights are written and read entirely inside the `lane == 0`
     // region below, so they are per-unit private storage rather than buffers.
@@ -1330,9 +1306,6 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         let nroots = class_shape[(srow + 14u32) as usize];
         let common_factor = class_factor[cls as usize];
 
-        let gy_off = gx_off + g_size;
-        let gz_off = gx_off + 2u32 * g_size;
-
         let nfi = (li + 1u32) * (li + 2u32) / 2u32;
         let nfj = (lj + 1u32) * (lj + 2u32) / 2u32;
         let nfk = (lk + 1u32) * (lk + 2u32) / 2u32;
@@ -1398,7 +1371,9 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         // changed" detectable on a compacted list. Every quantity here is
         // cube-uniform (every lane walks the same rows), so the branches stay
         // convergent.
-        let use_staged = (!is_uncontracted) && (ctr_mode == 1u32);
+        // Modes 3 and 4 are attribution probes on the *staged* path (see
+        // `set_contraction_mode`): they keep its bookkeeping and skip a phase.
+        let use_staged = (!is_uncontracted) && (ctr_mode == 1u32 || ctr_mode >= 3u32);
         // `lane`/`lanes` carry the builtin's `NativeExpand` type, which does
         // not unify with a cube helper's `u32` parameter; rebased onto plain
         // values here, once per quartet.
@@ -1462,6 +1437,102 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
             sync_cube();
         }
 
+        // ibase/kbase-selected reference centers and the HRR displacement
+        // vectors rirj / rkrl: properties of the quartet's centres, so they
+        // are formed once here rather than once per primitive quartet.
+        let mut rx_ij_x = rjx;
+        let mut rx_ij_y = rjy;
+        let mut rx_ij_z = rjz;
+        let mut rirjx = rjx - rix;
+        let mut rirjy = rjy - riy;
+        let mut rirjz = rjz - riz;
+        if comptime!(ibase == 1u32) {
+            rx_ij_x = rix;
+            rx_ij_y = riy;
+            rx_ij_z = riz;
+            rirjx = rix - rjx;
+            rirjy = riy - rjy;
+            rirjz = riz - rjz;
+        }
+        let mut rx_kl_x = rlx;
+        let mut rx_kl_y = rly;
+        let mut rx_kl_z = rlz;
+        let mut rkrlx = rlx - rkx;
+        let mut rkrly = rly - rky;
+        let mut rkrlz = rlz - rkz;
+        if comptime!(kbase == 1u32) {
+            rx_kl_x = rkx;
+            rx_kl_y = rky;
+            rx_kl_z = rkz;
+            rkrlx = rkx - rlx;
+            rkrly = rky - rly;
+            rkrlz = rkz - rlz;
+        }
+
+        // ── B1: primitive quartets in flight per cube (plan §22) ──────────
+        //
+        // A cube's lanes are cut into `b_max` sub-groups of `sg` lanes. Each
+        // sub-group builds one primitive quartet's G tensor into its own
+        // sub-slab of the shared region, `b_max` of them at once, and then the
+        // whole cube contracts the block in *row order* — the same primitive
+        // quartets summed into the same elements in the same sequence, so the
+        // result is bit-identical to the one-at-a-time walk. `b_max` is bounded
+        // by what the tier holds, by giving every `(axis, root)` VRR task of a
+        // sub-group its own lane, and by [`B_MAX`]. It is one wherever the G
+        // tensor is global — the per-unit decomposition, and a class too wide
+        // for any tier — which is exactly the shape that was there before.
+        //
+        // Within a sub-group the S3 ownership is `task % own_lanes == own_lane`
+        // over the sub-group's lanes (`lane0` mode: sub-lane 0 owns every task).
+        // `builds` is whether this lane takes any task at all: not under
+        // `lane0` off sub-lane 0, and not in a sub-group past `b_max` — the
+        // lanes left over when `lanes` is not a multiple of `sg`.
+        let g3 = 3u32 * g_size;
+        let tier_slots = comptime!(shared_tier);
+        let b_cap = comptime!(B_MAX);
+        let mut b_max: u32 = 1u32;
+        if comptime!(shared_tier > 0u32) {
+            b_max = tier_slots / g3;
+            let by_lanes = lanes_u / (3u32 * nroots);
+            if by_lanes < b_max {
+                b_max = by_lanes;
+            }
+            if b_max > b_cap {
+                b_max = b_cap;
+            }
+            if b_max < 1u32 {
+                b_max = 1u32;
+            }
+        }
+        let sg = lanes_u / b_max;
+        let sub = lane_u / sg;
+        let sub_lane = lane_u - sub * sg;
+        let mut builds: u32 = 1u32;
+        let mut own_lane = sub_lane;
+        let mut own_lanes = sg;
+        if coop_build == 0u32 {
+            own_lane = 0u32;
+            own_lanes = 1u32;
+            if sub_lane != 0u32 {
+                builds = 0u32;
+            }
+        }
+        if sub >= b_max {
+            builds = 0u32;
+        }
+        // Roots per build task. On a group of one lane — the per-unit arm,
+        // and `lane0` — a task takes every root, so the innermost loop of
+        // every chain is the contiguous root index it always was on the CPU
+        // (§22.5 measured the strided form at 1.2x–1.3x there); where lanes
+        // share a sub-group a task is one root, the finer split.
+        let mut rw = 1u32;
+        if own_lanes == 1u32 {
+            rw = nroots;
+        }
+        let nrg = (nroots + rw - 1u32) / rw;
+        // This sub-group's build sub-slab, and its three axis planes.
+        let g_off = slab_base + sub * g3;
+
         // ── Primitive-pair loop (S1) ──────────────────────────────────────
         //
         // Ket outer, bra inner: libcint's own nesting (`cint2e.c:192-230`).
@@ -1481,7 +1552,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         // pair-level `expcutoff` screen: a row that is present survived it.
         // The two tests below are the vendor's remaining two, and they are
         // uniform across a cube (every lane of a cooperative launch walks the
-        // same `kl` and `ij`), so the barriers inside stay convergent.
+        // same `kl` and the same block of `ij` rows), so the barriers inside
+        // stay convergent.
         let ij_slot = si * nbas + sj;
         let ij_start = pair_offset[ij_slot as usize];
         let ij_stop = pair_offset[(ij_slot + 1u32) as usize];
@@ -1525,361 +1597,367 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                 let akl = ak + al;
                 // `cint2e.c:212`: what is left of the budget for a bra pair.
                 let eijcutoff = expcutoff - ccekl;
+                let rklrxx = rklx - rx_kl_x;
+                let rklrxy = rkly - rx_kl_y;
+                let rklrxz = rklz - rx_kl_z;
 
+                // The bra rows in blocks of `b_max` (B1). A block's build
+                // phase runs its rows side by side, one per sub-group; its
+                // contraction phase walks them in row order.
                 let mut ij_row = ij_start;
                 while ij_row < ij_stop {
-                    let ij_d = ij_row * comptime!(PAIR_DATA_STRIDE as u32);
-                    let cceij = pair_data[(ij_d + 4u32) as usize];
-                    // `cint2e.c:232` — this bra pair cannot reach the budget.
-                    if cceij <= eijcutoff {
-                        let rijx = pair_data[ij_d as usize];
-                        let rijy = pair_data[(ij_d + 1u32) as usize];
-                        let rijz = pair_data[(ij_d + 2u32) as usize];
-                        let fac_ij = pair_data[(ij_d + 3u32) as usize];
-                        let ij_i = ij_row * comptime!(PAIR_INDEX_STRIDE as u32);
-                        let pi = pair_index[ij_i as usize];
-                        let pj = pair_index[(ij_i + 1u32) as usize];
-                        // A new `j` primitive: fold `gctri` into `gctrj`.
-                        if use_staged && pj != prev_pj {
-                            if iempty == 0u32 {
-                                stage_contract::<F>(
-                                    ctr, ctr_i_off, ctr_j_off, nctr_i, coeffs, coff_j, prev_pj,
-                                    nctr_j, block_len, lane_u, lanes_u, jempty,
-                                );
-                                jempty = 0u32;
-                                iempty = 1u32;
+                    let mut nb = ij_stop - ij_row;
+                    if nb > b_max {
+                        nb = b_max;
+                    }
+
+                    // ── Build phase: sub-group `sub` takes row `ij_row + sub` ──
+                    //
+                    // `state` is what this sub-group found its row to be:
+                    // 0 — the bra pair cannot reach the budget (`cint2e.c:232`),
+                    //     nothing happens for it;
+                    // 1 — the pair is in, but the primitive quartet's scale
+                    //     factor is under `prim_tol`: the staged contraction's
+                    //     bookkeeping still runs for it, exactly as before,
+                    //     and nothing else does;
+                    // 2 — live: G tensor built, contracted.
+                    let mut state: u32 = 0u32;
+                    let mut pi_b: u32 = 0u32;
+                    let mut pj_b: u32 = 0u32;
+                    let mut aij = F::new(0.0_f32);
+                    let mut a0 = F::new(0.0_f32);
+                    let mut a1 = F::new(0.0_f32);
+                    let mut x_rys = F::new(0.0_f32);
+                    let mut fac1 = F::new(0.0_f32);
+                    let mut xij_kl = F::new(0.0_f32);
+                    let mut yij_kl = F::new(0.0_f32);
+                    let mut zij_kl = F::new(0.0_f32);
+                    let mut rijrxx = F::new(0.0_f32);
+                    let mut rijrxy = F::new(0.0_f32);
+                    let mut rijrxz = F::new(0.0_f32);
+                    if sub < nb {
+                        let brow = ij_row + sub;
+                        let ij_d = brow * comptime!(PAIR_DATA_STRIDE as u32);
+                        let cceij = pair_data[(ij_d + 4u32) as usize];
+                        // `cint2e.c:232` — this bra pair cannot reach the budget.
+                        if cceij <= eijcutoff {
+                            state = 1u32;
+                            let rijx = pair_data[ij_d as usize];
+                            let rijy = pair_data[(ij_d + 1u32) as usize];
+                            let rijz = pair_data[(ij_d + 2u32) as usize];
+                            let fac_ij = pair_data[(ij_d + 3u32) as usize];
+                            let ij_i = brow * comptime!(PAIR_INDEX_STRIDE as u32);
+                            let pi = pair_index[ij_i as usize];
+                            let pj = pair_index[(ij_i + 1u32) as usize];
+                            pi_b = pi;
+                            pj_b = pj;
+                            let ai = exps[(eoff_i + pi) as usize];
+                            let aj = exps[(eoff_j + pj) as usize];
+                            aij = ai + aj;
+
+                            xij_kl = rijx - rklx;
+                            yij_kl = rijy - rkly;
+                            zij_kl = rijz - rklz;
+                            let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
+
+                            a1 = aij * akl;
+                            a0 = a1 / (aij + akl);
+                            x_rys = a0 * rr;
+
+                            // Primitive-quartet screening (Task 34-D).
+                            //
+                            // `fac1` is the scalar every element of this primitive
+                            // quartet's G tensor is built from: `gz` starts at
+                            // `wrys[irys] * fac1` and `gx`/`gy` start at 1, so the
+                            // whole contribution scales with it. Screening here —
+                            // rather than on `fac_ij * fac_kl` alone — keeps the
+                            // `sqrt(a0 / a1^3)` factor in the bound, which is not
+                            // O(1): for diffuse primitives `a1` is small and that
+                            // square root is large, so a prefactor-only test would
+                            // discard contributions it had not actually bounded.
+                            //
+                            // At `prim_tol == 0` (the default) the only quartets
+                            // dropped are those whose `fac1` underflowed to exactly
+                            // zero, whose contribution is exactly zero — which is
+                            // why the tolerance-zero identity gate holds bit for
+                            // bit. The Rys weights and the VRR/HRR coefficients are
+                            // *not* bounded by one, so a non-zero tolerance is a
+                            // proxy, not a certificate: set it well below the
+                            // accuracy actually wanted.
+                            fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor * fac_ij * fac_kl;
+                            if fac1 > prim_tol {
+                                state = 2u32;
                             }
-                            prev_pj = pj;
+                            rijrxx = rijx - rx_ij_x;
+                            rijrxy = rijy - rx_ij_y;
+                            rijrxz = rijz - rx_ij_z;
                         }
-                        let ai = exps[(eoff_i + pi) as usize];
-                        let aj = exps[(eoff_j + pj) as usize];
-                        let aij = ai + aj;
+                    }
 
-                        let xij_kl = rijx - rklx;
-                        let yij_kl = rijy - rkly;
-                        let zij_kl = rijz - rklz;
-                        let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
-
-                        let a1 = aij * akl;
-                        let a0 = a1 / (aij + akl);
-                        let x_rys = a0 * rr;
-
-                        // Primitive-quartet screening (Task 34-D).
+                    // Probe 3 skips the whole G build, probe 4 only the roots;
+                    // the contraction then reads a stale slab and the output is
+                    // undefined, which is the deal every probe makes.
+                    let mut do_build: u32 = 0u32;
+                    if state == 2u32 {
+                        do_build = 1u32;
+                    }
+                    if ctr_mode == 3u32 {
+                        do_build = 0u32;
+                    }
+                    let mut do_roots: u32 = do_build;
+                    if ctr_mode == 4u32 {
+                        do_roots = 0u32;
+                    }
+                    if do_roots == 1u32 {
+                        // ── S3: every lane of the sub-group computes the Rys roots ──
                         //
-                        // `fac1` is the scalar every element of this primitive
-                        // quartet's G tensor is built from: `gz` starts at
-                        // `wrys[irys] * fac1` and `gx`/`gy` start at 1, so the
-                        // whole contribution scales with it. Screening here —
-                        // rather than on `fac_ij * fac_kl` alone — keeps the
-                        // `sqrt(a0 / a1^3)` factor in the bound, which is not
-                        // O(1): for diffuse primitives `a1` is small and that
-                        // square root is large, so a prefactor-only test would
-                        // discard contributions it had not actually bounded.
+                        // `urys`/`wrys` are per-work-item private arrays and
+                        // `rys_rootN` is a pure function of `x_rys`, so every
+                        // lane computing them lands on identical values with
+                        // no barrier and no shared storage. It is what lets
+                        // each lane own a slice of the G build below without a
+                        // barrier to hand the roots around first.
                         //
-                        // At `prim_tol == 0` (the default) the only quartets
-                        // dropped are those whose `fac1` underflowed to exactly
-                        // zero, whose contribution is exactly zero — which is
-                        // why the tolerance-zero identity gate holds bit for
-                        // bit. The Rys weights and the VRR/HRR coefficients are
-                        // *not* bounded by one, so a non-zero tolerance is a
-                        // proxy, not a certificate: set it well below the
-                        // accuracy actually wanted.
-                        let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor * fac_ij * fac_kl;
-                        if fac1 > prim_tol {
-                            // ── S3: every lane computes the Rys roots ─────────
-                            //
-                            // `urys`/`wrys` are per-work-item private arrays and
-                            // `rys_rootN` is a pure function of `x_rys`, so every
-                            // lane computing them lands on identical values with
-                            // no barrier and no shared storage. The redundancy is
-                            // free where it is paid: on the cooperative shape the
-                            // other lanes were idling here, and on the per-unit
-                            // shape a cube is one lane, so nothing is repeated.
-                            // It is what lets each lane own a slice of the G
-                            // build below without a barrier to hand the roots
-                            // around first.
-                            // Rys roots/weights.
-                            //
-                            // F1 (§15): the *order* is a runtime value now, so
-                            // the fixed-order solvers are selected by a runtime
-                            // branch and only the orders this dispatch can
-                            // carry are emitted — `comptime!(nr_max >= k)`
-                            // keeps a `nroots <= 3` program from compiling
-                            // `rys_root5`. The branch costs one predicted test
-                            // per primitive quartet against a solver body of
-                            // tens of operations, and every lane still walks
-                            // the same arm (a quartet's order is cube-uniform).
-                            if comptime!(nr_max <= 5u32) {
-                                if nroots == 1u32 {
-                                    rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                } else if nroots == 2u32 {
-                                    if comptime!(nr_max >= 2u32) {
-                                        rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                    }
-                                } else if nroots == 3u32 {
-                                    if comptime!(nr_max >= 3u32) {
-                                        rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                    }
-                                } else if nroots == 4u32 {
-                                    if comptime!(nr_max >= 4u32) {
-                                        rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                    }
-                                } else {
-                                    if comptime!(nr_max >= 5u32) {
-                                        rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                    }
+                        // F1 (§15): the *order* is a runtime value now, so
+                        // the fixed-order solvers are selected by a runtime
+                        // branch and only the orders this dispatch can
+                        // carry are emitted — `comptime!(nr_max >= k)`
+                        // keeps a `nroots <= 3` program from compiling
+                        // `rys_root5`. The branch costs one predicted test
+                        // per primitive quartet against a solver body of
+                        // tens of operations, and every lane still walks
+                        // the same arm (a quartet's order is cube-uniform).
+                        if comptime!(nr_max <= 5u32) {
+                            if nroots == 1u32 {
+                                rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                            } else if nroots == 2u32 {
+                                if comptime!(nr_max >= 2u32) {
+                                    rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                }
+                            } else if nroots == 3u32 {
+                                if comptime!(nr_max >= 3u32) {
+                                    rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                }
+                            } else if nroots == 4u32 {
+                                if comptime!(nr_max >= 4u32) {
+                                    rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
                                 }
                             } else {
-                                // nroots 6..=12: the inline Wheeler/Jacobi
-                                // entry (task 33-01), reachable only once
-                                // `device_nroots_ceiling` was raised for
-                                // this family on this backend.
-                                //
-                                // F1 (§15) does *not* fuse these orders: the
-                                // extended solver takes its order at comptime,
-                                // and merging 6..=12 into one dispatch would
-                                // emit seven double-double solvers where the
-                                // fixed-order arms emit five short ones. A
-                                // class above five therefore keeps a dispatch
-                                // of its own, and `nr_max == nroots` there.
-                                rys_roots_ext_dev(
-                                    rys_tab,
-                                    f64::cast_from(x_rys),
-                                    &mut uext,
-                                    &mut wext,
-                                    nr_max,
-                                );
-                                #[unroll]
-                                for iext in 0..nr_max {
-                                    urys[iext as usize] = F::cast_from(uext[iext as usize]);
-                                    wrys[iext as usize] = F::cast_from(wext[iext as usize]);
-                                }
-                            }
-
-                            // ibase/kbase-selected reference centers (rijrx / rklrx)
-                            // and the HRR displacement vectors rirj / rkrl.
-                            let mut rx_ij_x = rjx;
-                            let mut rx_ij_y = rjy;
-                            let mut rx_ij_z = rjz;
-                            let mut rirjx = rjx - rix;
-                            let mut rirjy = rjy - riy;
-                            let mut rirjz = rjz - riz;
-                            if comptime!(ibase == 1u32) {
-                                rx_ij_x = rix;
-                                rx_ij_y = riy;
-                                rx_ij_z = riz;
-                                rirjx = rix - rjx;
-                                rirjy = riy - rjy;
-                                rirjz = riz - rjz;
-                            }
-                            let mut rx_kl_x = rlx;
-                            let mut rx_kl_y = rly;
-                            let mut rx_kl_z = rlz;
-                            let mut rkrlx = rlx - rkx;
-                            let mut rkrly = rly - rky;
-                            let mut rkrlz = rlz - rkz;
-                            if comptime!(kbase == 1u32) {
-                                rx_kl_x = rkx;
-                                rx_kl_y = rky;
-                                rx_kl_z = rkz;
-                                rkrlx = rkx - rlx;
-                                rkrly = rky - rly;
-                                rkrlz = rkz - rlz;
-                            }
-
-                            let rijrxx = rijx - rx_ij_x;
-                            let rijrxy = rijy - rx_ij_y;
-                            let rijrxz = rijz - rx_ij_z;
-                            let rklrxx = rklx - rx_kl_x;
-                            let rklrxy = rkly - rx_kl_y;
-                            let rklrxz = rklz - rx_kl_z;
-
-                            // ── S3: build the [gx|gy|gz] tensor cooperatively ─────
-                            //
-                            // The build used to run entirely on lane 0 while the
-                            // rest of the cube waited at the barrier below — the
-                            // whole point of the cooperative shape, spent.
-                            //
-                            // It parallelises without any reduction, because the
-                            // recurrences never cross an axis or a Rys root. The
-                            // VRR at `(axis, root)` touches only
-                            // `off + root + n*dn + m*dm`, and `dn`/`dm` are
-                            // multiples of `nroots` in this root-fastest layout,
-                            // so every read and write it makes stays inside its
-                            // own residue class; the HRR at `(axis, root)` reads
-                            // and writes the same slice. So `3 * nroots`
-                            // independent tasks, handed out `task % lanes ==
-                            // lane`, each element still computed by exactly the
-                            // expression that computed it before — **the result
-                            // is bit-identical**, which is the gate rather than a
-                            // divergence budget.
-                            //
-                            // The seed moves inside the task: the lane that owns
-                            // `(axis, root)` writes that slice's seed and is the
-                            // only lane that reads it, so no barrier separates
-                            // the seed from the VRR, or the VRR from the HRR. The
-                            // one barrier that remains is the existing one below,
-                            // before the contraction, which does read every axis.
-                            // S3, and why the roots may become vector lanes on this arm.
-                            //
-                            // The per-unit decomposition owns the whole root axis inside one
-                            // unit: `lanes == 1`, so `build_lanes == 1` and `build_lane == 0`
-                            // whichever `coop_build` mode is set, and the `(axis, root)`
-                            // residue test below admits every task. There is no S3
-                            // parallelism to lose here, so the `nroots` independent
-                            // recurrences — each one division and two serial two-term
-                            // chains — collapse into a single `Vector` chain of the same
-                            // length. Elementwise ops on the same operands in the same
-                            // order, so the slab comes out bit-identical; the CPU
-                            // measurement is 1.4x-1.9x on the VRR for `nroots` 2..5, and
-                            // nothing at `nroots == 1`, which is why that width keeps the
-                            // scalar loop.
-                            //
-                            // The cooperative arm keeps the scalar loop unconditionally:
-                            // there its `3 * nroots` tasks are real work for real lanes,
-                            // and folding the roots away would cut the split to three.
-                            //
-                            // F1 (§15): `nroots` is a runtime value now and a
-                            // `Vector` width is a type-level size, so the four
-                            // widths this arm serves are instantiated as
-                            // `Const<2..5>` and chosen by one branch per
-                            // primitive quartet. `comptime!(nr_max >= k)` keeps
-                            // a narrow dispatch from emitting the wide ones.
-                            // `vec_built` records whether an arm ran, so the
-                            // scalar fallback below is one test rather than a
-                            // repeat of the same five-way ladder.
-                            let mut vec_built: u32 = 0u32;
-                            if comptime!(per_unit == 1u32 && nr_max > 1u32) {
-                                let uslice = urys.to_slice_mut();
-                                let wslice = wrys.to_slice_mut();
-                                if comptime!(nr_max >= 2u32) {
-                                    if nroots == 2u32 {
-                                        vrr_build_axes_roots::<F, Const<2>>(
-                                            &mut g_slab,
-                                            &uslice,
-                                            &wslice,
-                                            gx_off,
-                                            g_size,
-                                            nmax,
-                                            mmax,
-                                            g2d_ijmax,
-                                            g2d_klmax,
-                                            a0,
-                                            aij,
-                                            akl,
-                                            a1,
-                                            fac1,
-                                            xij_kl,
-                                            yij_kl,
-                                            zij_kl,
-                                            rijrxx,
-                                            rijrxy,
-                                            rijrxz,
-                                            rklrxx,
-                                            rklrxy,
-                                            rklrxz,
-                                            2usize,
-                                        );
-                                        vec_built = 1u32;
-                                    }
-                                }
-                                if comptime!(nr_max >= 3u32) {
-                                    if nroots == 3u32 {
-                                        vrr_build_axes_roots::<F, Const<3>>(
-                                            &mut g_slab,
-                                            &uslice,
-                                            &wslice,
-                                            gx_off,
-                                            g_size,
-                                            nmax,
-                                            mmax,
-                                            g2d_ijmax,
-                                            g2d_klmax,
-                                            a0,
-                                            aij,
-                                            akl,
-                                            a1,
-                                            fac1,
-                                            xij_kl,
-                                            yij_kl,
-                                            zij_kl,
-                                            rijrxx,
-                                            rijrxy,
-                                            rijrxz,
-                                            rklrxx,
-                                            rklrxy,
-                                            rklrxz,
-                                            3usize,
-                                        );
-                                        vec_built = 1u32;
-                                    }
-                                }
-                                if comptime!(nr_max >= 4u32) {
-                                    if nroots == 4u32 {
-                                        vrr_build_axes_roots::<F, Const<4>>(
-                                            &mut g_slab,
-                                            &uslice,
-                                            &wslice,
-                                            gx_off,
-                                            g_size,
-                                            nmax,
-                                            mmax,
-                                            g2d_ijmax,
-                                            g2d_klmax,
-                                            a0,
-                                            aij,
-                                            akl,
-                                            a1,
-                                            fac1,
-                                            xij_kl,
-                                            yij_kl,
-                                            zij_kl,
-                                            rijrxx,
-                                            rijrxy,
-                                            rijrxz,
-                                            rklrxx,
-                                            rklrxy,
-                                            rklrxz,
-                                            4usize,
-                                        );
-                                        vec_built = 1u32;
-                                    }
-                                }
                                 if comptime!(nr_max >= 5u32) {
-                                    if nroots == 5u32 {
-                                        vrr_build_axes_roots::<F, Const<5>>(
-                                            &mut g_slab,
-                                            &uslice,
-                                            &wslice,
-                                            gx_off,
-                                            g_size,
-                                            nmax,
-                                            mmax,
-                                            g2d_ijmax,
-                                            g2d_klmax,
-                                            a0,
-                                            aij,
-                                            akl,
-                                            a1,
-                                            fac1,
-                                            xij_kl,
-                                            yij_kl,
-                                            zij_kl,
-                                            rijrxx,
-                                            rijrxy,
-                                            rijrxz,
-                                            rklrxx,
-                                            rklrxy,
-                                            rklrxz,
-                                            5usize,
-                                        );
-                                        vec_built = 1u32;
-                                    }
+                                    rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
                                 }
                             }
-                            if vec_built == 0u32 {
-                                let mut irys2 = 0u32;
-                                while irys2 < nroots {
+                        } else {
+                            // nroots 6..=12: the inline Wheeler/Jacobi
+                            // entry (task 33-01), reachable only once
+                            // `device_nroots_ceiling` was raised for
+                            // this family on this backend.
+                            //
+                            // F1 (§15) does *not* fuse these orders: the
+                            // extended solver takes its order at comptime,
+                            // and merging 6..=12 into one dispatch would
+                            // emit seven double-double solvers where the
+                            // fixed-order arms emit five short ones. A
+                            // class above five therefore keeps a dispatch
+                            // of its own, and `nr_max == nroots` there.
+                            rys_roots_ext_dev(
+                                rys_tab,
+                                f64::cast_from(x_rys),
+                                &mut uext,
+                                &mut wext,
+                                nr_max,
+                            );
+                            #[unroll]
+                            for iext in 0..nr_max {
+                                urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                                wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                            }
+                        }
+                    }
+                    if do_build == 1u32 {
+                        // ── S3: build the [gx|gy|gz] tensor cooperatively ─────
+                        //
+                        // It parallelises without any reduction, because the
+                        // recurrences never cross an axis or a Rys root. The
+                        // VRR at `(axis, root)` touches only
+                        // `off + root + n*dn + m*dm`, and `dn`/`dm` are
+                        // multiples of `nroots` in this root-fastest layout,
+                        // so every read and write it makes stays inside its
+                        // own residue class. So `3 * nroots` independent
+                        // tasks, handed out `task % own_lanes == own_lane`
+                        // across the sub-group, each element still computed by
+                        // exactly the expression that computed it before —
+                        // **the result is bit-identical**, which is the gate
+                        // rather than a divergence budget.
+                        //
+                        // The per-unit decomposition owns the whole root axis
+                        // inside one unit, so the `nroots` independent
+                        // recurrences collapse into a single `Vector` chain of
+                        // the same length (V1, §12). Elementwise ops on the same
+                        // operands in the same order, so the slab comes out
+                        // bit-identical. The cooperative arm keeps the scalar
+                        // loop: there its `3 * nroots` tasks are real work for
+                        // real lanes.
+                        //
+                        // F1 (§15): `nroots` is a runtime value and a `Vector`
+                        // width is a type-level size, so the four widths this
+                        // arm serves are instantiated as `Const<2..5>` and
+                        // chosen by one branch per primitive quartet.
+                        // `vec_built` records whether an arm ran, so the
+                        // scalar fallback below is one test rather than a
+                        // repeat of the same five-way ladder.
+                        let mut vec_built: u32 = 0u32;
+                        if comptime!(per_unit == 1u32 && nr_max > 1u32) {
+                            let uslice = urys.to_slice_mut();
+                            let wslice = wrys.to_slice_mut();
+                            if comptime!(nr_max >= 2u32) {
+                                if nroots == 2u32 {
+                                    vrr_build_axes_roots::<F, Const<2>>(
+                                        &mut g_slab,
+                                        &uslice,
+                                        &wslice,
+                                        g_off,
+                                        g_size,
+                                        nmax,
+                                        mmax,
+                                        g2d_ijmax,
+                                        g2d_klmax,
+                                        a0,
+                                        aij,
+                                        akl,
+                                        a1,
+                                        fac1,
+                                        xij_kl,
+                                        yij_kl,
+                                        zij_kl,
+                                        rijrxx,
+                                        rijrxy,
+                                        rijrxz,
+                                        rklrxx,
+                                        rklrxy,
+                                        rklrxz,
+                                        2usize,
+                                    );
+                                    vec_built = 1u32;
+                                }
+                            }
+                            if comptime!(nr_max >= 3u32) {
+                                if nroots == 3u32 {
+                                    vrr_build_axes_roots::<F, Const<3>>(
+                                        &mut g_slab,
+                                        &uslice,
+                                        &wslice,
+                                        g_off,
+                                        g_size,
+                                        nmax,
+                                        mmax,
+                                        g2d_ijmax,
+                                        g2d_klmax,
+                                        a0,
+                                        aij,
+                                        akl,
+                                        a1,
+                                        fac1,
+                                        xij_kl,
+                                        yij_kl,
+                                        zij_kl,
+                                        rijrxx,
+                                        rijrxy,
+                                        rijrxz,
+                                        rklrxx,
+                                        rklrxy,
+                                        rklrxz,
+                                        3usize,
+                                    );
+                                    vec_built = 1u32;
+                                }
+                            }
+                            if comptime!(nr_max >= 4u32) {
+                                if nroots == 4u32 {
+                                    vrr_build_axes_roots::<F, Const<4>>(
+                                        &mut g_slab,
+                                        &uslice,
+                                        &wslice,
+                                        g_off,
+                                        g_size,
+                                        nmax,
+                                        mmax,
+                                        g2d_ijmax,
+                                        g2d_klmax,
+                                        a0,
+                                        aij,
+                                        akl,
+                                        a1,
+                                        fac1,
+                                        xij_kl,
+                                        yij_kl,
+                                        zij_kl,
+                                        rijrxx,
+                                        rijrxy,
+                                        rijrxz,
+                                        rklrxx,
+                                        rklrxy,
+                                        rklrxz,
+                                        4usize,
+                                    );
+                                    vec_built = 1u32;
+                                }
+                            }
+                            if comptime!(nr_max >= 5u32) {
+                                if nroots == 5u32 {
+                                    vrr_build_axes_roots::<F, Const<5>>(
+                                        &mut g_slab,
+                                        &uslice,
+                                        &wslice,
+                                        g_off,
+                                        g_size,
+                                        nmax,
+                                        mmax,
+                                        g2d_ijmax,
+                                        g2d_klmax,
+                                        a0,
+                                        aij,
+                                        akl,
+                                        a1,
+                                        fac1,
+                                        xij_kl,
+                                        yij_kl,
+                                        zij_kl,
+                                        rijrxx,
+                                        rijrxy,
+                                        rijrxz,
+                                        rklrxx,
+                                        rklrxy,
+                                        rklrxz,
+                                        5usize,
+                                    );
+                                    vec_built = 1u32;
+                                }
+                            }
+                        }
+                        if vec_built == 0u32 {
+                            // Owned tasks only (§22.4): a lane walks the
+                            // `(axis, root)` tasks `own_lane, own_lane +
+                            // own_lanes, …` and decodes each, instead of every
+                            // lane enumerating every task and testing it — the
+                            // loop control and the modulo were most of what an
+                            // idle lane did. The per-root coefficients are
+                            // formed per task, by the same expressions.
+                            let n_vrr = 3u32 * nrg;
+                            let mut task = own_lane;
+                            if builds == 0u32 {
+                                task = n_vrr;
+                            }
+                            let mut axis = task / nrg;
+                            let mut rg = task - axis * nrg;
+                            while task < n_vrr {
+                                let r_lo = rg * rw;
+                                let mut r_hi = r_lo + rw;
+                                if r_hi > nroots {
+                                    r_hi = nroots;
+                                }
+                                let mut irys2 = r_lo;
+                                while irys2 < r_hi {
                                     let u2 = a0 * urys[irys2 as usize];
                                     let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
                                     let tmp5 = u2 * tmp4;
@@ -1890,140 +1968,148 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     let b10 = tmp5 + tmp4 * akl;
                                     let b01 = tmp5 + tmp4 * aij;
 
-                                    // Per-axis c00/c0p then inline vrr_fill_axis.
-                                    #[unroll]
-                                    for axis in 0..3u32 {
-                                        // S3: `(axis, root)` is the unit of work.
-                                        if builds == 1u32
-                                            && ((axis * nroots + irys2) % build_lanes) == build_lane
-                                        {
-                                            let off = gx_off + axis * g_size;
-                                            let mut xkl = xij_kl;
-                                            let mut rijrx = rijrxx;
-                                            let mut rklrx = rklrxx;
-                                            if axis == 1u32 {
-                                                xkl = yij_kl;
-                                                rijrx = rijrxy;
-                                                rklrx = rklrxy;
-                                            } else if axis == 2u32 {
-                                                xkl = zij_kl;
-                                                rijrx = rijrxz;
-                                                rklrx = rklrxz;
+                                    let off = g_off + axis * g_size;
+                                    let mut xkl = xij_kl;
+                                    let mut rijrx = rijrxx;
+                                    let mut rklrx = rklrxx;
+                                    if axis == 1u32 {
+                                        xkl = yij_kl;
+                                        rijrx = rijrxy;
+                                        rklrx = rklrxy;
+                                    } else if axis == 2u32 {
+                                        xkl = zij_kl;
+                                        rijrx = rijrxz;
+                                        rklrx = rklrxz;
+                                    }
+                                    let c00 = rijrx - tmp2 * xkl;
+                                    let c0p = rklrx + tmp3 * xkl;
+
+                                    // Inline vrr_fill_axis(g[off..], irys2, nmax, mmax,
+                                    //   dn=g2d_ijmax, dm=g2d_klmax, c00, c0p, b10, b01, b00).
+                                    let root = irys2;
+                                    let dn = g2d_ijmax;
+                                    let dm = g2d_klmax;
+
+                                    // The seed for this slice. `gx`/`gy` start at
+                                    // one, `gz` at the root's Rys weight times the
+                                    // primitive's scale factor. Statement-level
+                                    // mutation rather than a value-returning `if`:
+                                    // the latter does not lower the way ordinary
+                                    // Rust does inside `#[cube]`, which cost the
+                                    // device c2s pass 1 127 wrong values once.
+                                    let mut seed = F::new(1.0_f32);
+                                    if axis == 2u32 {
+                                        seed = wrys[root as usize] * fac1;
+                                    }
+                                    g_slab[(off + root) as usize] = seed;
+
+                                    if nmax > 0u32 {
+                                        let mut s0 = g_slab[(off + root) as usize];
+                                        let mut s1 = c00 * s0;
+                                        g_slab[(off + root + dn) as usize] = s1;
+                                        let mut n = 1u32;
+                                        while n < nmax {
+                                            let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
+                                            g_slab[(off + root + (n + 1u32) * dn) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            n += 1u32;
+                                        }
+                                    }
+
+                                    if mmax > 0u32 {
+                                        let mut s0 = g_slab[(off + root) as usize];
+                                        let mut s1 = c0p * s0;
+                                        g_slab[(off + root + dm) as usize] = s1;
+                                        let mut m = 1u32;
+                                        while m < mmax {
+                                            let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
+                                            g_slab[(off + root + (m + 1u32) * dm) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            m += 1u32;
+                                        }
+
+                                        if nmax > 0u32 {
+                                            let mut s0n = g_slab[(off + root + dn) as usize];
+                                            let mut s1n =
+                                                c0p * s0n + b00 * g_slab[(off + root) as usize];
+                                            g_slab[(off + root + dn + dm) as usize] = s1n;
+                                            let mut m2 = 1u32;
+                                            while m2 < mmax {
+                                                let s2n = c0p * s1n
+                                                    + F::cast_from(m2) * b01 * s0n
+                                                    + b00 * g_slab[(off + root + m2 * dm) as usize];
+                                                g_slab[(off + root + dn + (m2 + 1u32) * dm)
+                                                    as usize] = s2n;
+                                                s0n = s1n;
+                                                s1n = s2n;
+                                                m2 += 1u32;
                                             }
-                                            let c00 = rijrx - tmp2 * xkl;
-                                            let c0p = rklrx + tmp3 * xkl;
+                                        }
+                                    }
 
-                                            // Inline vrr_fill_axis(g[off..], irys2, nmax, mmax,
-                                            //   dn=g2d_ijmax, dm=g2d_klmax, c00, c0p, b10, b01, b00).
-                                            let root = irys2;
-                                            let dn = g2d_ijmax;
-                                            let dm = g2d_klmax;
-
-                                            // The seed for this slice. `gx`/`gy` start
-                                            // at one, `gz` at the root's Rys weight
-                                            // times the primitive's scale factor —
-                                            // the same three values the separate seed
-                                            // loop wrote, written by their consumer.
-                                            // Statement-level mutation rather than a
-                                            // value-returning `if`: the latter does
-                                            // not lower the way ordinary Rust does
-                                            // inside `#[cube]`, which cost the device
-                                            // c2s pass 1 127 wrong values once.
-                                            let mut seed = F::new(1.0_f32);
-                                            if axis == 2u32 {
-                                                seed = wrys[root as usize] * fac1;
+                                    if nmax > 0u32 {
+                                        let mut m3 = 1u32;
+                                        while m3 <= mmax {
+                                            let offm = m3 * dm;
+                                            let jbase = offm + root;
+                                            let mut s0 = g_slab[(off + jbase) as usize];
+                                            let mut s1 = g_slab[(off + jbase + dn) as usize];
+                                            let mut n2 = 1u32;
+                                            while n2 < nmax {
+                                                let s2 = c00 * s1
+                                                    + F::cast_from(n2) * b10 * s0
+                                                    + F::cast_from(m3)
+                                                        * b00
+                                                        * g_slab
+                                                            [(off + jbase + n2 * dn - dm) as usize];
+                                                g_slab[(off + jbase + (n2 + 1u32) * dn) as usize] =
+                                                    s2;
+                                                s0 = s1;
+                                                s1 = s2;
+                                                n2 += 1u32;
                                             }
-                                            g_slab[(off + root) as usize] = seed;
-
-                                            if nmax > 0u32 {
-                                                let mut s0 = g_slab[(off + root) as usize];
-                                                let mut s1 = c00 * s0;
-                                                g_slab[(off + root + dn) as usize] = s1;
-                                                let mut n = 1u32;
-                                                while n < nmax {
-                                                    let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
-                                                    g_slab
-                                                        [(off + root + (n + 1u32) * dn) as usize] =
-                                                        s2;
-                                                    s0 = s1;
-                                                    s1 = s2;
-                                                    n += 1u32;
-                                                }
-                                            }
-
-                                            if mmax > 0u32 {
-                                                let mut s0 = g_slab[(off + root) as usize];
-                                                let mut s1 = c0p * s0;
-                                                g_slab[(off + root + dm) as usize] = s1;
-                                                let mut m = 1u32;
-                                                while m < mmax {
-                                                    let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
-                                                    g_slab
-                                                        [(off + root + (m + 1u32) * dm) as usize] =
-                                                        s2;
-                                                    s0 = s1;
-                                                    s1 = s2;
-                                                    m += 1u32;
-                                                }
-
-                                                if nmax > 0u32 {
-                                                    let mut s0n =
-                                                        g_slab[(off + root + dn) as usize];
-                                                    let mut s1n = c0p * s0n
-                                                        + b00 * g_slab[(off + root) as usize];
-                                                    g_slab[(off + root + dn + dm) as usize] = s1n;
-                                                    let mut m2 = 1u32;
-                                                    while m2 < mmax {
-                                                        let s2n = c0p * s1n
-                                                            + F::cast_from(m2) * b01 * s0n
-                                                            + b00
-                                                                * g_slab[(off + root + m2 * dm)
-                                                                    as usize];
-                                                        g_slab[(off + root + dn + (m2 + 1u32) * dm)
-                                                            as usize] = s2n;
-                                                        s0n = s1n;
-                                                        s1n = s2n;
-                                                        m2 += 1u32;
-                                                    }
-                                                }
-                                            }
-
-                                            if nmax > 0u32 {
-                                                let mut m3 = 1u32;
-                                                while m3 <= mmax {
-                                                    let offm = m3 * dm;
-                                                    let jbase = offm + root;
-                                                    let mut s0 = g_slab[(off + jbase) as usize];
-                                                    let mut s1 =
-                                                        g_slab[(off + jbase + dn) as usize];
-                                                    let mut n2 = 1u32;
-                                                    while n2 < nmax {
-                                                        let s2 = c00 * s1
-                                                            + F::cast_from(n2) * b10 * s0
-                                                            + F::cast_from(m3)
-                                                                * b00
-                                                                * g_slab[(off + jbase + n2 * dn
-                                                                    - dm)
-                                                                    as usize];
-                                                        g_slab[(off + jbase + (n2 + 1u32) * dn)
-                                                            as usize] = s2;
-                                                        s0 = s1;
-                                                        s1 = s2;
-                                                        n2 += 1u32;
-                                                    }
-                                                    m3 += 1u32;
-                                                }
-                                            }
+                                            m3 += 1u32;
                                         }
                                     }
                                     irys2 += 1u32;
                                 }
+                                task += own_lanes;
+                                // Advance the decoded `(axis, root group)` with
+                                // the task, carrying — no division per task,
+                                // which the per-unit arm (every task owned)
+                                // paid in full (§22.5).
+                                rg += own_lanes;
+                                while rg >= nrg {
+                                    rg -= nrg;
+                                    axis += 1u32;
+                                }
                             }
+                        }
+                    }
+                    // The HRR reads every root's VRR output at its `(axis,
+                    // root)`, which another lane of the sub-group wrote.
+                    if comptime!(per_unit == 0u32) {
+                        sync_cube();
+                    }
 
+                    // ── HRR transfer on the per-unit arm: the nest as it was ──
+                    //
+                    // A unit walks every `(axis, root)` itself, and the old
+                    // nest's two innermost loops sweep the contiguous
+                    // `(i, root)` span of each element — which is what the
+                    // CPU vectorises. The per-chain form below, dealt out
+                    // across a sub-group's lanes, measured 1.1x–1.3x slower
+                    // here (§22.5), so the per-unit arm keeps its nest and the
+                    // cooperative arm takes the split. Same expressions, same
+                    // operands: the dump comparison holds both to the bit.
+                    if comptime!(per_unit == 1u32) {
+                        if do_build == 1u32 {
                             // ── HRR transfer (branch by comptime kbase/ibase) ──────
                             #[unroll]
                             for axis2 in 0..3u32 {
-                                let off = gx_off + axis2 * g_size;
+                                let off = g_off + axis2 * g_size;
                                 let mut rirj = rirjx;
                                 let mut rkrl = rkrlx;
                                 if axis2 == 1u32 {
@@ -2045,13 +2131,6 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 // `lanes == 1` and `lane == 0` give
                                 // `r_first == 0` and a step of one, which is
                                 // the loop that was there before.
-                                let mut r_first = (build_lane + build_lanes
-                                    - (axis2 * nroots) % build_lanes)
-                                    % build_lanes;
-                                if builds == 0u32 {
-                                    // This lane owns no slice on any axis.
-                                    r_first = nroots;
-                                }
 
                                 if comptime!(kbase == 1u32 && ibase == 1u32) {
                                     // ik2d: i then k done; transfer dl←dk (ll), dj←di (lj).
@@ -2062,13 +2141,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             let mut i = 0u32;
                                             while i <= nmax {
                                                 let ptr = l * dl + k * dk + i * di;
-                                                let mut r = r_first;
+                                                let mut r = 0u32;
                                                 while r < nroots {
                                                     let idx = ptr + r;
                                                     g_slab[(off + idx) as usize] = rkrl
                                                         * g_slab[(off + idx - dl) as usize]
                                                         + g_slab[(off + idx - dl + dk) as usize];
-                                                    r += build_lanes;
+                                                    r += 1u32;
                                                 }
                                                 i += 1u32;
                                             }
@@ -2086,14 +2165,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                 let mut i2 = 0u32;
                                                 while i2 <= (nmax - j) {
                                                     let pbase = ptr + i2 * di;
-                                                    let mut r = r_first;
+                                                    let mut r = 0u32;
                                                     while r < nroots {
                                                         let idx = pbase + r;
                                                         g_slab[(off + idx) as usize] = rirj
                                                             * g_slab[(off + idx - dj) as usize]
                                                             + g_slab
                                                                 [(off + idx - dj + di) as usize];
-                                                        r += build_lanes;
+                                                        r += 1u32;
                                                     }
                                                     i2 += 1u32;
                                                 }
@@ -2112,13 +2191,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             let mut k = 0u32;
                                             while k <= mmax {
                                                 let ptr = j * dj + k * dk + i * di;
-                                                let mut r = r_first;
+                                                let mut r = 0u32;
                                                 while r < nroots {
                                                     let idx = ptr + r;
                                                     g_slab[(off + idx) as usize] = rirj
                                                         * g_slab[(off + idx - di) as usize]
                                                         + g_slab[(off + idx - di + dj) as usize];
-                                                    r += build_lanes;
+                                                    r += 1u32;
                                                 }
                                                 k += 1u32;
                                             }
@@ -2153,14 +2232,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                 // with the root axis partitioned.
                                                 let mut nb = 0u32;
                                                 while nb < dk {
-                                                    let mut r = r_first;
+                                                    let mut r = 0u32;
                                                     while r < nroots {
                                                         let idx = ptr + nb + r;
                                                         g_slab[(off + idx) as usize] = rkrl
                                                             * g_slab[(off + idx - dl) as usize]
                                                             + g_slab
                                                                 [(off + idx - dl + dk) as usize];
-                                                        r += build_lanes;
+                                                        r += 1u32;
                                                     }
                                                     nb += di;
                                                 }
@@ -2179,13 +2258,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             let mut i = 0u32;
                                             while i <= nmax {
                                                 let ptr = l * dl + k * dk + i * di;
-                                                let mut r = r_first;
+                                                let mut r = 0u32;
                                                 while r < nroots {
                                                     let idx = ptr + r;
                                                     g_slab[(off + idx) as usize] = rkrl
                                                         * g_slab[(off + idx - dk) as usize]
                                                         + g_slab[(off + idx - dk + dl) as usize];
-                                                    r += build_lanes;
+                                                    r += 1u32;
                                                 }
                                                 i += 1u32;
                                             }
@@ -2203,14 +2282,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                 let mut i2 = 0u32;
                                                 while i2 <= (nmax - j) {
                                                     let pbase = ptr + i2 * di;
-                                                    let mut r = r_first;
+                                                    let mut r = 0u32;
                                                     while r < nroots {
                                                         let idx = pbase + r;
                                                         g_slab[(off + idx) as usize] = rirj
                                                             * g_slab[(off + idx - dj) as usize]
                                                             + g_slab
                                                                 [(off + idx - dj + di) as usize];
-                                                        r += build_lanes;
+                                                        r += 1u32;
                                                     }
                                                     i2 += 1u32;
                                                 }
@@ -2229,13 +2308,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             let mut l = 0u32;
                                             while l <= mmax {
                                                 let ptr = j * dj + l * dl + i * di;
-                                                let mut r = r_first;
+                                                let mut r = 0u32;
                                                 while r < nroots {
                                                     let idx = ptr + r;
                                                     g_slab[(off + idx) as usize] = rirj
                                                         * g_slab[(off + idx - di) as usize]
                                                         + g_slab[(off + idx - di + dj) as usize];
-                                                    r += build_lanes;
+                                                    r += 1u32;
                                                 }
                                                 l += 1u32;
                                             }
@@ -2256,14 +2335,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                 // with the root axis partitioned.
                                                 let mut nb = 0u32;
                                                 while nb < dk {
-                                                    let mut r = r_first;
+                                                    let mut r = 0u32;
                                                     while r < nroots {
                                                         let idx = ptr + nb + r;
                                                         g_slab[(off + idx) as usize] = rkrl
                                                             * g_slab[(off + idx - dk) as usize]
                                                             + g_slab
                                                                 [(off + idx - dk + dl) as usize];
-                                                        r += build_lanes;
+                                                        r += 1u32;
                                                     }
                                                     nb += di;
                                                 }
@@ -2275,40 +2354,439 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     }
                                 }
                             }
-                            if comptime!(per_unit == 0u32) {
-                                sync_cube();
+                        }
+                    }
+                    // ── HRR transfer, first raise (branch by comptime kbase/ibase) ──
+                    //
+                    // Each raise is a chain along *one* index — the one being
+                    // raised — and independent across every other index, so the
+                    // work is dealt out as one task per `(axis, root, <the other
+                    // index>)` chain across the sub-group's lanes, each lane
+                    // walking only the tasks it owns (§22.4) and the chain
+                    // itself serially. Every element is still the same
+                    // expression over the same operands, so the slab is
+                    // bit-identical to the old nest. A lane's reads inside a
+                    // raise are its own writes or the previous phase's, which
+                    // is what the barriers around each raise guarantee.
+                    //
+                    // The task's third index is `i` where `ibase == 1` (the
+                    // raise runs over `l` or `k`) and `k` or `l` where
+                    // `ibase == 0` (it runs over `i`).
+                    if comptime!(per_unit == 0u32) {
+                        if do_build == 1u32 {
+                            let mut pa = nmax + 1u32;
+                            if comptime!(ibase == 0u32) {
+                                pa = mmax + 1u32;
                             }
+                            let n_a = 3u32 * nrg * pa;
+                            let mut task = own_lane;
+                            if builds == 0u32 {
+                                task = n_a;
+                            }
+                            let mut axis2 = task / (nrg * pa);
+                            let a_rem = task - axis2 * (nrg * pa);
+                            let mut rg = a_rem / pa;
+                            let mut p = a_rem - rg * pa;
+                            while task < n_a {
+                                let r_lo = rg * rw;
+                                let mut r_hi = r_lo + rw;
+                                if r_hi > nroots {
+                                    r_hi = nroots;
+                                }
+                                let off = g_off + axis2 * g_size;
+                                let mut rirj = rirjx;
+                                let mut rkrl = rkrlx;
+                                if axis2 == 1u32 {
+                                    rirj = rirjy;
+                                    rkrl = rkrly;
+                                } else if axis2 == 2u32 {
+                                    rirj = rirjz;
+                                    rkrl = rkrlz;
+                                }
 
-                            let prim_weight = if is_uncontracted {
-                                coeffs[(coff_i + pi) as usize]
-                                    * coeffs[(coff_j + pj) as usize]
-                                    * coeffs[(coff_k + pk) as usize]
-                                    * coeffs[(coff_l + pl) as usize]
-                            } else {
-                                F::new(0.0_f32)
-                            };
-                            // The staged path's primitive weight: the
-                            // coefficients of the *segmented* shells only,
-                            // folded the way libcint folds them into `fac1`
-                            // when `x_ctr == 1`; a generally contracted
-                            // shell's coefficients are applied by its stage.
-                            let mut fold = F::new(1.0_f32);
-                            if use_staged {
-                                if nctr_i == 1u32 {
-                                    fold *= coeffs[(coff_i + pi) as usize];
+                                if comptime!(kbase == 1u32 && ibase == 1u32) {
+                                    // ik2d, first raise: dl←dk (ll), chain along l, p = i.
+                                    let mut l = 1u32;
+                                    while l <= ll {
+                                        let mut k = 0u32;
+                                        while k <= (mmax - l) {
+                                            let base = l * dl + k * dk + p * di;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rkrl
+                                                    * g_slab[(off + idx - dl) as usize]
+                                                    + g_slab[(off + idx - dl + dk) as usize];
+                                                r += 1u32;
+                                            }
+                                            k += 1u32;
+                                        }
+                                        l += 1u32;
+                                    }
+                                } else if comptime!(kbase == 1u32 && ibase == 0u32) {
+                                    // kj2d, first raise: dj←di (li), chain along i, p = k.
+                                    let mut i = 1u32;
+                                    while i <= li {
+                                        let mut j = 0u32;
+                                        while j <= (nmax - i) {
+                                            let base = j * dj + p * dk + i * di;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rirj
+                                                    * g_slab[(off + idx - di) as usize]
+                                                    + g_slab[(off + idx - di + dj) as usize];
+                                                r += 1u32;
+                                            }
+                                            j += 1u32;
+                                        }
+                                        i += 1u32;
+                                    }
+                                } else if comptime!(kbase == 0u32 && ibase == 1u32) {
+                                    // il2d, first raise: dl←dk (lk), chain along k, p = i.
+                                    let mut k = 1u32;
+                                    while k <= lk {
+                                        let mut l = 0u32;
+                                        while l <= (mmax - k) {
+                                            let base = l * dl + k * dk + p * di;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rkrl
+                                                    * g_slab[(off + idx - dk) as usize]
+                                                    + g_slab[(off + idx - dk + dl) as usize];
+                                                r += 1u32;
+                                            }
+                                            l += 1u32;
+                                        }
+                                        k += 1u32;
+                                    }
+                                } else {
+                                    // lj2d, first raise: dj←di (li), chain along i, p = l.
+                                    let mut i = 1u32;
+                                    while i <= li {
+                                        let mut j = 0u32;
+                                        while j <= (nmax - i) {
+                                            let base = j * dj + p * dl + i * di;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rirj
+                                                    * g_slab[(off + idx - di) as usize]
+                                                    + g_slab[(off + idx - di + dj) as usize];
+                                                r += 1u32;
+                                            }
+                                            j += 1u32;
+                                        }
+                                        i += 1u32;
+                                    }
                                 }
-                                if nctr_j == 1u32 {
-                                    fold *= coeffs[(coff_j + pj) as usize];
-                                }
-                                if nctr_k == 1u32 {
-                                    fold *= coeffs[(coff_k + pk) as usize];
-                                }
-                                if nctr_l == 1u32 {
-                                    fold *= coeffs[(coff_l + pl) as usize];
+                                task += own_lanes;
+                                p += own_lanes;
+                                while p >= pa {
+                                    p -= pa;
+                                    rg += 1u32;
+                                    if rg >= nrg {
+                                        rg -= nrg;
+                                        axis2 += 1u32;
+                                    }
                                 }
                             }
+                        }
+                    }
+                    if comptime!(per_unit == 0u32) {
+                        sync_cube();
+                    }
 
-                            // ── Contract into per-quad Cartesian blocks cooperatively ───────────
+                    // ── HRR transfer, second raise ────────────────────────
+                    //
+                    // The task's other indices are `(l, k)` where `ibase == 1`
+                    // (the raise runs over `j`) and `(j, i)` where `ibase == 0`
+                    // (it runs over `l` or `k`); `ni` is the count of `i`
+                    // planes, libcint's `ptr .. ptr + dk` in steps of `di`
+                    // (`CINTg0_kj2d_4d`, g2e.c:552).
+                    if comptime!(per_unit == 0u32) {
+                        if do_build == 1u32 {
+                            let ni = dk / di;
+                            let mut pb = (ll + 1u32) * (lk + 1u32);
+                            if comptime!(ibase == 0u32) {
+                                pb = (lj + 1u32) * ni;
+                            }
+                            let n_b = 3u32 * nrg * pb;
+                            let mut task = own_lane;
+                            if builds == 0u32 {
+                                task = n_b;
+                            }
+                            // The task's other pair `(p1, p2)` — `(l, k)` or
+                            // `(j, i)` — is decoded once and then carried.
+                            let mut w1 = ll + 1u32;
+                            let mut w2 = lk + 1u32;
+                            if comptime!(ibase == 0u32) {
+                                w1 = lj + 1u32;
+                                w2 = ni;
+                            }
+                            let mut axis2 = task / (nrg * pb);
+                            let b_rem = task - axis2 * (nrg * pb);
+                            let mut rg = b_rem / pb;
+                            let p0 = b_rem - rg * pb;
+                            let mut p1 = p0 / w2;
+                            let mut p2 = p0 - p1 * w2;
+                            while task < n_b {
+                                let r_lo = rg * rw;
+                                let mut r_hi = r_lo + rw;
+                                if r_hi > nroots {
+                                    r_hi = nroots;
+                                }
+                                let off = g_off + axis2 * g_size;
+                                let mut rirj = rirjx;
+                                let mut rkrl = rkrlx;
+                                if axis2 == 1u32 {
+                                    rirj = rirjy;
+                                    rkrl = rkrly;
+                                } else if axis2 == 2u32 {
+                                    rirj = rirjz;
+                                    rkrl = rkrlz;
+                                }
+
+                                if comptime!(kbase == 1u32 && ibase == 1u32) {
+                                    // ik2d, second raise: dj←di (lj), chain along j, p = (l, k).
+                                    let l2 = p1;
+                                    let k2 = p2;
+                                    let ptr = l2 * dl + k2 * dk;
+                                    let mut j = 1u32;
+                                    while j <= lj {
+                                        let mut i2 = 0u32;
+                                        while i2 <= (nmax - j) {
+                                            let base = ptr + j * dj + i2 * di;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rirj
+                                                    * g_slab[(off + idx - dj) as usize]
+                                                    + g_slab[(off + idx - dj + di) as usize];
+                                                r += 1u32;
+                                            }
+                                            i2 += 1u32;
+                                        }
+                                        j += 1u32;
+                                    }
+                                } else if comptime!(kbase == 1u32 && ibase == 0u32) {
+                                    // kj2d, second raise: dl←dk (ll), chain along l, p = (j, i).
+                                    let j = p1;
+                                    let ib = p2;
+                                    let ptr = j * dj + ib * di;
+                                    let mut l = 1u32;
+                                    while l <= ll {
+                                        let mut k = 0u32;
+                                        while k <= (mmax - l) {
+                                            let base = ptr + l * dl + k * dk;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rkrl
+                                                    * g_slab[(off + idx - dl) as usize]
+                                                    + g_slab[(off + idx - dl + dk) as usize];
+                                                r += 1u32;
+                                            }
+                                            k += 1u32;
+                                        }
+                                        l += 1u32;
+                                    }
+                                } else if comptime!(kbase == 0u32 && ibase == 1u32) {
+                                    // il2d, second raise: dj←di (lj), chain along j, p = (l, k).
+                                    let l = p1;
+                                    let k2 = p2;
+                                    let ptr = l * dl + k2 * dk;
+                                    let mut j = 1u32;
+                                    while j <= lj {
+                                        let mut i2 = 0u32;
+                                        while i2 <= (nmax - j) {
+                                            let base = ptr + j * dj + i2 * di;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rirj
+                                                    * g_slab[(off + idx - dj) as usize]
+                                                    + g_slab[(off + idx - dj + di) as usize];
+                                                r += 1u32;
+                                            }
+                                            i2 += 1u32;
+                                        }
+                                        j += 1u32;
+                                    }
+                                } else {
+                                    // lj2d, second raise: dl←dk (lk), chain along k, p = (j, i).
+                                    let j2 = p1;
+                                    let ib = p2;
+                                    let ptr = j2 * dj + ib * di;
+                                    let mut k = 1u32;
+                                    while k <= lk {
+                                        let mut l = 0u32;
+                                        while l <= (mmax - k) {
+                                            let base = ptr + l * dl + k * dk;
+                                            let mut r = r_lo;
+                                            while r < r_hi {
+                                                let idx = base + r;
+                                                g_slab[(off + idx) as usize] = rkrl
+                                                    * g_slab[(off + idx - dk) as usize]
+                                                    + g_slab[(off + idx - dk + dl) as usize];
+                                                r += 1u32;
+                                            }
+                                            l += 1u32;
+                                        }
+                                        k += 1u32;
+                                    }
+                                }
+                                task += own_lanes;
+                                p2 += own_lanes;
+                                while p2 >= w2 {
+                                    p2 -= w2;
+                                    p1 += 1u32;
+                                }
+                                while p1 >= w1 {
+                                    p1 -= w1;
+                                    rg += 1u32;
+                                    if rg >= nrg {
+                                        rg -= nrg;
+                                        axis2 += 1u32;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Publish this row's meta for the contraction phase, which
+                    // walks every row of the block: the state, the primitive
+                    // weight and the `i` coefficients the builder already has
+                    // — read back from shared memory in ~100 cycles where the
+                    // contraction used to spend two dependent uniform global
+                    // loads per row (§22.5). Only the shared region has a
+                    // block wider than one; elsewhere the registers serve.
+                    if comptime!(shared_tier > 0u32) {
+                        if sub < nb {
+                            if sub_lane == 0u32 {
+                                let m = sub * comptime!(META_STRIDE);
+                                g_slab[m as usize] = F::cast_from(state);
+                                // The weight: the four coefficients' product
+                                // for a segmented quartet, the segmented
+                                // shells' product for a staged one.
+                                let mut w = F::new(1.0_f32);
+                                if is_uncontracted {
+                                    w = coeffs[(coff_i + pi_b) as usize]
+                                        * coeffs[(coff_j + pj_b) as usize]
+                                        * coeffs[(coff_k + pk) as usize]
+                                        * coeffs[(coff_l + pl) as usize];
+                                } else if use_staged {
+                                    if nctr_i == 1u32 {
+                                        w *= coeffs[(coff_i + pi_b) as usize];
+                                    }
+                                    if nctr_j == 1u32 {
+                                        w *= coeffs[(coff_j + pj_b) as usize];
+                                    }
+                                    if nctr_k == 1u32 {
+                                        w *= coeffs[(coff_k + pk) as usize];
+                                    }
+                                    if nctr_l == 1u32 {
+                                        w *= coeffs[(coff_l + pl) as usize];
+                                    }
+                                }
+                                g_slab[(m + 1u32) as usize] = w;
+                                g_slab[(m + 2u32) as usize] = F::cast_from(pi_b);
+                                g_slab[(m + 3u32) as usize] = F::cast_from(pj_b);
+                                let mut ci = 0u32;
+                                while ci < 4u32 {
+                                    let mut cvi = F::new(1.0_f32);
+                                    if nctr_i > 1u32 {
+                                        if ci < nctr_i {
+                                            cvi = coeffs[(coff_i + pi_b * nctr_i + ci) as usize];
+                                        }
+                                    }
+                                    g_slab[(m + 4u32 + ci) as usize] = cvi;
+                                    ci += 1u32;
+                                }
+                            }
+                        }
+                    }
+                    if comptime!(per_unit == 0u32) {
+                        sync_cube();
+                    }
+
+                    // ── Contraction phase: the block's rows, in row order ──
+                    let mut b = 0u32;
+                    while b < nb {
+                        // The row's meta: from the registers where the block is
+                        // one row (`b == sub == 0`), from shared memory
+                        // otherwise. `prim_weight` and `fold` are one value —
+                        // the arm that uses each is exclusive.
+                        let mut st: u32 = state;
+                        let mut pi: u32 = pi_b;
+                        let mut pj: u32 = pj_b;
+                        let mut w_b = F::new(1.0_f32);
+                        let mb = b * comptime!(META_STRIDE);
+                        if comptime!(shared_tier > 0u32) {
+                            let flag = g_slab[mb as usize];
+                            st = 0u32;
+                            if flag > F::new(0.5_f32) {
+                                st = 1u32;
+                            }
+                            if flag > F::new(1.5_f32) {
+                                st = 2u32;
+                            }
+                            w_b = g_slab[(mb + 1u32) as usize];
+                            pi = u32::cast_from(g_slab[(mb + 2u32) as usize]);
+                            pj = u32::cast_from(g_slab[(mb + 3u32) as usize]);
+                        }
+                        if comptime!(shared_tier == 0u32) {
+                            if st == 2u32 {
+                                if is_uncontracted {
+                                    w_b = coeffs[(coff_i + pi) as usize]
+                                        * coeffs[(coff_j + pj) as usize]
+                                        * coeffs[(coff_k + pk) as usize]
+                                        * coeffs[(coff_l + pl) as usize];
+                                } else if use_staged {
+                                    // The staged path's primitive weight: the
+                                    // coefficients of the *segmented* shells
+                                    // only, folded the way libcint folds them
+                                    // into `fac1` when `x_ctr == 1`; a generally
+                                    // contracted shell's coefficients are
+                                    // applied by its stage.
+                                    if nctr_i == 1u32 {
+                                        w_b *= coeffs[(coff_i + pi) as usize];
+                                    }
+                                    if nctr_j == 1u32 {
+                                        w_b *= coeffs[(coff_j + pj) as usize];
+                                    }
+                                    if nctr_k == 1u32 {
+                                        w_b *= coeffs[(coff_k + pk) as usize];
+                                    }
+                                    if nctr_l == 1u32 {
+                                        w_b *= coeffs[(coff_l + pl) as usize];
+                                    }
+                                }
+                            }
+                        }
+                        if st != 0u32 {
+                            // A new `j` primitive: fold `gctri` into `gctrj`.
+                            if use_staged && pj != prev_pj {
+                                if iempty == 0u32 {
+                                    stage_contract::<F>(
+                                        ctr, ctr_i_off, ctr_j_off, nctr_i, coeffs, coff_j, prev_pj,
+                                        nctr_j, block_len, lane_u, lanes_u, jempty,
+                                    );
+                                    jempty = 0u32;
+                                    iempty = 1u32;
+                                }
+                                prev_pj = pj;
+                            }
+                        }
+                        if st == 2u32 {
+                            let prim_weight = w_b;
+                            let fold = w_b;
+                            // This row's sub-slab and its three axis planes.
+                            let gb = slab_base + b * g3;
+                            let gby = gb + g_size;
+                            let gbz = gb + 2u32 * g_size;
+
+                            // ── Contract into per-quad Cartesian blocks cooperatively ──
                             //
                             // K1 (GTH plan §10): the Cartesian elements of a
                             // class are walked through its index table —
@@ -2318,19 +2796,11 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             // them, `i` fastest — instead of that nest being
                             // re-run per primitive quartet. libcint does the
                             // same (`CINTg2e_index_xyz`, `idx` in `cint2e.c`).
-                            //
-                            // Two things follow. The per-unit arm sheds eight
-                            // loop counters and the offset arithmetic per
-                            // element. The cooperative arm goes from every
-                            // lane walking all `block_len` iterations and
-                            // taking one in `lanes` — one lane live per
-                            // wavefront step — to each lane striding through
-                            // its own elements, so the contraction is `lanes`
-                            // times shorter. Each element is still the same
-                            // expression over the same roots in the same
-                            // order, accumulated into the same place, so the
-                            // result is bit-identical (`gth_profile`'s dump
-                            // comparison is the gate).
+                            // Each lane strides through its own elements, and
+                            // each element is the same expression over the
+                            // same roots in the same order, accumulated into
+                            // the same place, so the result is bit-identical
+                            // (`gth_profile`'s dump comparison is the gate).
                             // `ctr_mode == 2` is the measurement probe: the G
                             // build runs and the contraction does not, so the
                             // difference against the default is the
@@ -2348,17 +2818,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
 
                                 // F1 (§15): the root sum keeps its unrolled
                                 // form at a comptime width and the width is
-                                // chosen here, once per element. A dynamic
-                                // trip count of one to five would put a
-                                // compare and a branch on the kernel's hottest
-                                // statement; this branch is on the quartet's
-                                // `nroots`, which is the same for every element
-                                // of the block and so perfectly predicted. Only
-                                // the widths this dispatch can carry are
-                                // emitted.
-                                let ax = gx_off + base_x;
-                                let ay = gy_off + base_y;
-                                let az = gz_off + base_z;
+                                // chosen here, once per element. The branch is
+                                // on the quartet's `nroots`, the same for
+                                // every element of the block, so perfectly
+                                // predicted. Only the widths this dispatch can
+                                // carry are emitted.
+                                let ax = gb + base_x;
+                                let ay = gby + base_y;
+                                let az = gbz + base_z;
                                 let mut sum = F::new(0.0_f32);
                                 if comptime!(nr_max > 5u32) {
                                     // The extended orders are never fused, so
@@ -2397,6 +2864,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         let mut cvi = F::new(1.0_f32);
                                         if nctr_i > 1u32 {
                                             cvi = coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                        }
+                                        // The meta row carries the first four
+                                        // (§22.5); wider shells reload.
+                                        if comptime!(shared_tier > 0u32) {
+                                            if ci < 4u32 {
+                                                cvi = g_slab[(mb + 4u32 + ci) as usize];
+                                            }
                                         }
                                         let idx = ctr_i_off + ci * block_len + q_elem;
                                         if iempty == 1u32 {
@@ -2445,12 +2919,15 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             if use_staged {
                                 iempty = 0u32;
                             }
-                            if comptime!(per_unit == 0u32) {
-                                sync_cube();
-                            }
-                        } // end primitive-quartet screening
-                    } // end bra `cceij` cutoff
-                    ij_row += 1u32;
+                        }
+                        b += 1u32;
+                    }
+                    // The next block's build overwrites the sub-slabs this
+                    // contraction read.
+                    if comptime!(per_unit == 0u32) {
+                        sync_cube();
+                    }
+                    ij_row += nb;
                 }
                 // End of this ket primitive pair's bra loop: the last `j`
                 // primitive's `gctri`, then this `k` primitive's `gctrj`.
@@ -2483,7 +2960,6 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
             } // end ket `ccekl` cutoff
             kl_row += 1u32;
         }
-
         // The last `l` primitive's `gctrk` (staged path).
         if use_staged && kempty == 0u32 {
             stage_contract_out::<F>(
@@ -2595,8 +3071,10 @@ pub fn set_contraction_probe() {
     set_contraction_mode(2);
 }
 
-/// Set the raw contraction mode: `0` naive, `1` staged, `2` the probe.
-/// Measurement aid only.
+/// Set the raw contraction mode: `0` naive, `1` staged, `2` the no-contraction
+/// probe, `3` the no-G-build probe (roots, VRR and HRR skipped; the staged
+/// contraction runs over a stale slab), `4` the no-roots probe (VRR/HRR run on
+/// stale roots). Every probe's output is undefined. Measurement aid only.
 #[doc(hidden)]
 pub fn set_contraction_mode(mode: u32) {
     CONTRACTION_MODE.store(mode, std::sync::atomic::Ordering::Relaxed);
@@ -3135,13 +3613,14 @@ pub fn set_cooperative_build_split(split: bool) {
     COOPERATIVE_BUILD_MODE.store(u32::from(split), std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Is the shared-memory G tensor enabled (S3)?
+/// Is the shared-memory G tensor enabled (S3 / B1)?
 ///
-/// Off by default; `CINTX_2E_SHARED_G=1` opts in. The cooperative arm keeps
-/// its G slab in `SharedMemory` when the dispatch's widest class fits
-/// [`SHARED_G_SLOTS`] and the backend reports room.
+/// **On by default since B1 (plan §22)**; `CINTX_2E_SHARED_G=0` opts out to
+/// the per-slot global slab, which is the A/B arm. The cooperative arm keeps
+/// its G tensor in a [`SHARED_G_TIERS`]-sized `SharedMemory` region whenever
+/// the dispatch's widest class fits one and the backend reports room.
 ///
-/// # History, and why the default has not moved
+/// # History
 ///
 /// This was first recorded as a ROCm backend defect: with the shared slab
 /// selected, `int2e_sph` came back as uninitialised memory. The bisect is in
@@ -3160,14 +3639,16 @@ pub fn set_cooperative_build_split(split: bool) {
 /// `client.empty` can read back as an earlier launch's data, so a probe must
 /// seed it with a sentinel.
 ///
-/// The speed case for the shared slab has not been measured since the fix,
-/// which is why the default is unchanged.
+/// The single 48 KiB allocation this switch first selected measured
+/// 0.31x–0.57x on gfx1151 (§22.1) — one workgroup per compute unit. The
+/// tiers, and the block of primitive quartets each tier holds, are what
+/// turned the same shared region into the win §22 records.
 fn shared_g_enabled() -> bool {
     let current = SHARED_G_ENABLED.load(std::sync::atomic::Ordering::Relaxed);
     if current != u32::MAX {
         return current != 0;
     }
-    let from_env = u32::from(std::env::var("CINTX_2E_SHARED_G").is_ok_and(|value| value == "1"));
+    let from_env = u32::from(!std::env::var("CINTX_2E_SHARED_G").is_ok_and(|value| value == "0"));
     SHARED_G_ENABLED.store(from_env, std::sync::atomic::Ordering::Relaxed);
     from_env != 0
 }
@@ -3179,7 +3660,7 @@ static SHARED_G_ENABLED: std::sync::atomic::AtomicU32 = std::sync::atomic::Atomi
 /// overriding `CINTX_2E_SHARED_G`.
 ///
 /// Unlike the other measurement switches this one is **comptime** inside the
-/// kernel (`g_in_shared` selects which buffer the recurrences bind), so the
+/// kernel (`shared_tier` selects which buffer the recurrences bind), so the
 /// two settings are two compiled programs. An A/B across it has to warm both
 /// before timing either, or it measures the JIT.
 pub fn set_shared_g_enabled(enabled: bool) {
@@ -3456,7 +3937,32 @@ fn two_e_cube_count<R: Runtime>(
     }
     let per_cube = slot_scratch_bytes(g_size, ctr_len);
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_cube.max(1)).max(1);
-    crate::plane::grid_cube_count(client, n_quartets.min(by_memory))
+    // B1 (§22.4): one cube per row put thousands of cubes — and thousands of
+    // contraction-scratch slabs, 158 MiB on SO2/TZVP-MOLOPT — into a dispatch
+    // the device runs a few dozen cubes of at a time. The grid is capped at
+    // [`cooperative_cubes_per_unit`] per compute unit and walks the rest
+    // grid-stride; which cube evaluates a row cannot change its value.
+    let hw = crate::plane::launch_hardware(client);
+    let by_concurrency =
+        (hw.parallel_units as usize * cooperative_cubes_per_unit() as usize).max(1);
+    crate::plane::grid_cube_count(client, n_quartets.min(by_memory).min(by_concurrency))
+}
+
+/// Cubes per compute unit a cooperative 2e dispatch is capped at (B1, §22.4);
+/// `CINTX_2E_CUBES_PER_UNIT` overrides it for a sweep.
+///
+/// Well above what any tier lets a unit hold resident (at most sixteen by
+/// shared memory, fewer by waves), so the queue never runs dry, and the
+/// per-cube scratch — the contraction stages, which stay in global memory —
+/// is bounded by the machine rather than by the work list.
+pub const COOPERATIVE_CUBES_PER_UNIT: u32 = 64;
+
+fn cooperative_cubes_per_unit() -> u32 {
+    use std::sync::OnceLock;
+    static CAP: OnceLock<u32> = OnceLock::new();
+    *CAP.get_or_init(|| {
+        env_u32_override("CINTX_2E_CUBES_PER_UNIT").unwrap_or(COOPERATIVE_CUBES_PER_UNIT)
+    })
 }
 
 /// Flattened basis shared by every launch class in one batched run.
@@ -3505,7 +4011,7 @@ impl TwoEFlatBasis {
     }
 }
 
-/// `f64` slots of shared memory the cooperative G slab may take (S3).
+/// The widest shared-memory G region (S3): the last of [`SHARED_G_TIERS`].
 ///
 /// 6 144 elements is 48 KiB, the shared-memory budget a workgroup can count on
 /// across the backends this project targets. It holds `3 * g_size` for every
@@ -3513,6 +4019,136 @@ impl TwoEFlatBasis {
 /// and every quartet of def2-SVP. The `nroots` 6 and 7 classes need 72 KiB and
 /// 129 KiB and keep the global slab.
 pub const SHARED_G_SLOTS: usize = 6144;
+
+/// The comptime extents, in `f64` slots, a cooperative dispatch's shared G
+/// region may take (B1, plan §22) — the smallest holding `3 * max_g_size`.
+///
+/// Three, not one: `SharedMemory::new` takes a comptime extent, so the extent
+/// is part of the compiled program, and a single 48 KiB allocation admits one
+/// workgroup per compute unit on gfx1151's 64 KiB — measured at 0.31x–0.57x
+/// (§22.1). A per-class extent would be a program per class, which is the
+/// dispatch merge Task 35-M1 made. Each tier is filled with as many primitive
+/// quartets in flight as it holds (`b_max` in the kernel), so a `(pp|pp)`
+/// class in the 16 KiB tier builds six G tensors per cube at once.
+pub const SHARED_G_TIERS: [u32; 5] = [512, 1024, 2048, 4096, 6144];
+
+/// How many primitive quartets a class's tier should hold at once, where a
+/// tier that wide exists (B1). `CINTX_2E_B_TARGET` overrides it for a sweep.
+///
+/// The tier trades occupancy for block width: a 4 KiB tier admits sixteen
+/// cubes per 64 KiB compute unit and a 16 KiB one four, while a `(pp|pp)`
+/// class blocks one primitive quartet in the first and six in the second.
+/// Swept at 1, 2, 4 and 16 on ROCm (§22.5): two was best on CH4 with either
+/// basis and on H2O/TZVP-MOLOPT, and what it mostly tunes is how many tiers
+/// — and so how many dispatches — a work list spreads over.
+pub const B_TARGET_DEFAULT: u32 = 2;
+
+fn b_target() -> u32 {
+    use std::sync::OnceLock;
+    static TARGET: OnceLock<u32> = OnceLock::new();
+    *TARGET.get_or_init(|| env_u32_override("CINTX_2E_B_TARGET").unwrap_or(B_TARGET_DEFAULT))
+}
+
+/// Leading slots of the shared G region that carry one [`META_STRIDE`]-wide
+/// row per primitive quartet of the block in flight; the G sub-slabs follow.
+pub const G_META_SLOTS: u32 = B_MAX * META_STRIDE;
+
+/// Slots per meta row: the builder's state (0 screened out, 1 under
+/// tolerance, 2 live), the primitive weight, `pi`, `pj`, and the first four
+/// `i`-contraction coefficients — everything the contraction phase would
+/// otherwise reload through two dependent uniform global loads per row
+/// (§22.5).
+pub const META_STRIDE: u32 = 8;
+
+/// Ceiling on primitive quartets a cube builds at once (B1).
+///
+/// The contraction phase walks the block serially, so the block is bounded
+/// even where a tiny class would let the tier and the lanes admit hundreds;
+/// and the meta rows cost `8 * B_MAX` slots of every tier.
+pub const B_MAX: u32 = 32;
+
+/// The shared-memory tier a class of G extent `g_size` dispatches under, or
+/// `0` for the global slab (B1, plan §22).
+///
+/// A pure function of the class and the backend's shared-memory limit: the
+/// smallest tier holding [`b_target`] G tensors of `3 * g_size`, or failing
+/// that the widest tier holding one, among the tiers whose allocation (tier
+/// plus the meta slots) the backend reports room for. `0` — the per-slot
+/// global slab, one primitive quartet per cube — for a class wider than every
+/// such tier.
+pub fn class_shared_tier(g_size: usize, max_shared_bytes: usize) -> u32 {
+    let need = 3 * g_size;
+    let cap = shared_tier_cap();
+    let fits = |tier: u32| {
+        tier <= cap
+            && (tier + G_META_SLOTS) as usize * std::mem::size_of::<f64>() <= max_shared_bytes
+    };
+    let want = need * b_target() as usize;
+    if let Some(tier) = SHARED_G_TIERS
+        .iter()
+        .copied()
+        .find(|&tier| want <= tier as usize && fits(tier))
+    {
+        return tier;
+    }
+    SHARED_G_TIERS
+        .iter()
+        .copied()
+        .filter(|&tier| need <= tier as usize && fits(tier))
+        .max()
+        .unwrap_or(0)
+}
+
+/// The widest tier a class may take, in slots; wider classes keep the global
+/// slab. `CINTX_2E_TIER_CAP` overrides it for a sweep.
+///
+/// A tier is the whole cube's shared memory, so a 32 KiB or 48 KiB tier
+/// admits two or one cubes per 64 KiB compute unit — and for the classes
+/// that need one (`(dd|dd)` at 3 375 slots) it holds a single G tensor, so it
+/// buys latency and nothing else. Swept on ROCm against the committed kernel
+/// in one session (§22.5): at 2 048 slots SO2 lost 10–20% on both bases while
+/// CH4 and H2O gained 1.4x–1.6x; at 1 024, eight cubes per unit, SO2 gains
+/// 1.1x–1.6x too and CH4/DZVP keeps 1.2x. No workload regresses at 1 024, which
+/// is why it is the default; 512 loses everywhere.
+pub const SHARED_G_TIER_CAP: u32 = 1024;
+
+fn shared_tier_cap() -> u32 {
+    use std::sync::OnceLock;
+    static CAP: OnceLock<u32> = OnceLock::new();
+    *CAP.get_or_init(|| env_u32_override("CINTX_2E_TIER_CAP").unwrap_or(SHARED_G_TIER_CAP))
+}
+
+/// The shared-memory budget a cooperative dispatch on `backend` may size its
+/// tier from, or `None` where the G tensor stays in the global slab: the
+/// per-unit decomposition (shared memory is per cube, and on the CPU runtime
+/// it is ordinary cache anyway) and the `CINTX_2E_SHARED_G=0` opt-out.
+///
+/// Consulted once per plan, like the fusion decision, so the grouping a
+/// pre-flight budget was computed for is the grouping that is dispatched.
+fn shared_tier_limit(backend: &ResolvedBackend) -> Option<usize> {
+    if !shared_g_enabled() {
+        return None;
+    }
+    fn limit<R: Runtime>(client: &ComputeClient<R>) -> Option<usize> {
+        if two_e_per_unit::<R>(client) {
+            None
+        } else {
+            Some(client.properties().hardware.max_shared_memory_size)
+        }
+    }
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => limit::<cubecl::cpu::CpuRuntime>(client),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => limit::<cubecl_wgpu::WgpuRuntime>(client),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => limit::<cubecl_cuda::CudaRuntime>(client),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => limit::<cubecl_hip::HipRuntime>(client),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => limit::<cubecl_wgpu::WgpuRuntime>(client),
+    }
+}
 
 /// The kernel's comptime signature — everything a dispatch must hold constant.
 ///
@@ -3532,6 +4168,16 @@ pub struct TwoELaunchSignature {
     /// their class row — and the order itself above that, where the extended
     /// solver's comptime order makes fusion cost more than it saves.
     pub nroots: u32,
+    /// The shared-memory tier the class's G tensor takes (B1, plan §22),
+    /// `0` for the per-slot global slab — see [`class_shared_tier`].
+    ///
+    /// Part of the signature, not a per-dispatch choice, because the tier is
+    /// comptime in the kernel and because a dispatch's cube width and tier are
+    /// sized to its *widest* class: fusing a `(ss|ss)` class under a
+    /// `(dd|dd)` one put every narrow row on a 256-lane cube at a 32 KiB tier,
+    /// which measured 1.13x–1.56x *slower* than no fusion at all (§22.3).
+    /// Keyed by tier, the narrow classes keep the narrow geometry.
+    pub tier: u32,
 }
 
 /// The bucket every `nroots <= `[`MAX_FUSED_NROOTS`] class dispatches under.
@@ -3557,8 +4203,13 @@ impl TwoELaunchSignature {
     /// the caller passes it rather than the callee reading it, so that one
     /// grouping decision covers a whole plan and cannot change between the
     /// pre-flight budget and the dispatch.
+    ///
+    /// `shared_limit` is the backend's shared-memory budget in bytes for a
+    /// cooperative dispatch, or `None` where the G tensor stays in the global
+    /// slab (the per-unit decomposition, or the switch off) — see
+    /// [`shared_tier_limit`].
     #[must_use]
-    pub fn of(params: &TwoEClassParams, fuse: bool) -> Self {
+    pub fn of(params: &TwoEClassParams, fuse: bool, shared_limit: Option<usize>) -> Self {
         Self {
             ibase: params.ibase,
             kbase: params.kbase,
@@ -3567,6 +4218,7 @@ impl TwoELaunchSignature {
             } else {
                 params.nroots
             },
+            tier: shared_limit.map_or(0, |limit| class_shared_tier(params.g_size as usize, limit)),
         }
     }
 }
@@ -3993,12 +4645,17 @@ fn run_2e_batches<R: Runtime>(
         let cube_dim =
             two_e_cube_dim::<R>(client, group.max_block_len, n_rows, g_size_u, ctr_len_u);
         let n_cubes = two_e_cube_count::<R>(client, n_rows, g_size_u, ctr_len_u);
-        let slots = if two_e_per_unit::<R>(client) {
+        let per_unit = two_e_per_unit::<R>(client);
+        let slots = if per_unit {
             n_cubes as usize * cube_dim.num_elems() as usize
         } else {
             n_cubes as usize
         };
-        shared_g_len = shared_g_len.max(slots * g_slab_stride(g_size_u));
+        // B1: a dispatch whose G tensor lives in shared memory allocates no
+        // global slab for it at all — the memory the tiers save.
+        if group.signature.tier == 0 {
+            shared_g_len = shared_g_len.max(slots * g_slab_stride(g_size_u));
+        }
         shared_ctr_len = shared_ctr_len.max(slots * ctr_slab_stride(ctr_len_u));
     }
     let shared_g_bytes = shared_g_len * std::mem::size_of::<f64>();
@@ -4038,19 +4695,16 @@ fn run_2e_batches<R: Runtime>(
         // touches exactly the elements it did when it launched alone.
         let g_size_u = group.max_g_size as usize;
         let per_unit = two_e_per_unit::<R>(client);
-        // ── S3: does this dispatch's widest class fit shared memory? ───────
+        // ── S3 / B1: the shared-memory tier is part of the signature ────────
         //
-        // Three conditions, all necessary. The decomposition must be the
-        // cooperative one, because shared memory is per cube and the per-unit
-        // shape gives every *unit* its own slab — 16 slabs in one workgroup's
-        // shared memory is not a trade that pays, and on the CPU runtime shared
-        // memory is ordinary cache anyway. The widest class must fit the
-        // compiled allocation. And the backend must report room for it.
-        let shared_g_bytes = 3 * g_size_u * std::mem::size_of::<f64>();
-        let use_shared_g = !per_unit
-            && 3 * g_size_u <= SHARED_G_SLOTS
-            && shared_g_bytes <= client.properties().hardware.max_shared_memory_size
-            && shared_g_enabled();
+        // Decided when the groups were built (`TwoELaunchSignature::of`), from
+        // the class and the backend's limit; `0` is the per-slot global slab,
+        // and it is what every group carries under the per-unit decomposition.
+        let shared_tier = group.signature.tier;
+        debug_assert!(
+            !per_unit || shared_tier == 0,
+            "a per-unit dispatch carries a tier"
+        );
 
         // ── G1: spread each cooperative quartet over several cubes ──────────
         //
@@ -4069,6 +4723,10 @@ fn run_2e_batches<R: Runtime>(
         // it is sized from the quartet *alone* (§18), so a memory budget
         // changes what a chunk holds but never what a quartet computes.
         // `CINTX_2E_KL_SPLIT=off` is the way back to an unsplit run.
+        let trace = dispatch_trace_enabled();
+        let mut t_phase = std::time::Instant::now();
+        let mut t_plan = 0.0;
+        let mut t_upload = 0.0;
         let splits: Vec<u32> = kl_split_plan(group);
         let any_split = splits.iter().any(|&s| s > 1);
         let split: Option<KlSplitLayout> = any_split.then(|| {
@@ -4097,6 +4755,9 @@ fn run_2e_batches<R: Runtime>(
             .expect("device memory probe poisoned")
             .note_kl_split(splits.iter().copied().max().unwrap_or(1));
 
+        if trace {
+            t_plan = trace_phase(client, &mut t_phase);
+        }
         let quartets_h = client.create_from_slice(u32::as_bytes(rows));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         // The transform reads the same class shapes the evaluation does and the
@@ -4166,7 +4827,7 @@ fn run_2e_batches<R: Runtime>(
             expcutoff: pairs.expcutoff,
             nbas: pairs.nbas,
             acc_slots_max: accumulator_slots_max(),
-            g_in_shared: use_shared_g,
+            shared_tier,
             out_len: combined_len,
             n_quartets: n_rows as u32,
             n_cubes: two_e_cube_count::<R>(client, n_rows, g_size_u, group.max_ctr_len as usize),
@@ -4185,7 +4846,15 @@ fn run_2e_batches<R: Runtime>(
             ),
             probe: Arc::clone(&probe),
         };
+        if trace {
+            t_upload = trace_phase(client, &mut t_phase);
+        }
         dispatch_2e_group(dispatch);
+        let t_kernel = if trace {
+            trace_phase(client, &mut t_phase)
+        } else {
+            0.0
+        };
         // G1: fold the partial blocks onto part 0, in place, then hand the
         // consumer a view of just the group's output. Trimming the handle
         // rather than copying into a fresh buffer is what keeps the split free
@@ -4196,6 +4865,11 @@ fn run_2e_batches<R: Runtime>(
             out_h.offset_end((extra_len * std::mem::size_of::<f64>()) as u64)
         } else {
             out_h
+        };
+        let t_reduce = if trace {
+            trace_phase(client, &mut t_phase)
+        } else {
+            0.0
         };
 
         // ── S4: optionally keep one dispatch in flight ────────────────────
@@ -4260,6 +4934,19 @@ fn run_2e_batches<R: Runtime>(
                 .lock()
                 .expect("device memory probe poisoned")
                 .sample(client);
+            if trace {
+                let t_c2s = trace_phase(client, &mut t_phase);
+                eprintln!(
+                    "  trace group {group_index}: sig({},{},{},tier={}) rows={n_rows} cubes={} \
+                     plan={t_plan:.2}ms upload={t_upload:.2}ms kernel={t_kernel:.2}ms \
+                     reduce={t_reduce:.2}ms c2s={t_c2s:.2}ms",
+                    group.signature.ibase,
+                    group.signature.kbase,
+                    group.signature.nroots,
+                    group.signature.tier,
+                    two_e_cube_count::<R>(client, n_rows, g_size_u, group.max_ctr_len as usize),
+                );
+            }
         } else if pipelined {
             if let Some((prev_index, prev_h, prev_len)) = pending.take() {
                 drain_group(client, &probe, prev_index, prev_h, prev_len, on_group);
@@ -4273,6 +4960,23 @@ fn run_2e_batches<R: Runtime>(
         drain_group(client, &probe, index, handle, len, on_group);
     }
     *probe.lock().expect("device memory probe poisoned")
+}
+
+/// `CINTX_2E_TRACE=1`: time every phase of every dispatch in
+/// [`run_2e_batches`], each one *synced* so the number is the phase's own and
+/// not the enqueue cost of a lazy launch. It serialises the pipeline, so it is
+/// an attribution aid and never a timing run (§22.5).
+fn dispatch_trace_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("CINTX_2E_TRACE").is_ok_and(|v| v == "1"))
+}
+
+fn trace_phase<R: Runtime>(client: &ComputeClient<R>, since: &mut std::time::Instant) -> f64 {
+    let _ = cubecl::future::block_on(client.sync());
+    let ms = since.elapsed().as_secs_f64() * 1e3;
+    *since = std::time::Instant::now();
+    ms
 }
 
 /// Evaluate one chunk's groups and transform them on the device (M3).
@@ -4450,8 +5154,9 @@ struct TwoEGroupDispatch<R: Runtime> {
     nbas: u32,
     /// The S2 accumulator ceiling this dispatch runs under.
     acc_slots_max: u32,
-    /// Does this dispatch's G tensor live in shared memory (S3)?
-    g_in_shared: bool,
+    /// The shared-memory tier this dispatch's G tensor lives in (S3 / B1),
+    /// `0` for the per-slot global slab.
+    shared_tier: u32,
     out_len: usize,
     n_quartets: u32,
     n_cubes: u32,
@@ -4491,7 +5196,13 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
             self.n_cubes as usize
         };
         let g_stride = g_slab_stride(self.g_size);
-        let g_len = n_slots * g_stride;
+        // B1: a dispatch running in a shared-memory tier never indexes the
+        // global slab, and binds the run's (possibly empty) one unread.
+        let g_len = if self.shared_tier > 0 {
+            0
+        } else {
+            n_slots * g_stride
+        };
         // The run's shared slab covers every heuristic geometry (M4.1). A tuning
         // candidate may ask for a wider cube than the heuristic did, and so for
         // more slots than the shared slab holds; that candidate — and only that
@@ -4587,7 +5298,7 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 self.signature.kbase,
                 self.max_nroots,
                 u32::from(self.per_unit),
-                u32::from(self.g_in_shared),
+                self.shared_tier,
                 QUARTET_ROW_STRIDE as u32,
             );
         }
@@ -4813,7 +5524,7 @@ fn run_2e_scalar_device<R: Runtime>(
 
     // One class, one dispatch: the Rys-order fusion (F1) has nothing to merge
     // here, so this group is keyed on the class's own order.
-    let mut group = TwoELaunchGroup::new(TwoELaunchSignature::of(&params, false));
+    let mut group = TwoELaunchGroup::new(TwoELaunchSignature::of(&params, false, None));
     let class_index = group.push_class(&params);
     group.out_len = out_len;
     group.max_block_len = (out_len / ((nctr_i * nctr_j * nctr_k * nctr_l) as usize).max(1)) as u32;
@@ -10442,6 +11153,9 @@ fn plan_2e_stream(
     // F1 (§15): one grouping decision for the whole plan, taken here so the
     // pre-flight budget below and the dispatch cannot disagree about it.
     let fuse = two_e_nroots_fusion();
+    // B1 (§22): the shared-memory tier is part of the signature too, decided
+    // once here for the same reason.
+    let shared_limit = shared_tier_limit(backend);
 
     // ── M1: evaluate in chunks of consecutive quartets ────────────────────
     //
@@ -10493,6 +11207,7 @@ fn plan_2e_stream(
             device_transform,
             ceiling,
             fuse,
+            shared_limit,
             cart_budget,
             options.memory_limit_bytes,
         )? {
@@ -10541,6 +11256,7 @@ fn plan_2e_chunks(
     device_transform: bool,
     ceiling: usize,
     fuse: bool,
+    shared_limit: Option<usize>,
     cart_budget: usize,
     limit: Option<usize>,
 ) -> Result<Result<Vec<TwoEChunkPlan>, cintxRsError>, cintxRsError> {
@@ -10562,7 +11278,7 @@ fn plan_2e_chunks(
     for range in ranges {
         let sub = &quartets[range.clone()];
         let (groups, classes, placement, row_owner) =
-            build_launch_groups(sub, shells, &resident.pairs, ceiling, fuse)?;
+            build_launch_groups(sub, shells, &resident.pairs, ceiling, fuse, shared_limit)?;
 
         // `CINTX_2E_GROUPS=1` prints the grouping this chunk will dispatch:
         // per signature, the quartet count, the merged class count, the widest
@@ -10581,11 +11297,12 @@ fn plan_2e_chunks(
             for g in &groups {
                 let cost: u64 = g.quartet_cost.iter().sum();
                 eprintln!(
-                    "    sig(ibase={},kbase={},nroots={}) quartets={} classes={} \
+                    "    sig(ibase={},kbase={},nroots={},tier={}) quartets={} classes={} \
                      block={} g_size={} nr_max={} cost={} ({:.1}%) maxq={} split={}",
                     g.signature.ibase,
                     g.signature.kbase,
                     g.signature.nroots,
+                    g.signature.tier,
                     g.len(),
                     g.class_count(),
                     g.max_block_len,
@@ -10996,6 +11713,7 @@ fn build_launch_groups(
     pairs: &crate::kernels::pair_table::PairTable,
     ceiling: usize,
     fuse: bool,
+    shared_limit: Option<usize>,
 ) -> Result<LaunchGrouping, cintxRsError> {
     // Group by launch class, preserving the caller's order within a class.
     let mut grouped: std::collections::BTreeMap<[u8; 4], Vec<usize>> = Default::default();
@@ -11044,7 +11762,7 @@ fn build_launch_groups(
             });
         }
 
-        let signature = TwoELaunchSignature::of(&params, fuse);
+        let signature = TwoELaunchSignature::of(&params, fuse, shared_limit);
         let cart_block = ncart(li) * ncart(lj) * ncart(lk) * ncart(ll);
         let class_index = classes.len();
         classes.push(TwoEClassPlacement {
@@ -11998,7 +12716,7 @@ pub fn prewarm_2e_work_list(
     for (class, (count, representative)) in by_class {
         let [li, lj, lk, ll] = class;
         let params = TwoEClassParams::new(li, lj, lk, ll);
-        let signature = TwoELaunchSignature::of(&params, fuse);
+        let signature = TwoELaunchSignature::of(&params, fuse, None);
         let entry = by_signature
             .entry((signature.ibase, signature.kbase, signature.nroots))
             .or_default();

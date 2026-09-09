@@ -1969,3 +1969,232 @@ partition bounds, and the split and transform work-item tables. Every one is
 where the project's architecture constraint puts host work.
 
 No integral family evaluates on the host any more.
+
+## 22. B1 — the G tensor in shared memory, a block of primitive quartets per cube (2026-09-09)
+
+The instruction this section answers: *optimise the memory efficiency and the
+speed of the on-device kernel for `gth-dzvp-molopt-sr` and
+`gth-tzvp-molopt-sr`*, following the profiling manual
+(`cubecl_manual/manual/Cubecl/16_profiling_and_bottleneck_identification.md`):
+verify first, time portably, attribute with one change per measurement. This
+host has no `rocprofv3`, so attribution is the in-process A/B `gth_profile`
+already does, plus two probes and a synced per-phase trace added for this
+section.
+
+### 22.1 Where the baseline stood, and what the first two switches said
+
+Two things had to be settled before any code moved.
+
+**The 64-quartet dispatch cap is not the default.** Every ROCm figure since
+§8.6 was taken under `CINTX_2E_CHUNK_QUARTETS=64`, a display-GPU safety
+setting from the era of ten-second dispatches. At today's dispatch lengths it
+is safe to drop, and dropping it is worth **2.1x–2.9x** on H2O alone (443 → 148
+ms DZVP-SR, 857 → 412 ms TZVP), because a chunk's dispatches were paying the
+launch floor seven times over. The uncapped run is the baseline below.
+
+**The GPU is 8–10x slower than the CPU**, on every workload:
+
+| workload | CPU, 16 threads (ms) | ROCm gfx1151 (ms) | ROCm device peak |
+|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 13.8 | 148 | 45.5 MiB |
+| CH4 / DZVP-MOLOPT-SR | 50.9 | 432 | 224 MiB |
+| SO2 / DZVP-MOLOPT-SR | 68.4 | 335 | 128 MiB |
+| H2O / TZVP-MOLOPT | 47.4 | 412 | 155 MiB |
+| CH4 / TZVP-MOLOPT | 203 | 1 623 | 437 MiB |
+| SO2 / TZVP-MOLOPT | 296 | (the run died silently) | — |
+
+The device peak is 40–130x the spherical output, almost all of it the per-cube
+global G and contraction slabs (88.8 MiB on CH4/TZVP) that one-row-per-cube
+dispatching allocates for thousands of rows at once.
+
+Two switches that already existed said where *not* to look. `probe:no-ctr`
+gave 1.07x–1.24x — the contraction is not the time. `gshared=on`, the single
+48 KiB shared-memory slab §9.2 measured as a wash, now measured **0.31x–0.57x**:
+one workgroup per compute unit, and with the contraction gone from the profile
+the occupancy loss had nothing left to hide behind. That fixed the shape of the
+fix: shared memory, but never one allocation.
+
+### 22.2 What landed
+
+- **A tiered shared-memory G region** (`SHARED_G_TIERS`: 512, 1 024, 2 048,
+  4 096, 6 144 f64 slots; `shared_tier` replaces `g_in_shared` as the
+  kernel's comptime parameter, `0` being the per-slot global slab). A class's
+  tier is the smallest holding `B_TARGET_DEFAULT = 2` of its `3·g_size` G
+  tensors, or the widest holding one, **capped at `SHARED_G_TIER_CAP = 1 024`
+  slots** (8 KiB, eight cubes per compute unit); the global slab remains for
+  anything wider and for the per-unit decomposition, where shared memory is
+  per cube. Both constants were swept (§22.5).
+- **A block of primitive quartets per cube** (`b_max`). The cube's lanes are cut
+  into `b_max` sub-groups; each builds one primitive quartet's roots, VRR and
+  HRR into its own sub-slab, and the cube then contracts the block in row order
+  — the same sums into the same elements in the same sequence. `b_max` is one
+  wherever the G tensor is global, which is exactly the shape that was there.
+- **The HRR dealt out per chain, on the cooperative arm.** Each raise is a
+  chain along the raised index and independent across the others, so it is
+  one task per `(axis, root, <other index>)` rather than per `(axis, root)`:
+  27 and 36 tasks on a `(pp|pp)`, 75 and 135 on a `(dd|dd)`, against 9 and 15.
+  Two barriers join the two the block already needed. Every lane walks only
+  the tasks it owns, decoded once and carried — no division per task. The
+  per-unit arm keeps the committed nest, comptime-selected: its two innermost
+  loops sweep each element's contiguous `(i, root)` span, which is what the
+  CPU vectorises, and the chain form measured 1.1x–1.3x slower there.
+- **The tier is part of the launch signature** (`TwoELaunchSignature::tier`),
+  decided once per plan from the class and the backend's shared-memory limit,
+  exactly as the fusion decision is. See §22.3 for why.
+- **A meta row per primitive quartet of the block** in the shared region
+  (`META_STRIDE = 8`): state, primitive weight, `pi`, `pj` and the first four
+  `i`-contraction coefficients, written by the builder that already holds
+  them. See §22.5.
+- **The cooperative grid is capped** at `COOPERATIVE_CUBES_PER_UNIT = 64` cubes
+  per compute unit, grid-striding the rest, so the per-cube contraction scratch
+  — which stays global — is bounded by the machine rather than the work list.
+- Attribution aids: `probe:no-build` and `probe:no-roots` (`set_contraction_mode`
+  3 and 4), a `gslab=global` variant, `CINTX_2E_B_TARGET`,
+  `CINTX_2E_CUBES_PER_UNIT`, and `CINTX_2E_TRACE=1`, which times every phase of
+  every dispatch synced.
+
+**Bit-identical throughout.** The per-unit arm's unsplit output is unchanged to
+the bit on all six workloads against a dump taken before this section (0 of
+2 313 078 elements differ); the cooperative and per-unit arms agree bit for bit
+on def2 and GTH (`cooperative_g_build_is_bit_identical_on_*`), the forced-split
+gates hold, and a new gate, `cooperative_block_is_bit_identical_on_gth`, pins a
+twelve-lane cube on the CPU runtime so a block wider than one is held to the
+per-unit arm too. Every ROCm arm in `gth_profile` reads `=bits` against the
+default, and the vendor gap is the §8.4 figure on every row.
+
+### 22.3 Three measurements that overturned the plan
+
+**Per-dispatch tier, fused: slower.** The first version chose the tier per
+dispatch, from its widest class, and kept F1's fusion. It was 1.09x on H2O/DZVP
+and *slower* everywhere else (CH4/DZVP 432 → 539 ms), and the profile said why:
+`fuse=off` was **1.13x–1.56x faster than the default** and `coop=lane0` cost
+nothing. A fused `(ibase, kbase)` dispatch carries `(ss|ss)` beside `(dd|dd)`,
+so every narrow row ran on a 256-lane cube at a 32 KiB tier, two cubes per
+compute unit, with one lane live in its contraction. Keying the dispatch by
+tier gave each class its own width and tier: H2O/DZVP 148 → 120 ms, CH4/DZVP
+432 → 324, CH4/TZVP 1 623 → 1 121, and the device peak fell 5–17x. That is the
+memory result of this section, and it came from the grouping, not the slab.
+
+**Lane splitting does not matter.** `coop=lane0` — every sub-group's build on
+one lane — stayed at 0.98x–1.01x after the tiers, and dealing the HRR out per
+chain moved nothing. The build phase is 55–65% of the time (`probe:no-build`
+2.3x–2.8x) yet its cost is invariant to how many lanes share it. The
+recurrences are not the bottleneck; something fixed per block is.
+
+**Nothing about occupancy matters either.** Cube width 32 or 256, grid cap 8
+or 512 cubes per unit: identical times. The only knob that moved the number was
+`B_TARGET`, and it moved it by changing the *launch count* (10 launches 100 ms,
+16 launches 126 ms, 20 launches 141 ms on H2O/DZVP).
+
+### 22.4 What the machine can do, and what the trace showed
+
+Two numbers frame the rest. gfx1151 executes `f64` at a sixteenth of its `f32`
+rate: eight compute units at ~1 GHz is roughly 64 GFLOP/s of `f64`, against
+several hundred for the sixteen-core host — the CPU has more `f64` than this
+GPU, and the 8–10x of §22.1 is mostly that ratio. And a `(pp|pp)` primitive
+quartet is ~1 700 `f64` flops, so the whole of CH4/DZVP is ~2.3 GFLOP: **the
+GPU floor for this work list on this part is tens of milliseconds**, not the
+single-digit ones the CPU reaches.
+
+`CINTX_2E_TRACE=1` then put a number on the block. On the launch-floor list a
+dispatch of *two rows* took 2.7 ms of kernel time; the rows are unsplit
+`(ss|ss)` quartets of 2 401 primitive quartets, walked in blocks of ten, so a
+block costs ~10 µs — ten thousand cycles for ten primitive quartets of a
+hundred flops each. That is the per-block fixed cost: dependent uniform global
+loads (the bra pair's row, its `pair_index`, the exponents, and then in the
+contraction phase, per row, the `pair_index` again and the coefficients), the
+`f64` division and square root of the screen, the roots, four barriers. The
+contraction phase's two dependent uniform loads per row, times the block, looked
+like the largest single term, and the meta row of §22.2 removes them. **It
+changed nothing** — 121 → 121 ms, 388 → 388, 335 → 335, 1 157 → 1 157 — which
+is the fourth null result of this section and the one that closes the
+attribution the host can do: lane split, cube width, grid cap and the
+contraction's loads are all measured out. What is left in the block's ten
+thousand cycles — the `f64` division and square-root sequences, the register
+pressure of a program that carries five Rys solvers, or the barriers — wants
+`rocprofv3`'s counters, which this host does not have (§3.4 of the manual). The
+meta row stays: it is correct, gated, and the first thing a counter run would
+otherwise have to add.
+
+**The block width, swept.** `CINTX_2E_B_TARGET` decides which tier a class
+takes and, through the tier, how many dispatches a work list spreads over:
+
+| `B_TARGET` | launches | H2O/DZ | H2O/TZ | CH4/DZ | CH4/TZ |
+|---|---|---|---|---|---|
+| 1 | 10 | **93** | 395 | 307 | 1 080 |
+| **2** | 13 | 104 | **336** | **283** | **941** |
+| 4 | 16 | 121 | 388 | 335 | 1 157 |
+| 16 | 20 | 141 | 539 | — | — |
+
+Two is the default. The column that moves with it is the launch count: every
+dispatch lasts as long as its longest row, and a `(ss|ss)` row of 2 401
+primitive quartets is not split (§22.6), so each extra tier is another 2–3 ms
+floor.
+
+### 22.5 Measured
+
+The committed kernel and this one, built side by side and run **alternated in
+one session** on ROCm (best of 3), and the device peak of each:
+
+| workload | before (ms) | after (ms) | **speed** | device peak before → after |
+|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 160.1 | 92.6 | **1.73x** | 45.5 → 10.4 MiB |
+| CH4 / DZVP-MOLOPT-SR | 473.1 | 243.9 | **1.94x** | 224 → 25.3 MiB |
+| SO2 / DZVP-MOLOPT-SR | 361.7 | 326.3 | **1.11x** | 128 → 45.1 MiB |
+| H2O / TZVP-MOLOPT | 420.6 | 248.2 | **1.69x** | 155 → 25.9 MiB |
+| CH4 / TZVP-MOLOPT | 1 626.5 | 794.9 | **2.05x** | 437 → 91.8 MiB |
+| SO2 / TZVP-MOLOPT | 1 395.5 | 830.8 | **1.68x** | — → 108.6 MiB |
+
+(The "before" peaks are from the §22.1 baseline run; SO2/TZVP's died there.
+Across the day's runs the same binary's absolute time on this APU varied by
+±15% — the H2O/DZVP default was measured at 77, 93, 105 and 121 ms — which
+is why the table is one session's alternation and not the best of the day.)
+
+The per-cube global scratch is now the contraction stages only: 1.9–53 MiB
+against 8.9–158 MiB of G+contraction slabs before, and the run's shared G
+tensor is in the tiers.
+
+**The tier cap and the block target, swept against the committed kernel.**
+The first default (cap 2 048, `B_TARGET` 2) lost 10–20% on SO2 with either
+basis while H2O and CH4 gained 1.4x–1.6x; SO2 is the throughput-bound list
+here (`probe:no-build` only 1.07x–1.25x, launch floor 5–13%) and its `d`
+classes sat in the 16 KiB tier at four cubes per unit. At cap 1 024 SO2/DZVP
+went 619 → 313 ms and SO2/TZVP 2 111 → 1 206 in one sweep, CH4/TZVP was
+unchanged and CH4/DZVP gave back a fifth; at 512 every row lost. `B_TARGET`
+at 1, 2, 4 and 16 on H2O and CH4: 2. Nothing regresses at the defaults,
+which is the property that chose them.
+
+**On the CPU nothing should have moved, and the alternated A/B says it did
+not**: the committed binary against this one, four rounds each on the
+sixteen-thread host, straddle 1.0x within the 2x process-to-process band this
+host has always shown (§8 of the def2 plan), with the worst paired row at
+~1.1x. Two mechanisms that *did* cost the per-unit arm on the way were caught
+by that A/B and removed: ~170 integer divisions per primitive quartet in the
+first owned-task decode, and the chain-innermost HRR nest.
+
+**Attribution on the final kernel** (ROCm, in-process ratios): `probe:no-build`
+1.57x–2.33x, `probe:no-roots` 1.11x–1.49x, `probe:no-ctr` 1.14x–1.45x,
+`coop=lane0` 0.38x–0.70x, `gslab=global` 0.40x–0.67x, `klsplit=off`
+0.43x–0.80x, `fuse=off` 0.72x–1.04x. The lane split of the build now pays
+1.4x–2.6x — where the same switch measured 1.0x on the division-decoded
+form — and the global slab is the worst arm on every workload.
+
+### 22.6 What is left
+
+- The split rule under-splits small classes on the GPU: `quartet_cost_estimate`
+  puts an `(ss|ss)` primitive quartet at a twentieth of a `(pp|pp)` one, and
+  on this device the block's fixed cost makes it nearer a third. A larger
+  constant term would split those rows; it changes the split arm's bits (within
+  the block-scale gate) and is the same rule on both backends. Not taken here,
+  because the constant should be measured, not guessed.
+- The contraction stages (`gctri`, `gctrj`, `gctrk`) stay in global memory. They
+  are the whole of the cooperative arm's per-cube scratch now (24.7 MiB on
+  CH4/TZVP under the grid cap) and the `i` stage is one read-modify-write per
+  element per primitive quartet.
+- `B_TARGET_DEFAULT` and `SHARED_G_TIER_CAP` were swept on this APU only. A
+  discrete GPU with more shared memory per unit, or a wave64 part, will want
+  the sweep redone; both are one environment variable.
+- On the CPU runtime a wide cooperative cube spins at every barrier, so the
+  block gate runs twelve lanes over six quartets (five minutes at 24 lanes
+  over eight).
+- The T4 package is still unrun.
