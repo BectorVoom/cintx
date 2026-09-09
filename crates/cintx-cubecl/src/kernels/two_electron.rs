@@ -1026,6 +1026,31 @@ fn vrr_build_axes_roots<F: Float, N: Size>(
 /// `per_unit == 1` units walk *different* quartets, so their trip counts differ
 /// and any barrier inside the quartet loop is divergent.
 ///
+/// # Every way the two arms differ, and why each one has to (§18)
+///
+/// The rule is that CPU and GPU run the *same method*: the same grouping, the
+/// same ket-pair split, the same partition, the same arithmetic in the same
+/// order. Everything below is a consequence of one fact — the CubeCL CPU
+/// runtime makes a unit an OS thread and `cube_count` a sequential loop, so the
+/// grid is not a parallelism axis there — and nothing below is a policy choice.
+/// **The two arms are bit-identical to each other**, which is what
+/// `two_e_cooperative_arm::cooperative_g_build_is_bit_identical_on_*` pins on
+/// the CPU backend, where both can be run.
+///
+/// | difference | forced by |
+/// |---|---|
+/// | `sync_cube()` present or comptime-removed | units walk different quartets under `per_unit`, so a barrier in the quartet loop is divergent |
+/// | the G build split `task % build_lanes` (S3) | there is one lane per slot under `per_unit`; the residue test admits every task and collapses to the scalar loop |
+/// | the contraction split `q_elem % lanes` | the same: `lanes == 1` |
+/// | the vector VRR width (§12) | it folds the roots into lanes, which is free where a slot *is* one lane and costs S3's `3·nroots` tasks where a slot is a cube |
+/// | [`acc_capacity`] 256 vs 64 slots | private storage is per work item, and a 256-wide cube holding 256 slots each would spill |
+/// | cube width and count | `cooperative_cube_dim` sizes a cube from the Cartesian block; `per_unit_cube_dim` sizes a thread pool from the rows |
+///
+/// What is deliberately *not* on that list any more: which Rys orders share a
+/// dispatch (F1, §15 — both fuse), whether a quartet's ket range is split (G1,
+/// §16–18 — both do, by the same per-quartet rule), and whether a memory limit
+/// changes the arithmetic (§18 — it does not, on either).
+///
 /// See the module note above for the comptime/runtime split.
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
@@ -2685,18 +2710,60 @@ fn quartet_cost_estimate(prim_quartets: u64, params: &TwoEClassParams, nctr_i: u
     prim_quartets.max(1) * per_prim
 }
 
-/// Cubes per hardware execution unit the ket-pair split aims for (G1).
+/// The most [`quartet_cost_estimate`] work one item of the ket-pair split may
+/// carry (G1, §18).
 ///
-/// One quartet per cube leaves a small molecule with a few dozen workgroups
-/// on a GPU of tens of compute units, each walking thousands of primitive
-/// quartets serially (GTH plan §10.5). Eight cubes per unit is enough
-/// occupancy to hide that latency without asking for more partial buffers
-/// than the split is worth.
-const KL_SPLIT_TARGET_CUBES_PER_UNIT: usize = 8;
+/// A work item is a cube on the cooperative shape and a row of K2's partition
+/// on the per-unit one, and the split serves both: **occupancy** there — one
+/// quartet per cube leaves a small molecule with a few dozen workgroups on a
+/// GPU of tens of compute units (§10.5) — and **balance** here, because K2 cuts
+/// whole rows, so a dispatch whose costliest quartet exceeds a `1/units` share
+/// of the total cannot be balanced until that quartet is divisible.
+///
+/// # Why this is an absolute cost and not a share of the dispatch
+///
+/// It was `total / (8 · units)` until §18, and that made the split a function
+/// of *how the work list happened to be batched*. Two consequences, and both
+/// are the kind of thing that should not be true:
+///
+/// - **CPU and GPU split the same quartet differently**, because they chunk
+///   differently and report different `parallel_units`. The two backends then
+///   disagree for a reason that has nothing to do with the hardware.
+/// - **Chunking changed the answer.** A run under `memory_limit_bytes`, or the
+///   same quartets evaluated in two calls instead of one, re-associated the ket
+///   sum differently — `chunked_evaluation_is_bit_identical_to_unchunked` and
+///   `tuned_and_untuned_dispatches_agree_bit_for_bit` are the contracts that
+///   says otherwise, and they are worth more than the targeting was.
+///
+/// Against an absolute cap the split is a pure function of the quartet, so the
+/// same quartet splits the same way in every batch, on every backend, and the
+/// pre-flight memory plan can predict it exactly — [`plan_batch_bytes`] charges
+/// what [`kl_split_plan`] will ask for, with no client and no guessing.
+///
+/// The value is [swept in §18.3]; `CINTX_2E_KL_SPLIT_COST` overrides it.
+const KL_SPLIT_TARGET_PART_COST: u64 = 1_000_000;
 
-/// Ceiling on the partial-output buffers the ket-pair split may add, in bytes
-/// (G1). Above it the split narrows rather than the run growing.
-const KL_SPLIT_PARTIAL_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+/// Ceiling on the partial blocks **one quartet** may add, in bytes (G1, §18).
+///
+/// The whole-group budget this replaces was the other half of the batch
+/// dependence: which quartets got narrowed depended on what else was in the
+/// dispatch. Per quartet it is again a pure function of the quartet — and it is
+/// what bounds `(parts - 1) · block` for a wide class, where the ket-range cap
+/// alone would allow 63 copies of a 10 000-element `(ff|ff)` block.
+const KL_SPLIT_PARTIAL_BUDGET_BYTES_PER_QUARTET: usize = 1024 * 1024;
+
+/// The per-part cost cap, with `CINTX_2E_KL_SPLIT_COST` applied.
+fn kl_split_part_cost() -> u64 {
+    use std::sync::OnceLock;
+    static COST: OnceLock<u64> = OnceLock::new();
+    *COST.get_or_init(|| {
+        std::env::var("CINTX_2E_KL_SPLIT_COST")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(KL_SPLIT_TARGET_PART_COST)
+    })
+}
 
 /// Widest ket-pair split (G1). A GTH-MOLOPT ket has at most 49 primitive
 /// pairs, a def2-TZVP sulfur ket at most 36 surviving ones; beyond this a
@@ -2744,79 +2811,86 @@ pub fn set_two_e_kl_split(parts: Option<u32>) {
 /// quartet keeps the whole ket range, writes straight into the group's output
 /// and costs no partial buffer at all.
 ///
-/// # Why this is per quartet and not per group
+/// **A pure function of the quartet.** Nothing here reads the group's total,
+/// the backend, the chunking or the unit count, and that is the point (§18):
+/// the same quartet splits the same way in every batch and on every backend, so
+/// re-associating the ket sum cannot make the answer depend on how the caller
+/// happened to slice the work list, and CPU and GPU differ only where the
+/// hardware makes them.
 ///
-/// It was per group until §16, and that was survivable only while a group held
-/// one Rys order — a dispatch of `(dd|dd)` quartets is uniform, so one number
-/// fits it. F1 (§15) made groups *heterogeneous*: one dispatch now carries an
-/// `(ss|ss)` quartet next to a `(dd|dd)` one whose serial walk is two hundred
-/// times longer, and a per-group split either starves the long one or buys the
-/// short one parts it cannot use. The measurement (§16.1) is unambiguous:
-/// forcing the fused cooperative dispatch back to the split the *unfused* one
-/// chose turned 0.82x into 1.29x, while pinning the cube width — the other
-/// mechanism §15.4 suspected — changed nothing at all.
+/// # Why per quartet and not per group
+///
+/// The split was sized once per group until §16, and that was survivable only
+/// while a group held one Rys order — a dispatch of `(dd|dd)` quartets is
+/// uniform, so one number fits it. F1 (§15) made groups *heterogeneous*: one
+/// dispatch now carries an `(ss|ss)` quartet next to a `(dd|dd)` one whose
+/// serial walk is two hundred times longer, and a per-group split either
+/// starves the long one or buys the short one parts it cannot use. The
+/// measurement (§16.1) is unambiguous: forcing the fused cooperative dispatch
+/// back to the split the *unfused* one chose turned 0.82x into 1.29x, while
+/// pinning the cube width — the other mechanism §15.4 suspected — changed
+/// nothing at all.
 ///
 /// # The rule
 ///
-/// A cube's serial cost is its quartet's cost divided by its part count, so
-/// equalising `cost / parts` across the dispatch is what shortens the critical
-/// path. Pick the per-part cost that would spread the group over
-/// [`KL_SPLIT_TARGET_CUBES_PER_UNIT`] cubes per execution unit, then give each
-/// quartet `ceil(cost / that)` parts, bounded by its own ket range (a part with
-/// no rows is waste) and by [`KL_SPLIT_MAX`]. Cheap quartets fall out at one
-/// part and cost nothing; the expensive few take the parts. If the partial
-/// buffers that implies exceed [`KL_SPLIT_PARTIAL_BUDGET_BYTES`] the per-part
-/// cost doubles and the plan is recomputed, so the budget narrows the split
-/// rather than the run growing.
+/// A work item's serial cost is its quartet's cost over its part count, so give
+/// each quartet `ceil(cost / KL_SPLIT_TARGET_PART_COST)` parts — bounded by its
+/// own ket range (a part with no rows is waste), by [`KL_SPLIT_MAX`], and by
+/// the partial blocks one quartet may add
+/// ([`KL_SPLIT_PARTIAL_BUDGET_BYTES_PER_QUARTET`]). Cheap quartets fall out at
+/// one part and cost nothing; the expensive few take the parts.
 ///
 /// A pinned `CINTX_2E_KL_SPLIT=n` still means "n parts for every quartet",
 /// clamped per row, which is what the forced-split gates rely on.
-fn kl_split_plan<R: Runtime>(client: &ComputeClient<R>, group: &TwoELaunchGroup) -> Vec<u32> {
+fn kl_split_plan(group: &TwoELaunchGroup) -> Vec<u32> {
     let n = group.len();
     if n == 0 {
         return Vec::new();
     }
-    // A quartet can be cut into at most as many parts as it has ket rows.
-    let ranges: Vec<u32> = group
+    let block_lens = quartet_block_lens(&group.quartets, group.out_len);
+    // A quartet can be cut into at most as many parts as it has ket rows, as
+    // `KL_SPLIT_MAX` allows, and as its own partial-block budget affords.
+    let ceilings: Vec<u32> = group
         .quartets
         .chunks_exact(QUARTET_ROW_STRIDE)
-        .map(|row| (row[7] - row[6]).max(1))
+        .zip(&block_lens)
+        .map(|(row, &block)| {
+            let by_rows = (row[7] - row[6]).max(1) as usize;
+            let by_bytes = 1 + KL_SPLIT_PARTIAL_BUDGET_BYTES_PER_QUARTET
+                / (block * std::mem::size_of::<f64>()).max(1);
+            by_rows.min(KL_SPLIT_MAX).min(by_bytes).max(1) as u32
+        })
         .collect();
-    let ceiling = |q: usize| ranges[q].min(KL_SPLIT_MAX as u32).max(1);
 
     if let Some(pinned) = kl_split_override() {
-        return (0..n)
-            .map(|q| (pinned as u32).clamp(1, ceiling(q)))
+        return ceilings
+            .iter()
+            .map(|&ceiling| (pinned as u32).clamp(1, ceiling))
             .collect();
     }
-    let hw = crate::plane::launch_hardware(client);
-    if !hw.has_planes {
-        return vec![1; n];
-    }
+    let per_part = u128::from(kl_split_part_cost());
+    group
+        .quartet_cost
+        .iter()
+        .zip(&ceilings)
+        .map(|(&cost, &ceiling)| {
+            let want = u128::from(cost).div_ceil(per_part);
+            (want.min(u128::from(ceiling)) as u32).max(1)
+        })
+        .collect()
+}
 
-    let block_lens = quartet_block_lens(&group.quartets, group.out_len);
-    let costs = &group.quartet_cost;
-    let total: u128 = costs.iter().map(|&c| u128::from(c)).sum();
-    let target_rows = (KL_SPLIT_TARGET_CUBES_PER_UNIT * hw.parallel_units.max(1) as usize).max(1);
-    // The cost one cube should carry. `max(1)` keeps the division defined for a
-    // fully screened group, which then takes one part per quartet below.
-    let mut per_part = (total / target_rows as u128).max(1);
-
-    loop {
-        let splits: Vec<u32> = (0..n)
-            .map(|q| {
-                let want = u128::from(costs[q]).div_ceil(per_part);
-                (want.min(u128::from(ceiling(q))) as u32).max(1)
-            })
-            .collect();
-        let extra_bytes: usize = (0..n)
-            .map(|q| (splits[q] as usize - 1) * block_lens[q] * std::mem::size_of::<f64>())
-            .sum();
-        if extra_bytes <= KL_SPLIT_PARTIAL_BUDGET_BYTES || per_part >= total {
-            return splits;
-        }
-        per_part = per_part.saturating_mul(2);
-    }
+/// The `f64` a group's ket-pair split adds past its `out_len` (G1, §18).
+///
+/// The same expression [`expand_kl_split`] lays out, so the pre-flight memory
+/// plan and the real allocation cannot drift apart — which is what lets the
+/// split run under a `memory_limit_bytes` at all.
+fn kl_split_extra_len(group: &TwoELaunchGroup, splits: &[u32]) -> usize {
+    quartet_block_lens(&group.quartets, group.out_len)
+        .iter()
+        .zip(splits)
+        .map(|(&block, &parts)| (parts as usize - 1) * block)
+        .sum()
 }
 
 /// Cartesian output elements each quartet row of a group writes.
@@ -2834,10 +2908,24 @@ fn quartet_block_lens(rows: &[u32], out_len: usize) -> Vec<usize> {
         .collect()
 }
 
+/// What [`expand_kl_split`] lays out for one group.
+struct KlSplitLayout {
+    /// The expanded quartet rows, [`QUARTET_ROW_STRIDE`] `u32` each.
+    rows: Vec<u32>,
+    /// [`KL_REDUCE_ROW_STRIDE`] `u32` per **split** quartet.
+    reduce_table: Vec<u32>,
+    /// One [`quartet_cost_estimate`] per *expanded* row, in row order.
+    ///
+    /// K2 partitions rows, not quartets, so it needs a cost per row or its
+    /// slice of `quartet_cost` is the wrong length and the wrong shape. A
+    /// part's cost is its quartet's over the part count: the parts tile the ket
+    /// range in equal-sized pieces and the cost estimate is linear in it.
+    row_cost: Vec<u64>,
+    /// `f64` the partial region needs beyond the group's `out_len`.
+    extra_len: usize,
+}
+
 /// Spread each row of `rows` over its own number of ket-pair parts (G1, §16).
-///
-/// Returns the expanded rows, the reduce table and the number of `f64` the
-/// partial region needs beyond `out_len`.
 ///
 /// **Part 0 of every quartet writes straight into the group's output** at the
 /// offset it already carried, and parts 1.. write into a compact region past
@@ -2845,10 +2933,11 @@ fn quartet_block_lens(rows: &[u32], out_len: usize) -> Vec<usize> {
 /// — no partial block, no copy — which is what makes a per-quartet plan cheap
 /// enough to be the default: on a fused dispatch most quartets take one part.
 ///
-/// The reduce table is four `u32` per quartet — `[extra_base, extra_parts,
-/// out_off, block_len]`, `extra_base` absolute in the combined buffer — and
-/// lists **every** quartet, `extra_parts == 0` included, because
-/// [`reduce_kl_partials`] also carries the group's output into its own buffer.
+/// The reduce table is four `u32` per **split** quartet — `[extra_base,
+/// extra_parts, out_off, block_len]`, `extra_base` absolute in the combined
+/// buffer. A quartet that took one part is absent: its answer is already in
+/// place and [`reduce_kl_partials`] accumulates in place, so there is nothing
+/// to carry.
 ///
 /// Ket rows stay in libcint's `(pl, pk)` order inside each part, so a part's
 /// accumulation is a contiguous slice of the vendor's; only the final sum over
@@ -2858,21 +2947,28 @@ fn expand_kl_split(
     rows: &[u32],
     splits: &[u32],
     block_lens: &[usize],
+    costs: &[u64],
     out_len: usize,
-) -> (Vec<u32>, Vec<u32>, usize) {
+) -> KlSplitLayout {
     let n = splits.len();
     let total_rows: usize = splits.iter().map(|&s| s as usize).sum();
     let mut expanded = Vec::with_capacity(total_rows * QUARTET_ROW_STRIDE);
     let mut table = Vec::with_capacity(n * KL_REDUCE_ROW_STRIDE);
+    let mut row_cost = Vec::with_capacity(total_rows);
     let mut extra = 0usize;
     for (q, row) in rows.chunks_exact(QUARTET_ROW_STRIDE).enumerate() {
         let parts = splits[q].max(1);
         let (lo, hi) = (row[6], row[7]);
         let len = hi - lo;
         let block = block_lens[q];
-        // The base is **absolute**, the same offset the part rows carry, so the
-        // reduce needs no knowledge of where the partial region starts.
-        table.extend_from_slice(&[(out_len + extra) as u32, parts - 1, row[4], block as u32]);
+        let part_cost = costs[q].div_ceil(u64::from(parts));
+        // Only a quartet that actually split needs reducing; the rest already
+        // hold their answer at `row[4]` and are left alone (§17). The base is
+        // **absolute**, the same offset the part rows carry, so the reduce needs
+        // no knowledge of where the partial region starts.
+        if parts > 1 {
+            table.extend_from_slice(&[(out_len + extra) as u32, parts - 1, row[4], block as u32]);
+        }
         for part in 0..parts {
             let a = lo + len * part / parts;
             let b = lo + len * (part + 1) / parts;
@@ -2884,10 +2980,16 @@ fn expand_kl_split(
                 (out_len + extra + (part as usize - 1) * block) as u32
             };
             expanded.extend_from_slice(&[row[0], row[1], row[2], row[3], out_off, row[5], a, b]);
+            row_cost.push(part_cost);
         }
         extra += (parts as usize - 1) * block;
     }
-    (expanded, table, extra)
+    KlSplitLayout {
+        rows: expanded,
+        reduce_table: table,
+        row_cost,
+        extra_len: extra,
+    }
 }
 
 /// `u32` per quartet of [`reduce_kl_partials`]'s table:
@@ -2895,31 +2997,35 @@ fn expand_kl_split(
 const KL_REDUCE_ROW_STRIDE: usize = 4;
 
 /// Fold a ket-split dispatch's partial blocks into the group's output (G1,
-/// §16): one cube per quartet, grid-stride over quartets, its units striding
-/// over the quartet's Cartesian block.
+/// §16): one cube per **split** quartet, grid-stride over them, its units
+/// striding the quartet's Cartesian block.
 ///
 /// `combined` holds the group's output in `[0, out_len)` — part 0 of every
 /// quartet, written there by the evaluation kernel itself — followed by the
-/// compact partial region [`expand_kl_split`] laid out. A quartet's parts are
-/// summed `p = 0, 1, …` in a fixed order, so the result is deterministic;
-/// starting the accumulator from part 0's value in place is the same sequence
-/// of additions the per-group reduce performed.
+/// compact partial region [`expand_kl_split`] laid out. The extras are summed
+/// **in place** onto part 0, so a quartet that took no parts is not named in
+/// the table and is not touched at all: the group's output is already where it
+/// belongs, and the caller trims the partial region off the handle rather than
+/// copying `out_len` elements past it (§17).
 ///
-/// A quartet with `extra_parts == 0` is a copy, which is why the table lists
-/// every quartet: the output leaves in its own buffer, so the unsplit ones
-/// have to travel too.
+/// A quartet's parts are summed `p = 0, 1, …` in a fixed order, so the result
+/// is deterministic; starting the accumulator from part 0's value in place is
+/// the same sequence of additions the per-group reduce performed.
+///
+/// The read and the write are the same buffer and never the same element: a
+/// work item owns one `(quartet, element)` and reads only that quartet's parts,
+/// which live past `out_len` and are written by nobody here.
 #[cube(launch_unchecked)]
 fn reduce_kl_partials<F: Float>(
-    combined: &Array<F>,
-    out: &mut Array<F>,
+    combined: &mut Array<F>,
     table: &Array<u32>,
-    n_quartets: u32,
+    n_entries: u32,
     n_cubes: u32,
     #[comptime] row_stride: u32,
 ) {
     let width = CUBE_DIM as u32;
     let mut q = CUBE_POS as u32;
-    while q < n_quartets {
+    while q < n_entries {
         let t = q * row_stride;
         let base = table[t as usize];
         let extra_parts = table[(t + 1u32) as usize];
@@ -2933,57 +3039,64 @@ fn reduce_kl_partials<F: Float>(
                 acc += combined[(base + p * block + e) as usize];
                 p += 1u32;
             }
-            out[(out_off + e) as usize] = acc;
+            combined[(out_off + e) as usize] = acc;
             e += width;
         }
         q += n_cubes;
     }
 }
 
-/// Run [`reduce_kl_partials`] over `combined`, returning the `out_len`-element
-/// result buffer; the combined buffer is the caller's to drop.
+/// Run [`reduce_kl_partials`] over `combined`, in place.
 ///
-/// One cube per quartet, capped by the grid: a cube whose quartet is unsplit
-/// copies its block, and one whose quartet took twenty parts sums them. The
-/// cube width is the backend's plane-aligned default because a quartet's block
-/// is the parallel axis here, not the whole output.
-fn reduce_kl_partials_into<R: Runtime>(
+/// One cube per split quartet, capped by the grid. A quartet's Cartesian block
+/// is the parallel axis, so the cube's units stride it — which is why the width
+/// follows the backend's *parallelism* rather than its planes. On a plane-less
+/// runtime `backend_plane_cube_dim` is one unit, and one unit walking every
+/// element is a sequential pass over the whole output; §17 needs this path on
+/// the CPU, so it takes the per-unit width there instead.
+fn reduce_kl_partials_inplace<R: Runtime>(
     client: &ComputeClient<R>,
     combined: &cubecl::server::Handle,
     combined_len: usize,
-    out_len: usize,
     table: &[u32],
     probe: &Arc<Mutex<crate::memory_probe::DeviceMemoryProbe>>,
-) -> cubecl::server::Handle {
-    let out_bytes = out_len * std::mem::size_of::<f64>();
-    let out_h = client.empty(out_bytes.max(1));
-    let table_h = client.create_from_slice(u32::as_bytes(table));
-    let n_quartets = (table.len() / KL_REDUCE_ROW_STRIDE) as u32;
-    {
-        let mut ledger = probe.lock().expect("device memory probe poisoned");
-        ledger.charge_output(out_bytes);
-        ledger.charge_tables(std::mem::size_of_val(table), 1);
+) {
+    let n_entries = (table.len() / KL_REDUCE_ROW_STRIDE) as u32;
+    if n_entries == 0 {
+        return;
     }
-    let cube_dim = crate::plane::backend_plane_cube_dim::<R>(client);
-    let cubes = crate::plane::grid_cube_count(client, n_quartets.max(1) as usize);
-    // SAFETY: `combined` holds `combined_len` elements and `out_h` `out_len`.
-    // Every table row names a `[out_off, block_len)` inside the group's output
-    // and an `[extra_base, extra_base + extra_parts * block_len)` inside the
-    // partial region, both laid out by `expand_kl_split` within `combined_len`.
+    let table_h = client.create_from_slice(u32::as_bytes(table));
+    probe
+        .lock()
+        .expect("device memory probe poisoned")
+        .charge_tables(std::mem::size_of_val(table), 1);
+    let cube_dim = if crate::plane::launch_hardware(client).has_planes {
+        crate::plane::backend_plane_cube_dim::<R>(client)
+    } else {
+        CubeDim::new_1d(crate::plane::per_unit_width(
+            client,
+            combined_len,
+            1,
+            usize::MAX,
+        ))
+    };
+    let cubes = crate::plane::grid_cube_count(client, n_entries as usize);
+    // SAFETY: `combined` holds `combined_len` elements. Every table row names a
+    // `[out_off, block_len)` inside the group's output and an
+    // `[extra_base, extra_base + extra_parts * block_len)` inside the partial
+    // region, both laid out by `expand_kl_split` within `combined_len`.
     unsafe {
         reduce_kl_partials::launch_unchecked::<f64, R>(
             client,
             crate::plane::cube_count_1d(cubes),
             cube_dim,
             ArrayArg::from_raw_parts(combined.clone(), combined_len),
-            ArrayArg::from_raw_parts(out_h.clone(), out_len),
             ArrayArg::from_raw_parts(table_h, table.len()),
-            n_quartets,
+            n_entries,
             cubes,
             KL_REDUCE_ROW_STRIDE as u32,
         );
     }
-    out_h
 }
 
 /// The cooperative G-build switch, with `CINTX_2E_COOP_BUILD` applied.
@@ -3853,14 +3966,16 @@ fn run_2e_batches<R: Runtime>(
         }
         let g_size_u = group.max_g_size as usize;
         let ctr_len_u = group.max_ctr_len as usize;
-        let cube_dim = two_e_cube_dim::<R>(
-            client,
-            group.max_block_len,
-            group.len(),
-            g_size_u,
-            ctr_len_u,
-        );
-        let n_cubes = two_e_cube_count::<R>(client, group.len(), g_size_u, ctr_len_u);
+        // The row count, not the quartet count: the ket-pair split expands the
+        // rows a dispatch walks (G1), and the geometry below is the geometry
+        // `launch()` will pick from those rows. Sizing this from `group.len()`
+        // made the two disagree the moment anything split — the slab came out
+        // too small, every launch fell through to its own allocation, and
+        // M4.1's one-allocation-per-run quietly became one per launch.
+        let n_rows: usize = kl_split_plan(group).iter().map(|&p| p as usize).sum();
+        let cube_dim =
+            two_e_cube_dim::<R>(client, group.max_block_len, n_rows, g_size_u, ctr_len_u);
+        let n_cubes = two_e_cube_count::<R>(client, n_rows, g_size_u, ctr_len_u);
         let slots = if two_e_per_unit::<R>(client) {
             n_cubes as usize * cube_dim.num_elems() as usize
         } else {
@@ -3922,40 +4037,43 @@ fn run_2e_batches<R: Runtime>(
 
         // ── G1: spread each cooperative quartet over several cubes ──────────
         //
-        // A dispatch of one quartet per cube lasts as long as its slowest
-        // quartet's *serial* walk over its primitive quartets, however few
-        // cubes it carries (GTH plan §10.5). Splitting a quartet's ket-pair
-        // range across several cubes shortens that walk by the same factor;
-        // part 0 accumulates into the quartet's own output block, the rest into
-        // a compact partial region, and one reduce kernel sums them in a fixed
-        // order. The split is sized **per quartet** (§16), because a fused
-        // dispatch is heterogeneous: the `(dd|dd)` quartet that sets the
-        // critical path takes the parts and the `(ss|ss)` quartets beside it
-        // take none. The per-unit shape never splits, and neither does a run
-        // under a memory budget: the partial blocks are exactly the kind of
-        // peak the budget refuses.
-        let splits: Vec<u32> = if per_unit || options.memory_limit_bytes.is_some() {
-            vec![1; n_quartets]
-        } else {
-            kl_split_plan::<R>(client, group)
-        };
+        // A dispatch's work item lasts as long as its quartet's *serial* walk
+        // over its primitive quartets — a cube on the cooperative shape (§10.5),
+        // a row of K2's partition on the per-unit one, where a quartet is
+        // indivisible and so bounds the dispatch below however good the
+        // partition is (§17). Splitting a quartet's ket-pair range shortens
+        // that walk by the same factor on both: part 0 accumulates into the
+        // quartet's own output block, the rest into a compact partial region,
+        // and one reduce kernel sums them in a fixed order.
+        //
+        // The split is sized **per quartet** (§16), because a fused dispatch is
+        // heterogeneous: the `(dd|dd)` quartet that sets the critical path
+        // takes the parts and the `(ss|ss)` quartets beside it take none — and
+        // it is sized from the quartet *alone* (§18), so a memory budget
+        // changes what a chunk holds but never what a quartet computes.
+        // `CINTX_2E_KL_SPLIT=off` is the way back to an unsplit run.
+        let splits: Vec<u32> = kl_split_plan(group);
         let any_split = splits.iter().any(|&s| s > 1);
-        let split_rows: Vec<u32>;
-        let reduce_table: Vec<u32>;
-        let extra_len: usize;
-        let rows: &[u32] = if any_split {
+        let split: Option<KlSplitLayout> = any_split.then(|| {
             let block_lens = quartet_block_lens(&group.quartets, group.out_len);
-            let (expanded, table, extra) =
-                expand_kl_split(&group.quartets, &splits, &block_lens, group.out_len);
-            split_rows = expanded;
-            reduce_table = table;
-            extra_len = extra;
-            &split_rows
-        } else {
-            reduce_table = Vec::new();
-            extra_len = 0;
-            &group.quartets
-        };
+            expand_kl_split(
+                &group.quartets,
+                &splits,
+                &block_lens,
+                &group.quartet_cost,
+                group.out_len,
+            )
+        });
+        let (rows, reduce_table, row_cost, extra_len): (&[u32], &[u32], &[u64], usize) =
+            match &split {
+                Some(layout) => (
+                    &layout.rows,
+                    &layout.reduce_table,
+                    &layout.row_cost,
+                    layout.extra_len,
+                ),
+                None => (&group.quartets, &[], &group.quartet_cost, 0),
+            };
         let n_rows = rows.len() / QUARTET_ROW_STRIDE;
         probe
             .lock()
@@ -4013,7 +4131,10 @@ fn run_2e_batches<R: Runtime>(
             ctr_len: group.max_ctr_len as usize,
             ctr_mode: contraction_mode(),
             coop_build: cooperative_build_mode(),
-            quartet_cost: Arc::new(group.quartet_cost.clone()),
+            // K2 partitions *rows*, so the costs it ranks must be the rows'
+            // (§17): one entry per expanded row when the split is on, the
+            // group's own vector when it is not.
+            quartet_cost: Arc::new(row_cost.to_vec()),
             balance: balance_mode(),
             pair_data: pairs.data.clone(),
             pair_index: pairs.index.clone(),
@@ -4048,17 +4169,14 @@ fn run_2e_batches<R: Runtime>(
             probe: Arc::clone(&probe),
         };
         dispatch_2e_group(dispatch);
-        // G1: fold the partial blocks into the group's output. The combined
-        // buffer is dropped here, before the readback or transform allocates.
+        // G1: fold the partial blocks onto part 0, in place, then hand the
+        // consumer a view of just the group's output. Trimming the handle
+        // rather than copying into a fresh buffer is what keeps the split free
+        // for the quartets that did not take it (§17): an unsplit quartet is
+        // neither summed nor moved.
         let out_h = if any_split {
-            reduce_kl_partials_into::<R>(
-                client,
-                &out_h,
-                combined_len,
-                group.out_len,
-                &reduce_table,
-                &probe,
-            )
+            reduce_kl_partials_inplace::<R>(client, &out_h, combined_len, reduce_table, &probe);
+            out_h.offset_end((extra_len * std::mem::size_of::<f64>()) as u64)
         } else {
             out_h
         };
@@ -10313,11 +10431,91 @@ fn plan_2e_stream(
     // scattered every group's writes across the whole 96 MiB output and cost
     // 3.8x in the transform — the memory was won and the time given straight
     // back. Chunking by range wins both.
-    let cart_budget = options
+    // M1's Cartesian budget, and what happens when the first guess does not fit.
+    //
+    // `chunk_cart_budget` is a heuristic — half of what the limit leaves after
+    // the caller's output — and a chunk it sizes can still plan over the limit,
+    // now that the ket-pair split's partial blocks are charged to the same
+    // ledger (§18). The answer is to *chunk harder*, not to refuse: halve the
+    // budget and re-plan, down to `MIN_CHUNK_CART_BYTES`, which is one widest
+    // Cartesian block and so the point past which chunking cannot help. Only
+    // then is the request genuinely impossible, and the refusal carries the
+    // numbers from the tightest arrangement tried rather than the first.
+    //
+    // The split itself is *not* narrowed to fit, because it is a pure function
+    // of the quartet (§18): a budgeted run and an unbudgeted one must compute
+    // the same values, and only the chunking may differ between them.
+    let first_budget = options
         .memory_limit_bytes
         .map_or_else(default_chunk_cart_bytes, |limit| {
             chunk_cart_budget(limit, total * std::mem::size_of::<f64>())
         });
+    let mut cart_budget = first_budget;
+    let mut attempts = 0usize;
+    let chunks = loop {
+        attempts += 1;
+        match plan_2e_chunks(
+            backend,
+            resident,
+            quartets,
+            shells,
+            &lens,
+            total,
+            footprint,
+            device_transform,
+            ceiling,
+            fuse,
+            cart_budget,
+            options.memory_limit_bytes,
+        )? {
+            Ok(chunks) => {
+                if std::env::var("CINTX_2E_GROUPS").is_ok() {
+                    eprintln!(
+                        "  plan: {attempts} attempt(s), cart budget {cart_budget}                          (first {first_budget}), {} chunk(s)",
+                        chunks.len()
+                    );
+                }
+                break chunks;
+            }
+            Err(over) => {
+                if cart_budget <= MIN_CHUNK_CART_BYTES {
+                    return Err(over);
+                }
+                cart_budget = (cart_budget / 2).max(MIN_CHUNK_CART_BYTES);
+            }
+        }
+    };
+
+    Ok(TwoEStreamPlan {
+        lens,
+        offsets,
+        total,
+        device_transform,
+        chunks,
+    })
+}
+
+/// Plan one arrangement of chunks at `cart_budget` (M1).
+///
+/// The outer `Result` is a hard refusal — a class above the device Rys ceiling,
+/// which no budget can fix. The inner one is "this arrangement does not fit":
+/// the caller may retry at a smaller budget, and the error it carries is what
+/// it would report if it does not.
+#[allow(clippy::too_many_arguments)]
+fn plan_2e_chunks(
+    backend: &ResolvedBackend,
+    resident: &ResidentTwoEBasis,
+    quartets: &[[u32; 4]],
+    shells: &[BatchShell],
+    lens: &[usize],
+    total: usize,
+    footprint: StreamFootprint,
+    device_transform: bool,
+    ceiling: usize,
+    fuse: bool,
+    cart_budget: usize,
+    limit: Option<usize>,
+) -> Result<Result<Vec<TwoEChunkPlan>, cintxRsError>, cintxRsError> {
     let ranges = plan_quartet_chunks(quartets, shells, cart_budget);
 
     // What the sink will actually hold live across the run: the whole list
@@ -10350,13 +10548,13 @@ fn plan_2e_stream(
         // imbalance from outside — `launches=` counts dispatches but not what
         // is in them.
         if std::env::var("CINTX_2E_GROUPS").is_ok() {
-            let total: u64 = groups.iter().flat_map(|g| g.quartet_cost.iter()).sum();
-            eprintln!("  chunk: {} groups, total cost {total}", groups.len());
+            let cost_total: u64 = groups.iter().flat_map(|g| g.quartet_cost.iter()).sum();
+            eprintln!("  chunk: {} groups, total cost {cost_total}", groups.len());
             for g in &groups {
                 let cost: u64 = g.quartet_cost.iter().sum();
                 eprintln!(
                     "    sig(ibase={},kbase={},nroots={}) quartets={} classes={} \
-                     block={} g_size={} nr_max={} cost={} ({:.1}%) maxq={}",
+                     block={} g_size={} nr_max={} cost={} ({:.1}%) maxq={} split={}",
                     g.signature.ibase,
                     g.signature.kbase,
                     g.signature.nroots,
@@ -10366,8 +10564,9 @@ fn plan_2e_stream(
                     g.max_g_size,
                     g.max_nroots,
                     cost,
-                    100.0 * cost as f64 / total as f64,
+                    100.0 * cost as f64 / cost_total.max(1) as f64,
                     g.quartet_cost.iter().max().copied().unwrap_or(0),
+                    kl_split_plan(g).iter().max().copied().unwrap_or(1),
                 );
             }
         }
@@ -10378,7 +10577,7 @@ fn plan_2e_stream(
         // `run_2e_stream` dispatches or writes any of them, so a refusal here
         // leaves nothing partially written or streamed, regardless of which
         // chunk in the list it was.
-        if let Some(limit) = options.memory_limit_bytes {
+        if let Some(limit) = limit {
             // M4.3: the pre-flight budget must charge the same c2s scratch
             // buffer `run_2e_batches` allocates when the device transform is
             // on, or a chunk near the caller's limit can be approved here and
@@ -10390,10 +10589,10 @@ fn plan_2e_stream(
             };
             let plan = plan_batch_bytes(&groups, planned_output_len, c2s_scratch_bytes);
             if plan.peak_bytes > limit {
-                return Err(cintxRsError::MemoryLimitExceeded {
+                return Ok(Err(cintxRsError::MemoryLimitExceeded {
                     requested: plan.peak_bytes,
                     limit,
-                });
+                }));
             }
         }
 
@@ -10405,14 +10604,7 @@ fn plan_2e_stream(
             row_owner,
         });
     }
-
-    Ok(TwoEStreamPlan {
-        lens,
-        offsets,
-        total,
-        device_transform,
-        chunks,
-    })
+    Ok(Ok(chunks))
 }
 
 /// Execute a plan built by [`plan_2e_stream`], writing each chunk into `sink`.
@@ -11017,6 +11209,13 @@ struct BatchMemoryPlan {
     host_output_bytes: usize,
     /// Largest single group's Cartesian block, on the host and on the device.
     group_cart_bytes: usize,
+    /// Largest single group's ket-pair split partial region (G1, §18).
+    ///
+    /// Counted **once**, unlike the Cartesian block: it lives on the device
+    /// only. The reduce folds it onto part 0 in place and the caller is handed
+    /// a handle trimmed to the output, so the partial blocks never reach the
+    /// host and never appear in a readback.
+    group_split_bytes: usize,
     /// Quartet, shape and factor tables, summed over groups.
     table_bytes: usize,
     /// The shared G-tensor scratch slab.
@@ -11063,6 +11262,17 @@ fn plan_batch_bytes(
         .map(TwoELaunchGroup::output_bytes)
         .max()
         .unwrap_or(0);
+    // The dispatch's Cartesian buffer is its output *followed by* the partial
+    // region its ket-pair split writes into (G1, §18). `kl_split_plan` is a
+    // pure function of the group, so this predicts exactly what
+    // `run_2e_batches` will ask for — which is what lets the split run under a
+    // caller's `memory_limit_bytes` instead of being switched off there and
+    // making a budgeted run compute something different from an unbudgeted one.
+    let group_split_bytes = groups
+        .iter()
+        .map(|group| kl_split_extra_len(group, &kl_split_plan(group)) * std::mem::size_of::<f64>())
+        .max()
+        .unwrap_or(0);
     let table_bytes = groups.iter().map(TwoELaunchGroup::upload_bytes).sum();
     // One slot's G slab plus its contraction slab, at the widest group; the
     // run allocates both once and reuses them across groups (M4.1, C1).
@@ -11080,11 +11290,13 @@ fn plan_batch_bytes(
     BatchMemoryPlan {
         host_output_bytes,
         group_cart_bytes,
+        group_split_bytes,
         table_bytes,
         scratch_bytes,
         c2s_scratch_bytes,
         peak_bytes: host_output_bytes
             + 2 * group_cart_bytes
+            + group_split_bytes
             + table_bytes
             + scratch_bytes
             + c2s_scratch_bytes,
@@ -11909,6 +12121,7 @@ mod kl_split_tests {
         0, 1, 2, 3, 0, 5, 10, 17, //
         0, 1, 3, 3, 40, 6, 30, 32,
     ];
+    const COSTS: [u64; 2] = [900, 60];
 
     #[test]
     fn block_lengths_come_from_the_gaps_between_output_offsets() {
@@ -11917,9 +12130,9 @@ mod kl_split_tests {
 
     #[test]
     fn parts_tile_the_ket_range_in_order_and_offset_their_output() {
-        let (out, table, extra) = expand_kl_split(&ROWS, &[3, 3], &[40, 60], 100);
-        assert_eq!(out.len(), 2 * 3 * QUARTET_ROW_STRIDE);
-        let parts: Vec<&[u32]> = out.chunks_exact(QUARTET_ROW_STRIDE).collect();
+        let out = expand_kl_split(&ROWS, &[3, 3], &[40, 60], &COSTS, 100);
+        assert_eq!(out.rows.len(), 2 * 3 * QUARTET_ROW_STRIDE);
+        let parts: Vec<&[u32]> = out.rows.chunks_exact(QUARTET_ROW_STRIDE).collect();
         // First quartet: 7 rows over 3 parts → 2, 2, 3, contiguous, in order.
         assert_eq!(&parts[0][6..], &[10, 12]);
         assert_eq!(&parts[1][6..], &[12, 14]);
@@ -11940,24 +12153,34 @@ mod kl_split_tests {
         assert_eq!(&parts[4][..4], &[0, 1, 3, 3]);
         assert_eq!(parts[4][5], 6);
         // The partial region holds exactly the non-zeroth parts.
-        assert_eq!(extra, 2 * 40 + 2 * 60);
+        assert_eq!(out.extra_len, 2 * 40 + 2 * 60);
         assert_eq!(
-            table,
+            out.reduce_table,
             vec![
                 100, 2, 0, 40, //
                 180, 2, 40, 60,
             ]
         );
-        assert_eq!(table.len(), 2 * KL_REDUCE_ROW_STRIDE);
+        assert_eq!(out.reduce_table.len(), 2 * KL_REDUCE_ROW_STRIDE);
+    }
+
+    #[test]
+    fn every_row_carries_its_own_share_of_its_quartets_cost() {
+        // K2 ranks rows, so a split quartet's rows must each carry a part's
+        // cost, not the whole quartet's — otherwise the partition believes the
+        // dispatch is `parts` times more expensive than it is and cuts wrong.
+        let out = expand_kl_split(&ROWS, &[3, 1], &[40, 60], &COSTS, 100);
+        assert_eq!(out.row_cost.len(), out.rows.len() / QUARTET_ROW_STRIDE);
+        assert_eq!(out.row_cost, vec![300, 300, 300, 60]);
     }
 
     #[test]
     fn an_unsplit_quartet_costs_no_partial_block_beside_a_split_one() {
         // The shape a fused dispatch produces: one expensive quartet takes
         // parts, its cheap neighbour takes none and keeps writing in place.
-        let (out, table, extra) = expand_kl_split(&ROWS, &[4, 1], &[40, 60], 100);
-        assert_eq!(out.len(), 5 * QUARTET_ROW_STRIDE);
-        let parts: Vec<&[u32]> = out.chunks_exact(QUARTET_ROW_STRIDE).collect();
+        let out = expand_kl_split(&ROWS, &[4, 1], &[40, 60], &COSTS, 100);
+        assert_eq!(out.rows.len(), 5 * QUARTET_ROW_STRIDE);
+        let parts: Vec<&[u32]> = out.rows.chunks_exact(QUARTET_ROW_STRIDE).collect();
         assert_eq!(parts[0][4], 0);
         assert_eq!(parts[1][4], 100);
         assert_eq!(parts[2][4], 140);
@@ -11966,16 +12189,19 @@ mod kl_split_tests {
         assert_eq!(&parts[4][6..], &[30, 32]);
         assert_eq!(parts[4][4], 40);
         // Only the split quartet's extra parts are charged.
-        assert_eq!(extra, 3 * 40);
-        assert_eq!(table, vec![100, 3, 0, 40, 220, 0, 40, 60]);
+        assert_eq!(out.extra_len, 3 * 40);
+        // The unsplit quartet is absent from the table: nothing to reduce.
+        assert_eq!(out.reduce_table, vec![100, 3, 0, 40]);
     }
 
     #[test]
     fn a_split_of_one_is_the_identity() {
-        let (out, table, extra) = expand_kl_split(&ROWS, &[1, 1], &[40, 60], 100);
-        assert_eq!(out, ROWS.to_vec());
-        assert_eq!(extra, 0);
-        assert_eq!(table, vec![100, 0, 0, 40, 100, 0, 40, 60]);
+        let out = expand_kl_split(&ROWS, &[1, 1], &[40, 60], &COSTS, 100);
+        assert_eq!(out.rows, ROWS.to_vec());
+        assert_eq!(out.extra_len, 0);
+        assert_eq!(out.row_cost, COSTS.to_vec());
+        // Nothing split, so there is nothing for the reduce to do at all.
+        assert!(out.reduce_table.is_empty());
     }
 }
 

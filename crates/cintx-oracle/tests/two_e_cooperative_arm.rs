@@ -267,10 +267,26 @@ fn cooperative_g_build_is_bit_identical_on_gth() {
 /// bit-identity is not the gate, but a wrong row range or a partial written
 /// on top of another is a wrong number, orders of magnitude outside it.
 fn assert_split_agrees(label: &str, arrays: &RawArrays, list: &[[u32; 4]], parts: u32) {
+    assert_split_agrees_on(label, arrays, list, parts, false);
+}
+
+/// [`assert_split_agrees`] on a named decomposition — `per_unit` is the CPU
+/// shape, which takes the same split since §17 and where a part is a row of
+/// K2's partition rather than a cube.
+fn assert_split_agrees_on(
+    label: &str,
+    arrays: &RawArrays,
+    list: &[[u32; 4]],
+    parts: u32,
+    per_unit: bool,
+) {
+    let arm = if per_unit { "per-unit" } else { "coop" };
+    let label = &format!("{label} [{arm}]");
     let shells = batch_shells(arrays);
-    let (unsplit, offsets) = evaluate_pinned(&shells, list, false, true);
+    set_two_e_kl_split(Some(1));
+    let (unsplit, offsets) = evaluate_pinned(&shells, list, per_unit, true);
     set_two_e_kl_split(Some(parts));
-    let (split, split_offsets) = evaluate_pinned(&shells, list, false, true);
+    let (split, split_offsets) = evaluate_pinned(&shells, list, per_unit, true);
     set_two_e_kl_split(None);
     assert_eq!(offsets, split_offsets, "{label}: block layout");
     assert_eq!(unsplit.len(), split.len(), "{label}: output length");
@@ -351,6 +367,41 @@ fn ket_split_agrees_on_gth() {
         for parts in [3, 8] {
             assert_split_agrees(&label, &arrays, &list, parts);
         }
+    }
+}
+
+/// The same split on the **per-unit** arm (§17).
+///
+/// It is the same host-side row expansion and the same reduce, but a different
+/// kernel shape reads it — `lanes == 1`, no barrier, the staged contraction
+/// running whole inside one unit — and a different consumer downstream: K2
+/// partitions the *expanded* rows, so a per-row cost that still carried the
+/// whole quartet's would make the partition believe the dispatch is `parts`
+/// times more expensive than it is. Neither of those is exercised by the
+/// cooperative cases above.
+#[cfg(feature = "gth")]
+#[test]
+fn ket_split_agrees_on_gth_per_unit() {
+    let _serial = serial();
+    for (label, arrays) in def2_fixtures::gth_workloads() {
+        if !label.starts_with("H2O") {
+            continue;
+        }
+        let list = one_quartet_per_class(&arrays, 3, 12);
+        for parts in [3, 8] {
+            assert_split_agrees_on(&label, &arrays, &list, parts, true);
+        }
+    }
+}
+
+/// The same on def2-SVP's segmented, empty-part shape.
+#[test]
+fn ket_split_agrees_on_def2_per_unit() {
+    let _serial = serial();
+    let arrays = to_raw_arrays(&water(StandardBasis::Def2Svp)).expect("raw arrays");
+    let list = one_quartet_per_class(&arrays, 3, 24);
+    for parts in [2, 7] {
+        assert_split_agrees_on("H2O / def2-SVP", &arrays, &list, parts, true);
     }
 }
 

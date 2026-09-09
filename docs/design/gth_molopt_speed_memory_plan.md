@@ -4,11 +4,15 @@ Status: executed 2026-09-06 — §8 is the record of what landed and what was me
 §9 (S3), §10 (the profile-guided pass) and §11 (the GPU decomposition, G1, and
 the T4 measurement package), all 2026-09-07, extend it; §12–§14 (V1, the root-axis
 vector VRR, and what it does not apply to), 2026-09-08; §15 (F1, fusing the Rys
-orders into one dispatch) and §16 (F1 on the GPU, and the per-quartet ket-pair
-split it needed), 2026-09-09.
+orders into one dispatch), §16 (F1 on the GPU, and the per-quartet ket-pair
+split it needed), §17 (the split on the per-unit arm) and §18 (one method on both
+backends), 2026-09-09.
 
 §15.4's account of why the fusion cost time on the GPU is **superseded by §16.1**,
-which measured it: one of the two mechanisms it named does nothing.
+which measured it: one of the two mechanisms it named does nothing. §17 puts the
+ket-pair split on both decompositions and §18 makes it — and every other choice
+the 2e path makes — the same on CPU and GPU, and independent of how a work list
+is batched.
 Scope: the batched `int2e_sph` path over the two GTH-MOLOPT orbital bases
 `cintx-basis` exposes behind the `gth` feature (`DZVP-MOLOPT-SR-GTH`,
 `TZVP-MOLOPT-GTH`). `gth-tzvp-molopt-sr` does not exist upstream (CP2K ships
@@ -1534,3 +1538,183 @@ unit-count curve — depended on this and none of them could have told you.
   now spends that target sensibly, which makes it worth sweeping.
 - The cube width remains sized from the group's widest block. §16.1 says it
   costs nothing today; it is on record as measured-and-left, not overlooked.
+
+## 17. The split on the per-unit arm (2026-09-09)
+
+§16.7 left the ket-pair split cooperative-only, because a split is not
+bit-identical and the per-unit arm's bit-identity against the pre-F1 dump was
+worth keeping. It is enabled on both arms here. The mechanism needed nothing
+new — the split had been decomposition-agnostic since §16 — but three things
+around it did:
+
+- **K2 partitions rows, so it needs a cost per row.** `TwoEGroupDispatch`
+  carried the group's `quartet_cost`, one entry per *quartet*, and
+  `per_unit_slot_bounds` slices it to `n_quartets`, which is the *row* count.
+  With the split on that slice is the wrong length and the wrong shape.
+  `expand_kl_split` now returns a `row_cost` beside the rows — a part's cost is
+  its quartet's over the part count, because the parts tile the ket range in
+  equal pieces and the estimate is linear in it.
+- **The reduce had to stop copying.** It wrote into a fresh `out_len` buffer, so
+  every quartet was copied whether or not it split — on a dispatch where two
+  quartets take parts and four hundred do not, that is the whole output moved
+  for nothing. It now accumulates the extras onto part 0 **in place** and the
+  caller trims the partial region off the handle (`Handle::offset_end`), so an
+  unsplit quartet is neither summed nor moved and the reduce table lists only
+  the quartets that split.
+- **The reduce had to parallelise on a plane-less runtime.** Its cube width came
+  from `backend_plane_cube_dim`, which is *one unit* where there are no hardware
+  planes; one unit striding every element of every quartet is a sequential pass
+  over the whole output. It takes the per-unit width there.
+
+`ket_split_agrees_on_{def2,gth}_per_unit` are the gates — the same forced splits
+of 2/7 and 3/8 the cooperative cases use, on the other decomposition, which is a
+different kernel shape (`lanes == 1`, no barrier, the staged contraction whole
+inside one unit) reading the same tables. They report the same eps to the tenth
+as the cooperative ones: 19.6 / 19.6 / 76.7 / 74.9.
+
+What this bought on the CPU is **small** — 0.92x–1.23x over five passes, mostly
+inside this host's noise band, and consistently positive only on the two H2O
+rows, which are the two whose costliest quartet exceeds a `1/units` share of the
+dispatch. That is what §15.1's model predicts and it is the honest figure. The
+split earns its keep on the GPU (§18.4), not here.
+
+## 18. One method, both backends (2026-09-09)
+
+The instruction this section answers: *the processing methods for CPU and GPU
+must be identical, and the kernels identical in principle.* Enabling the split
+on the per-unit arm broke two contracts and exposed why — the method was not
+one method.
+
+### 18.1 What was not identical
+
+`chunked_evaluation_is_bit_identical_to_unchunked` and
+`tuned_and_untuned_dispatches_agree_bit_for_bit` failed the moment the CPU arm
+split (the second by two ULP). Neither was a bug in the split. Both were the
+same fact: **the split was sized from the group's cost total**, so it was a
+function of how the work list happened to be batched.
+
+| the split depended on | so |
+|---|---|
+| the group's summed cost | chunking changed the answer — a `memory_limit_bytes` run, or the same quartets in two calls instead of one, re-associated the ket sum differently |
+| `hw.parallel_units` | a different machine changed the answer |
+| the chunk cap in force | CPU and GPU split the same quartet differently, and so disagreed for a reason that was not the hardware |
+| whether a budget was set | the split was switched off under `memory_limit_bytes`, so a budgeted run computed something different from an unbudgeted one |
+
+### 18.2 What landed
+
+**The split is a pure function of the quartet.** `kl_split_plan` takes no
+client, reads no total and no unit count: `parts = ceil(cost /
+KL_SPLIT_TARGET_PART_COST)`, bounded by the quartet's own ket range, by
+`KL_SPLIT_MAX`, and by the partial blocks one quartet may add
+(`KL_SPLIT_PARTIAL_BUDGET_BYTES_PER_QUARTET`, 1 MiB). The same quartet splits
+the same way in every batch, on every backend, on every machine.
+
+**The split runs under a memory budget.** It has to, or a budgeted run computes
+different values. `plan_batch_bytes` charges it from the same expression
+`run_2e_batches` allocates from — which it can, now that the plan needs no
+client — as a `group_split_bytes` term counted **once**, because the partial
+region is device-side only and the trimmed handle keeps it out of the readback.
+
+**A budget that does not fit chunks harder instead of refusing.**
+`chunk_cart_budget` is a heuristic and its first guess can plan over the limit
+now that the split is charged to the same ledger. `plan_2e_stream` halves the
+Cartesian budget and re-plans, down to `MIN_CHUNK_CART_BYTES` — one widest
+Cartesian block, the point past which chunking cannot help — and only then
+refuses, with the numbers from the tightest arrangement tried. The split itself
+is never narrowed to fit: a budget may change the chunking, never the values.
+
+### 18.3 A 100x regression, and the bug under it
+
+The chunked variant went from 0.6x to **0.004x** — 4 026 ms against 14 ms —
+the moment the split ran under a budget. The cause was not the split:
+
+> `run_2e_batches` pre-sizes the shared G slab (M4.1) from `group.len()`, the
+> **unsplit** quartet count, while `launch()` sizes the real geometry from the
+> split row count. The moment anything splits, the shared slab is too small,
+> every launch falls through to its own allocation, and M4.1's
+> one-allocation-per-run quietly becomes one per launch — each a fresh
+> multi-megabyte buffer and, because the cube width is part of a kernel's
+> compiled identity, a fresh JIT with it.
+
+That has been true on the **GPU since G1 landed** (§11), where `n_cubes` is
+derived from the split rows and every cooperative dispatch has been paying it;
+it only became visible when a CPU dispatch started splitting. Sized from the
+same row count the launch uses, the chunked variant is 0.88x–0.99x — better than
+the 0.59x–0.69x it managed before any of this.
+
+### 18.4 The constant, swept
+
+`KL_SPLIT_TARGET_PART_COST` is the one number the rule has, so it was swept
+rather than guessed. In-process A/B against `klsplit=off`, best of 5:
+
+| cost | H2O/DZ | CH4/DZ | SO2/DZ | H2O/TZ | CH4/TZ | SO2/TZ | ROCm SO2/DZ | ROCm SO2/TZ |
+|---|---|---|---|---|---|---|---|---|
+| 500 k | 1.06 | 1.07 | 1.09 | — | — | — | — | — |
+| **1 M** | **1.23** | 1.01 | 1.10 | **1.22** | 1.08 | 0.96 | **1.64x** | **4.15x** |
+| 2 M | 1.06 | 0.96 | 1.01 | 1.19 | 0.99 | 0.97 | 1.43x | 2.53x |
+| 4 M | 1.03 | 1.02 | 1.01 | 1.23 | 0.98 | 0.98 | — | — |
+| 8 M | 1.05 | 1.01 | 0.97 | 1.19 | 0.99 | 1.01 | — | — |
+
+The CPU column is noise-dominated and only H2O/TZ separates the settings; the
+GPU column does not — 1 M is 1.15x–1.64x better than 2 M there, because the
+split is worth 1.6x–4.2x on ROCm against ~1.05x here. **1 M**, and the GPU chose
+it.
+
+(The ROCm absolutes in this section are not comparable to §16.4's: an hour of
+sweeps had the APU at 922–971 MHz against a ~2.9 GHz boost. The in-process
+ratios are, which is the whole reason the plan quotes ratios.)
+
+### 18.5 What is identical now, and what is not
+
+Verified, not asserted — every row is a `=bits` column or a dump comparison in
+the same `gth_profile` run:
+
+| the answer does not depend on | evidence |
+|---|---|
+| the dispatch grouping | `fuse=off` is `=bits` against the default on all six workloads, on **both** backends. Before §18 it was not, on either. |
+| the chunking | `chunk=cart/4` is `=bits` against the unchunked default on all six |
+| a memory budget | the same, since `chunk=cart/4` *is* the budgeted arm |
+| the launch geometry | `tuned_and_untuned_dispatches_agree_bit_for_bit`, strict again |
+| the decomposition | `cooperative_g_build_is_bit_identical_on_{def2,gth}` — per-unit and cooperative agree bit for bit on the same backend |
+| the machine's unit count | the rule reads no hardware quantity |
+
+What still differs between CPU and GPU is the **decomposition**, and every part
+of it follows from one fact: the CubeCL CPU runtime makes a unit an OS thread
+and `cube_count` a sequential loop, so the grid is not a parallelism axis there.
+The list is enumerated on `two_electron_scalar_kernel` itself — barriers, the S3
+`(axis, root)` split, the contraction's lane split, the vector VRR width, the
+private accumulator's capacity, the cube geometry — six entries, each a
+consequence of "a slot is one lane" versus "a slot is a cube", none a policy.
+The two arms are held to bit-identity against each other, so the divergence is
+in *how* the work is spread and not in what is computed; what is left between
+the backends is the FMA contraction §8.3 records (49.1 / 577.2 eps of block
+scale on H2O, the §11.3 figures to the tenth).
+
+### 18.6 Costs
+
+- **Device Cartesian residency** carries the partial region on both backends
+  now: SO2/TZVP-MOLOPT 4.5 → 46.7 MiB, H2O/DZVP-SR 0.3 → 0.8 MiB. Host peak is
+  unchanged everywhere (2.10–2.35x output), because the partials never reach the
+  host. `memory_limit_bytes` bounds them through `plan_batch_bytes`, and
+  `CINTX_2E_KL_SPLIT=off` removes them.
+- **The floor a memory budget can reach rises** by roughly `(parts − 1)` copies
+  of the widest Cartesian block, since the split is not narrowed to fit. The
+  profile's `chunk=cart/4` budget moved from `output + cart/2` to
+  `output + cart` for this reason, with the arithmetic in the harness comment. A
+  caller who needs the older, lower floor turns the split off explicitly.
+- **The default output is no longer bit-identical to the pre-F1 dump** on the
+  CPU: 14–107 eps of block scale, every vendor `max|diff|` unmoved
+  (3.44e-15 … 2.65e-13). The *unsplit* arm still is, exactly — 0 of 2 313 078
+  elements — and `CINTX_GTH_DUMP`/`COMPARE` now work on that arm, so a change
+  claiming bit-identity is still held to it.
+
+### 18.7 What is left
+
+- `KL_SPLIT_PARTIAL_BUDGET_BYTES_PER_QUARTET` (1 MiB) is not binding on any GTH
+  or def2 class measured — the ket range caps first — so it is a guard, not a
+  tuned value.
+- The CPU gain is inside the noise on four of six workloads. If the per-unit
+  split is ever found to cost more than it returns on a workload that matters,
+  `CINTX_2E_KL_SPLIT=off` is the arm to compare against and §18.4 is the sweep
+  to redo; nothing about the rule is CPU-specific, so turning it off there would
+  reintroduce exactly the backend divergence this section removed.

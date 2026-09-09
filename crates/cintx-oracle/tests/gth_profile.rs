@@ -32,17 +32,24 @@
 //!                    arms must dump the same bits; on the cooperative arm they
 //!                    need not, because the ket-pair split each chooses differs
 //!                    (§16).
-//! - `klsplit=off`  — GPU only: `set_two_e_kl_split(Some(1))`, one quartet
-//!                    per cube, the shape before G1.
+//! - `klsplit=off`  — `set_two_e_kl_split(Some(1))`: the whole ket range on one
+//!                    work item, the shape before G1. It is also the arm that
+//!                    restores bit-identity, on either decomposition, since the
+//!                    split is the only thing in the 2e path that re-associates
+//!                    a sum (§17).
 //! - `coop=lane0`   — GPU only: the pre-S3 G build.
 //!
 //! Memory: the planned-bytes fields of `BatchExecutionStats` for every
 //! variant, plus backend residency when `CINTX_BATCH_MEMORY_PROFILE=1`.
 //!
-//! `CINTX_GTH_DUMP=<dir>` writes each workload's default-variant output as raw
-//! `f64` for a later bit-identity check; `CINTX_GTH_COMPARE=<dir>` reads them
-//! back and reports element-wise agreement. That is how a kernel change that
-//! claims bit-identity (K1's index table, K2's partition) is held to it.
+//! `CINTX_GTH_DUMP=<dir>` writes each workload's **`klsplit=off`** output as raw
+//! `f64`; `CINTX_GTH_COMPARE=<dir>` reads them back and holds that same arm to
+//! them bit for bit. That is how a kernel change claiming bit-identity (K1's
+//! index table, K2's partition, F1's grouping) is checked. The *default* arm
+//! splits ket-pair ranges (§17) and so re-associates a sum by design; its
+//! divergence from the reference is reported and bounded by the same
+//! block-scale rule `two_e_cooperative_arm`'s forced-split gates use, rather
+//! than asserted to be zero.
 //!
 //! ```text
 //! CINTX_ORACLE_BUILD_VENDOR=1 cargo test --release -p cintx-oracle \
@@ -231,6 +238,15 @@ fn variants() -> Vec<Variant> {
         limited: false,
     });
     out.push(Variant {
+        name: "klsplit=off",
+        apply: |b, s| {
+            reset();
+            set_two_e_kl_split(Some(1));
+            resident(b, s)
+        },
+        limited: false,
+    });
+    out.push(Variant {
         name: "probe:no-ctr",
         apply: |b, s| {
             reset();
@@ -240,15 +256,6 @@ fn variants() -> Vec<Variant> {
         limited: false,
     });
     if gpu {
-        out.push(Variant {
-            name: "klsplit=off",
-            apply: |b, s| {
-                reset();
-                set_two_e_kl_split(Some(1));
-                resident(b, s)
-            },
-            limited: false,
-        });
         out.push(Variant {
             name: "coop=lane0",
             apply: |b, s| {
@@ -351,8 +358,20 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
     class_census(arrays, list.len());
 
     // `memory_limit_bytes` for the chunked variant: the caller's output plus
-    // half the Cartesian intermediate, which `chunk_cart_budget` turns into a
-    // Cartesian ceiling of a quarter of the unchunked one.
+    // the Cartesian intermediate, which `chunk_cart_budget` turns into a
+    // Cartesian ceiling of half the unchunked one.
+    //
+    // It was half the intermediate until §18. The ket-pair split is a pure
+    // function of the quartet now, so it runs under a budget too — a budgeted
+    // run and an unbudgeted one have to compute the same values — and its
+    // partial blocks are charged to the same ledger. That raises the *floor* a
+    // budget can reach by roughly `(parts - 1)` copies of the widest Cartesian
+    // block, and the old figure sat below the new floor for H2O/DZVP-MOLOPT-SR:
+    // 679 KiB needed against 648 KiB allowed, with the chunk planner already
+    // down to one block per chunk. A caller who needs the older, lower floor
+    // turns the split off (`CINTX_2E_KL_SPLIT=off`) and accepts the unsplit
+    // arithmetic; that is an explicit choice rather than one a memory limit
+    // makes silently.
     let (output_bytes, cart_bytes) = list.iter().fold((0_usize, 0_usize), |(o, c), q| {
         let (mut sph, mut cart) = (1_usize, 1_usize);
         for &s in q {
@@ -362,7 +381,7 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
         }
         (o + sph * 8, c + cart * 8)
     });
-    let limit = output_bytes + cart_bytes / 2;
+    let limit = output_bytes + cart_bytes;
 
     let variants = variants();
     let residents: Vec<ResidentTwoEBasis> = variants
@@ -512,13 +531,28 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
         );
     }
 
+    // The dump/compare pair works on the **unsplit** arm, not the default one.
+    //
+    // Since §17 the default splits ket-pair ranges on both decompositions, and
+    // that re-associates the sum over ket pairs by design — so the default's
+    // bits are not stable across a change to the split, and asserting on them
+    // would make this tool fail for the one reason it is not looking for.
+    // `klsplit=off` is the arm whose bits *are* claimed stable, and holding it
+    // to them keeps the strict rule exactly where it still applies (K1's index
+    // table, K2's partition, F1's grouping). The default is still compared, and
+    // reported, against the same block-scale bound the forced-split gates use.
+    let strict = measured
+        .iter()
+        .find(|m| m.name == "klsplit=off")
+        .unwrap_or(base);
+
     if let Ok(dir) = std::env::var("CINTX_GTH_DUMP") {
         let path = std::path::Path::new(&dir).join(format!("{}.f64", sanitize(label)));
-        let bytes: Vec<u8> = base.values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let bytes: Vec<u8> = strict.values.iter().flat_map(|v| v.to_le_bytes()).collect();
         std::fs::write(&path, bytes).expect("dump");
         println!(
-            "  dumped {} values to {}",
-            base.values.len(),
+            "  dumped {} unsplit values to {}",
+            strict.values.len(),
             path.display()
         );
     }
@@ -532,24 +566,55 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
         assert_eq!(reference.len(), base.values.len(), "{label}: dump length");
         let differing = reference
             .iter()
-            .zip(&base.values)
+            .zip(&strict.values)
             .filter(|(a, b)| a.to_bits() != b.to_bits())
             .count();
         let worst = reference
             .iter()
-            .zip(&base.values)
+            .zip(&strict.values)
             .fold(0.0_f64, |acc, (a, b)| acc.max((a - b).abs()));
+        // The default's divergence is reported, not asserted here: it is the
+        // ket-pair split's re-association, which `ket_split_agrees_on_*` bounds
+        // and the vendor column above gates.
+        let split_eps = block_scale_eps(&reference, &base.values, &base.offsets);
         println!(
-            "  vs {}: {differing} of {} elements differ (max|d|={worst:.3e})",
+            "  vs {}: unsplit {differing} of {} elements differ (max|d|={worst:.3e}); \
+             default {split_eps:.1} eps of block scale",
             path.display(),
             reference.len()
         );
         assert_eq!(
             differing, 0,
-            "{label}: not bit-identical to the reference dump"
+            "{label}: the unsplit arm is not bit-identical to the reference dump"
+        );
+        assert!(
+            split_eps <= 1024.0,
+            "{label}: the split default is {split_eps:.1} eps of block scale from the \
+             reference dump, which is past what re-associating the ket-pair sum explains"
         );
     }
     measured
+}
+
+/// The worst per-block relative deviation between two runs, in ULP of the
+/// block's own scale — the measure `two_e_cooperative_arm` bounds the ket-pair
+/// split by, so the two gates speak the same units.
+fn block_scale_eps(reference: &[f64], actual: &[f64], offsets: &[usize]) -> f64 {
+    let total = reference.len();
+    let mut worst = 0.0_f64;
+    for (index, &start) in offsets.iter().enumerate() {
+        let end = offsets.get(index + 1).copied().unwrap_or(total);
+        let scale = reference[start..end]
+            .iter()
+            .fold(0.0_f64, |acc, v| acc.max(v.abs()));
+        if scale <= 0.0 {
+            continue;
+        }
+        for (a, b) in reference[start..end].iter().zip(&actual[start..end]) {
+            worst = worst.max((a - b).abs() / (scale * f64::EPSILON));
+        }
+    }
+    worst
 }
 
 fn workloads() -> Vec<(String, RawArrays)> {

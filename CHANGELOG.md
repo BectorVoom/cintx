@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — one method on CPU and GPU: the ket-pair split is a pure function of the quartet (2026-09-09)
+
+Enabling the ket-pair split on the per-unit (CPU) arm broke two contracts —
+`chunked_evaluation_is_bit_identical_to_unchunked` and
+`tuned_and_untuned_dispatches_agree_bit_for_bit`, the second by two ULP — and neither was a bug
+in the split. Both were the same fact: the split was sized from *the launch group's cost total*,
+so it was a function of how a work list happened to be batched. Chunking changed the answer. A
+memory budget changed the answer (it switched the split off). `parallel_units` changed the
+answer, so a different machine did. And CPU and GPU split the same quartet differently, chunking
+differently as they do, and then disagreed for a reason that was not the hardware.
+
+**The split is now a pure function of the quartet.** `kl_split_plan` takes no client and reads no
+total, no unit count and no chunk cap: `parts = ceil(cost / KL_SPLIT_TARGET_PART_COST)`, bounded
+by the quartet's own ket range, by `KL_SPLIT_MAX`, and by the partial blocks one quartet may add.
+The same quartet splits the same way in every batch, on every backend, on every machine.
+
+It follows that the split must also run **under a memory budget** — otherwise a budgeted run
+computes different values — so `plan_batch_bytes` charges it, from the same expression the
+dispatch allocates from, as a term counted once (the partial region is device-side only and the
+trimmed handle keeps it out of the readback). And a budget whose first chunk arrangement does not
+fit now **chunks harder instead of refusing**: `plan_2e_stream` halves the Cartesian budget and
+re-plans, down to one widest Cartesian block, and only then refuses. The split is never narrowed
+to fit — a budget may change the chunking, never the values.
+
+What is identical now, verified rather than asserted, every row a `=bits` column in one
+`gth_profile` run:
+
+| the answer does not depend on | evidence |
+|---|---|
+| the dispatch grouping | `fuse=off` is `=bits` on all six workloads, on **both** backends — it was not, on either |
+| the chunking, and a memory budget | `chunk=cart/4` is `=bits` against the unchunked default on all six |
+| the launch geometry | `tuned_and_untuned_dispatches_agree_bit_for_bit`, strict again |
+| the decomposition | `cooperative_g_build_is_bit_identical_on_*`: per-unit and cooperative agree bit for bit |
+| the machine | the rule reads no hardware quantity |
+
+What still differs between the backends is the decomposition, and all of it follows from one
+fact — the CubeCL CPU runtime makes a unit an OS thread and `cube_count` a sequential loop, so
+the grid is not a parallelism axis there. The six divergences (barriers, the S3 `(axis, root)`
+split, the contraction's lane split, the vector VRR width, the private accumulator's capacity,
+the cube geometry) are enumerated on `two_electron_scalar_kernel` with the reason each is forced;
+none is a policy choice, and the two arms are held to bit-identity against each other.
+
+**A 100x regression on the way, and a bug that had been hiding on the GPU.** The chunked variant
+went from 0.6x to 0.004x the moment the split ran under a budget: `run_2e_batches` pre-sizes the
+shared G slab (M4.1) from the *unsplit* quartet count while `launch()` sizes the real geometry
+from the split row count, so the shared slab was too small, every launch fell through to its own
+allocation, and — the cube width being part of a kernel's compiled identity — to its own JIT.
+That has been true on the **GPU since G1 landed**; it only became visible when a CPU dispatch
+started splitting. Sized from the same row count the launch uses, the chunked variant is
+0.88x–0.99x, better than the 0.59x–0.69x it managed before any of this.
+
+`KL_SPLIT_TARGET_PART_COST` was swept rather than guessed. The CPU column is noise-dominated
+(0.92x–1.23x, consistently positive only where a quartet exceeds a `1/units` share); the GPU
+column is not — the split is worth 1.6x–4.2x on ROCm, and 1 M beat 2 M there by 1.15x–1.64x. The
+GPU chose the constant.
+
+Costs: the device Cartesian buffer carries the partial region on both backends now
+(SO2/TZVP-MOLOPT 4.5 → 46.7 MiB); the host peak is unchanged everywhere (2.10–2.35x output); the
+floor a memory budget can reach rises by roughly `(parts − 1)` copies of the widest Cartesian
+block; and the CPU default is no longer bit-identical to the pre-fusion dump (14–107 eps of block
+scale, every vendor `max|diff|` unmoved). The **unsplit** arm still is, exactly, and
+`CINTX_GTH_DUMP`/`COMPARE` now work on that arm so a change claiming bit-identity is still held
+to it. `CINTX_2E_KL_SPLIT=off` is the way back.
+
+Record: `docs/design/gth_molopt_speed_memory_plan.md` §17, §18.
+
+
 ### Changed — the ket-pair split is sized per quartet, and the 2e dispatch fuses on the GPU too (2026-09-09)
 
 The Rys-order fusion in the entry below landed on the CPU arm only, because forcing it onto the
