@@ -2705,7 +2705,7 @@ const KL_SPLIT_MAX: usize = 64;
 
 /// The ket-pair split override, with `CINTX_2E_KL_SPLIT` applied (G1).
 ///
-/// `None` (the default, or `auto`) lets [`kl_split_factor`] size the split
+/// `None` (the default, or `auto`) lets [`kl_split_plan`] size the split
 /// from the hardware; `Some(1)` (`0`, `1`, `off`) disables it; `Some(n)`
 /// pins it. The A/B switch for the GPU profile.
 fn kl_split_override() -> Option<usize> {
@@ -2738,130 +2738,249 @@ pub fn set_two_e_kl_split(parts: Option<u32>) {
     );
 }
 
-/// How many cubes each quartet of `group` is spread over on `client` (G1).
+/// How many ket-pair parts each quartet of `group` is split into (G1, §16).
 ///
-/// `1` — no split — on a backend without hardware planes (the per-unit shape
-/// never splits: its units are threads, and K2 balances them), and whenever
-/// the group already offers [`KL_SPLIT_TARGET_CUBES_PER_UNIT`] cubes per
-/// execution unit. Otherwise the smallest split that reaches that target,
-/// bounded by the widest ket range in the group (a part with no rows is
-/// waste) and by [`KL_SPLIT_PARTIAL_BUDGET_BYTES`].
-fn kl_split_factor<R: Runtime>(client: &ComputeClient<R>, group: &TwoELaunchGroup) -> usize {
+/// One count per quartet row, in row order. `1` means "not split": that
+/// quartet keeps the whole ket range, writes straight into the group's output
+/// and costs no partial buffer at all.
+///
+/// # Why this is per quartet and not per group
+///
+/// It was per group until §16, and that was survivable only while a group held
+/// one Rys order — a dispatch of `(dd|dd)` quartets is uniform, so one number
+/// fits it. F1 (§15) made groups *heterogeneous*: one dispatch now carries an
+/// `(ss|ss)` quartet next to a `(dd|dd)` one whose serial walk is two hundred
+/// times longer, and a per-group split either starves the long one or buys the
+/// short one parts it cannot use. The measurement (§16.1) is unambiguous:
+/// forcing the fused cooperative dispatch back to the split the *unfused* one
+/// chose turned 0.82x into 1.29x, while pinning the cube width — the other
+/// mechanism §15.4 suspected — changed nothing at all.
+///
+/// # The rule
+///
+/// A cube's serial cost is its quartet's cost divided by its part count, so
+/// equalising `cost / parts` across the dispatch is what shortens the critical
+/// path. Pick the per-part cost that would spread the group over
+/// [`KL_SPLIT_TARGET_CUBES_PER_UNIT`] cubes per execution unit, then give each
+/// quartet `ceil(cost / that)` parts, bounded by its own ket range (a part with
+/// no rows is waste) and by [`KL_SPLIT_MAX`]. Cheap quartets fall out at one
+/// part and cost nothing; the expensive few take the parts. If the partial
+/// buffers that implies exceed [`KL_SPLIT_PARTIAL_BUDGET_BYTES`] the per-part
+/// cost doubles and the plan is recomputed, so the budget narrows the split
+/// rather than the run growing.
+///
+/// A pinned `CINTX_2E_KL_SPLIT=n` still means "n parts for every quartet",
+/// clamped per row, which is what the forced-split gates rely on.
+fn kl_split_plan<R: Runtime>(client: &ComputeClient<R>, group: &TwoELaunchGroup) -> Vec<u32> {
     let n = group.len();
     if n == 0 {
-        return 1;
+        return Vec::new();
     }
-    let hw = crate::plane::launch_hardware(client);
-    let max_rows = group
+    // A quartet can be cut into at most as many parts as it has ket rows.
+    let ranges: Vec<u32> = group
         .quartets
         .chunks_exact(QUARTET_ROW_STRIDE)
-        .map(|row| (row[7] - row[6]) as usize)
-        .max()
-        .unwrap_or(1)
-        .max(1);
+        .map(|row| (row[7] - row[6]).max(1))
+        .collect();
+    let ceiling = |q: usize| ranges[q].min(KL_SPLIT_MAX as u32).max(1);
+
     if let Some(pinned) = kl_split_override() {
-        return pinned.clamp(1, max_rows);
+        return (0..n)
+            .map(|q| (pinned as u32).clamp(1, ceiling(q)))
+            .collect();
     }
+    let hw = crate::plane::launch_hardware(client);
     if !hw.has_planes {
-        return 1;
+        return vec![1; n];
     }
-    let target = KL_SPLIT_TARGET_CUBES_PER_UNIT * hw.parallel_units.max(1) as usize;
-    let by_occupancy = target.div_ceil(n);
-    let by_memory = (KL_SPLIT_PARTIAL_BUDGET_BYTES / group.output_bytes().max(1)).max(1);
-    by_occupancy
-        .min(max_rows)
-        .min(by_memory)
-        .min(KL_SPLIT_MAX)
-        .max(1)
+
+    let block_lens = quartet_block_lens(&group.quartets, group.out_len);
+    let costs = &group.quartet_cost;
+    let total: u128 = costs.iter().map(|&c| u128::from(c)).sum();
+    let target_rows = (KL_SPLIT_TARGET_CUBES_PER_UNIT * hw.parallel_units.max(1) as usize).max(1);
+    // The cost one cube should carry. `max(1)` keeps the division defined for a
+    // fully screened group, which then takes one part per quartet below.
+    let mut per_part = (total / target_rows as u128).max(1);
+
+    loop {
+        let splits: Vec<u32> = (0..n)
+            .map(|q| {
+                let want = u128::from(costs[q]).div_ceil(per_part);
+                (want.min(u128::from(ceiling(q))) as u32).max(1)
+            })
+            .collect();
+        let extra_bytes: usize = (0..n)
+            .map(|q| (splits[q] as usize - 1) * block_lens[q] * std::mem::size_of::<f64>())
+            .sum();
+        if extra_bytes <= KL_SPLIT_PARTIAL_BUDGET_BYTES || per_part >= total {
+            return splits;
+        }
+        per_part = per_part.saturating_mul(2);
+    }
 }
 
-/// Spread every row of `rows` over `n_split` rows, each taking a contiguous
-/// `1/n_split` of the ket range and writing to its own copy of the group's
-/// output at `p * out_len` (G1).
+/// Cartesian output elements each quartet row of a group writes.
+///
+/// Derived from the rows rather than stored: `build_launch_groups` appends
+/// quartets in order with `out_len` accumulating, so a row's block is the gap
+/// to the next row's offset and the last row's is the gap to `out_len`.
+fn quartet_block_lens(rows: &[u32], out_len: usize) -> Vec<usize> {
+    let offsets: Vec<usize> = rows
+        .chunks_exact(QUARTET_ROW_STRIDE)
+        .map(|row| row[4] as usize)
+        .collect();
+    (0..offsets.len())
+        .map(|q| offsets.get(q + 1).copied().unwrap_or(out_len) - offsets[q])
+        .collect()
+}
+
+/// Spread each row of `rows` over its own number of ket-pair parts (G1, §16).
+///
+/// Returns the expanded rows, the reduce table and the number of `f64` the
+/// partial region needs beyond `out_len`.
+///
+/// **Part 0 of every quartet writes straight into the group's output** at the
+/// offset it already carried, and parts 1.. write into a compact region past
+/// `out_len`, quartet by quartet. So a quartet that is not split costs nothing
+/// — no partial block, no copy — which is what makes a per-quartet plan cheap
+/// enough to be the default: on a fused dispatch most quartets take one part.
+///
+/// The reduce table is four `u32` per quartet — `[extra_base, extra_parts,
+/// out_off, block_len]`, `extra_base` absolute in the combined buffer — and
+/// lists **every** quartet, `extra_parts == 0` included, because
+/// [`reduce_kl_partials`] also carries the group's output into its own buffer.
 ///
 /// Ket rows stay in libcint's `(pl, pk)` order inside each part, so a part's
 /// accumulation is a contiguous slice of the vendor's; only the final sum over
-/// parts (`reduce_kl_partials`) re-associates it. A part may be empty — its
-/// block is zeroed and nothing else — so the cube count is uniform.
-fn expand_kl_split(rows: &[u32], n_split: usize, out_len: usize) -> Vec<u32> {
-    let mut out = Vec::with_capacity(rows.len() * n_split);
-    let n_split_u = n_split as u32;
-    for row in rows.chunks_exact(QUARTET_ROW_STRIDE) {
+/// parts re-associates it, and it sums them in part order, so the result is
+/// deterministic. A part may be empty — its block is zeroed and nothing else.
+fn expand_kl_split(
+    rows: &[u32],
+    splits: &[u32],
+    block_lens: &[usize],
+    out_len: usize,
+) -> (Vec<u32>, Vec<u32>, usize) {
+    let n = splits.len();
+    let total_rows: usize = splits.iter().map(|&s| s as usize).sum();
+    let mut expanded = Vec::with_capacity(total_rows * QUARTET_ROW_STRIDE);
+    let mut table = Vec::with_capacity(n * KL_REDUCE_ROW_STRIDE);
+    let mut extra = 0usize;
+    for (q, row) in rows.chunks_exact(QUARTET_ROW_STRIDE).enumerate() {
+        let parts = splits[q].max(1);
         let (lo, hi) = (row[6], row[7]);
         let len = hi - lo;
-        for part in 0..n_split_u {
-            let a = lo + len * part / n_split_u;
-            let b = lo + len * (part + 1) / n_split_u;
-            out.extend_from_slice(&[
-                row[0],
-                row[1],
-                row[2],
-                row[3],
-                row[4] + part * out_len as u32,
-                row[5],
-                a,
-                b,
-            ]);
+        let block = block_lens[q];
+        // The base is **absolute**, the same offset the part rows carry, so the
+        // reduce needs no knowledge of where the partial region starts.
+        table.extend_from_slice(&[(out_len + extra) as u32, parts - 1, row[4], block as u32]);
+        for part in 0..parts {
+            let a = lo + len * part / parts;
+            let b = lo + len * (part + 1) / parts;
+            // Part 0 keeps the quartet's own output offset; the rest take a
+            // block of the partial region, which starts at `out_len`.
+            let out_off = if part == 0 {
+                row[4]
+            } else {
+                (out_len + extra + (part as usize - 1) * block) as u32
+            };
+            expanded.extend_from_slice(&[row[0], row[1], row[2], row[3], out_off, row[5], a, b]);
         }
+        extra += (parts as usize - 1) * block;
     }
-    out
+    (expanded, table, extra)
 }
 
-/// Sum the `n_split` partial output copies of a ket-split dispatch (G1):
-/// `out[i] = parts[i] + parts[out_len + i] + …`, in part order, so the result
-/// is deterministic. Grid-stride over `n_threads` work items.
+/// `u32` per quartet of [`reduce_kl_partials`]'s table:
+/// `extra_base, extra_parts, out_off, block_len`.
+const KL_REDUCE_ROW_STRIDE: usize = 4;
+
+/// Fold a ket-split dispatch's partial blocks into the group's output (G1,
+/// §16): one cube per quartet, grid-stride over quartets, its units striding
+/// over the quartet's Cartesian block.
+///
+/// `combined` holds the group's output in `[0, out_len)` — part 0 of every
+/// quartet, written there by the evaluation kernel itself — followed by the
+/// compact partial region [`expand_kl_split`] laid out. A quartet's parts are
+/// summed `p = 0, 1, …` in a fixed order, so the result is deterministic;
+/// starting the accumulator from part 0's value in place is the same sequence
+/// of additions the per-group reduce performed.
+///
+/// A quartet with `extra_parts == 0` is a copy, which is why the table lists
+/// every quartet: the output leaves in its own buffer, so the unsplit ones
+/// have to travel too.
 #[cube(launch_unchecked)]
 fn reduce_kl_partials<F: Float>(
-    parts: &Array<F>,
+    combined: &Array<F>,
     out: &mut Array<F>,
-    out_len: u32,
-    n_split: u32,
-    n_threads: u32,
+    table: &Array<u32>,
+    n_quartets: u32,
+    n_cubes: u32,
+    #[comptime] row_stride: u32,
 ) {
-    let mut i = (CUBE_POS as u32) * (CUBE_DIM as u32) + (UNIT_POS as u32);
-    while i < out_len {
-        let mut acc = parts[i as usize];
-        let mut p = 1u32;
-        while p < n_split {
-            acc += parts[(p * out_len + i) as usize];
-            p += 1u32;
+    let width = CUBE_DIM as u32;
+    let mut q = CUBE_POS as u32;
+    while q < n_quartets {
+        let t = q * row_stride;
+        let base = table[t as usize];
+        let extra_parts = table[(t + 1u32) as usize];
+        let out_off = table[(t + 2u32) as usize];
+        let block = table[(t + 3u32) as usize];
+        let mut e = UNIT_POS as u32;
+        while e < block {
+            let mut acc = combined[(out_off + e) as usize];
+            let mut p = 0u32;
+            while p < extra_parts {
+                acc += combined[(base + p * block + e) as usize];
+                p += 1u32;
+            }
+            out[(out_off + e) as usize] = acc;
+            e += width;
         }
-        out[i as usize] = acc;
-        i += n_threads;
+        q += n_cubes;
     }
 }
 
-/// Run [`reduce_kl_partials`] over `parts`, returning the `out_len`-element
-/// result buffer; the partial buffer is the caller's to drop.
+/// Run [`reduce_kl_partials`] over `combined`, returning the `out_len`-element
+/// result buffer; the combined buffer is the caller's to drop.
+///
+/// One cube per quartet, capped by the grid: a cube whose quartet is unsplit
+/// copies its block, and one whose quartet took twenty parts sums them. The
+/// cube width is the backend's plane-aligned default because a quartet's block
+/// is the parallel axis here, not the whole output.
 fn reduce_kl_partials_into<R: Runtime>(
     client: &ComputeClient<R>,
-    parts: &cubecl::server::Handle,
+    combined: &cubecl::server::Handle,
+    combined_len: usize,
     out_len: usize,
-    n_split: usize,
+    table: &[u32],
     probe: &Arc<Mutex<crate::memory_probe::DeviceMemoryProbe>>,
 ) -> cubecl::server::Handle {
     let out_bytes = out_len * std::mem::size_of::<f64>();
     let out_h = client.empty(out_bytes.max(1));
-    probe
-        .lock()
-        .expect("device memory probe poisoned")
-        .charge_output(out_bytes);
+    let table_h = client.create_from_slice(u32::as_bytes(table));
+    let n_quartets = (table.len() / KL_REDUCE_ROW_STRIDE) as u32;
+    {
+        let mut ledger = probe.lock().expect("device memory probe poisoned");
+        ledger.charge_output(out_bytes);
+        ledger.charge_tables(std::mem::size_of_val(table), 1);
+    }
     let cube_dim = crate::plane::backend_plane_cube_dim::<R>(client);
-    let width = (cube_dim.num_elems() as usize).max(1);
-    let cubes = crate::plane::grid_cube_count(client, out_len.div_ceil(width).max(1));
-    let n_threads = cubes as usize * width;
-    // SAFETY: `parts` holds `n_split * out_len` elements and `out_h` `out_len`;
-    // the kernel's indices are bounded by exactly those two products.
+    let cubes = crate::plane::grid_cube_count(client, n_quartets.max(1) as usize);
+    // SAFETY: `combined` holds `combined_len` elements and `out_h` `out_len`.
+    // Every table row names a `[out_off, block_len)` inside the group's output
+    // and an `[extra_base, extra_base + extra_parts * block_len)` inside the
+    // partial region, both laid out by `expand_kl_split` within `combined_len`.
     unsafe {
         reduce_kl_partials::launch_unchecked::<f64, R>(
             client,
             crate::plane::cube_count_1d(cubes),
             cube_dim,
-            ArrayArg::from_raw_parts(parts.clone(), out_len * n_split),
+            ArrayArg::from_raw_parts(combined.clone(), combined_len),
             ArrayArg::from_raw_parts(out_h.clone(), out_len),
-            out_len as u32,
-            n_split as u32,
-            n_threads as u32,
+            ArrayArg::from_raw_parts(table_h, table.len()),
+            n_quartets,
+            cubes,
+            KL_REDUCE_ROW_STRIDE as u32,
         );
     }
     out_h
@@ -3341,80 +3460,70 @@ impl TwoELaunchSignature {
 
 /// Does this backend's decomposition want the Rys-order fusion (F1, §15)?
 ///
-/// **Per-unit (CPU) only.** The fusion is a load-balancing change: on the
-/// per-unit shape a dispatch's quartets are partitioned across every unit, and
-/// a dispatch that holds one `(dd|dd)` quartet leaves fifteen of sixteen units
-/// idle while it runs. Fusing the Rys orders into one dispatch per `(ibase,
-/// kbase)` puts the whole work list in one partition; measured 1.21x-1.48x on
-/// four of six GTH workloads and 1.0x on the two that were already balanced.
+/// **Both, since §16.** The fusion is a load-balancing change, and each
+/// decomposition needed its own thing balanced first.
 ///
-/// On the cooperative (GPU) shape it *costs*, and the measurement says why
-/// (§15.4): a cube is sized from the group's widest Cartesian block and its G
-/// slab from the group's widest class, so fusing hands an `(ss|ss)` quartet a
-/// 256-lane cube and a 27 KiB slab; and `kl_split_factor`'s partial-buffer
-/// budget is spent against the group's whole output, so a four-times wider
-/// group buys half the ket-pair split G1 lives on. H2O/TZVP-MOLOPT measured
-/// 0.84x on ROCm. Both are fixable — per-class cube widths and a per-quartet
-/// split budget — and neither is fixed here, so the cooperative arm keeps one
-/// dispatch per Rys order.
-fn two_e_nroots_fusion<R: Runtime>(client: &ComputeClient<R>) -> bool {
-    nroots_fusion_enabled() && two_e_per_unit::<R>(client)
+/// On the per-unit shape a dispatch's quartets are partitioned across every
+/// unit, and a dispatch holding one `(dd|dd)` quartet leaves fifteen of sixteen
+/// units idle while it runs; fusing the Rys orders into one dispatch per
+/// `(ibase, kbase)` puts the whole work list in one partition, and that was
+/// worth 1.16x-1.48x with nothing else changed (§15.3).
+///
+/// On the cooperative shape the same move first measured **0.82x**, and §15.4
+/// guessed at two mechanisms. The attribution (§16.1) cleared one of them —
+/// pinning the cube width changed the number by 0.000x — and convicted the
+/// other: the ket-pair split was sized once per *group*, which
+/// only ever fitted a dispatch of one Rys order. Sizing it per quartet
+/// ([`kl_split_plan`]) is what makes a fused, heterogeneous dispatch work, and
+/// with it the fusion is worth 1.2x-1.5x on ROCm as well.
+fn two_e_nroots_fusion() -> bool {
+    nroots_fusion_override().unwrap_or(true)
 }
 
-/// [`two_e_nroots_fusion`] for a resolved backend.
-fn two_e_nroots_fusion_for(backend: &ResolvedBackend) -> bool {
-    match backend {
-        #[cfg(feature = "cpu")]
-        ResolvedBackend::Cpu(client) => two_e_nroots_fusion::<cubecl::cpu::CpuRuntime>(client),
-        #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => two_e_nroots_fusion::<cubecl_wgpu::WgpuRuntime>(client),
-        #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => two_e_nroots_fusion::<cubecl_cuda::CudaRuntime>(client),
-        #[cfg(feature = "rocm")]
-        ResolvedBackend::Rocm(client) => two_e_nroots_fusion::<cubecl_hip::HipRuntime>(client),
-        #[cfg(feature = "metal")]
-        ResolvedBackend::Metal(client, _) => {
-            two_e_nroots_fusion::<cubecl_wgpu::WgpuRuntime>(client)
-        }
+/// The Rys-order launch-group fusion override (F1, §15), with `CINTX_2E_FUSE`
+/// applied.
+///
+/// `None` is the backend default; `Some(false)` restores one dispatch per
+/// `(ibase, kbase, nroots)`, which is the A/B this section's ratios are quoted
+/// from; `Some(true)` forces the fusion on a decomposition that would not
+/// choose it. Unlike the kernel's other switches this one *does* change the
+/// compiled program (`nr_max` is comptime), so the two arms are two programs;
+/// that is why it is a grouping switch read on the host rather than a kernel
+/// scalar. Both arms produce bit-identical output on the per-unit shape, which
+/// is what `gth_profile`'s dump comparison holds them to.
+fn nroots_fusion_override() -> Option<bool> {
+    let mut current = NROOTS_FUSION.load(std::sync::atomic::Ordering::Relaxed);
+    if current == FUSE_UNRESOLVED {
+        current = match std::env::var("CINTX_2E_FUSE").ok().as_deref() {
+            None | Some("") | Some("auto") => FUSE_AUTO,
+            Some("off") | Some("0") => 0,
+            Some(_) => 1,
+        };
+        NROOTS_FUSION.store(current, std::sync::atomic::Ordering::Relaxed);
+    }
+    if current == FUSE_AUTO {
+        None
+    } else {
+        Some(current == 1)
     }
 }
 
-/// Is the Rys-order launch-group fusion on (F1, §15), with `CINTX_2E_FUSE`
-/// applied?
-///
-/// `off` restores the pre-fusion grouping — one dispatch per `(ibase, kbase,
-/// nroots)` — which is the A/B this section's ratios are quoted from. Unlike
-/// the kernel's other switches this one *does* change the compiled program
-/// (`nr_max` is comptime), so the two arms are two programs; that is why it is
-/// a grouping switch read on the host rather than a kernel scalar. The
-/// measurement it supports is of the *grouping*, and both arms produce
-/// bit-identical output, which is what `gth_profile`'s dump comparison holds
-/// them to.
-fn nroots_fusion_enabled() -> bool {
-    let current = NROOTS_FUSION.load(std::sync::atomic::Ordering::Relaxed);
-    if current != u32::MAX {
-        return current == 1;
-    }
-    let from_env = u32::from(
-        !std::env::var("CINTX_2E_FUSE").is_ok_and(|value| value.eq_ignore_ascii_case("off")),
-    );
-    NROOTS_FUSION.store(from_env, std::sync::atomic::Ordering::Relaxed);
-    from_env == 1
-}
-
-/// `u32::MAX` until [`nroots_fusion_enabled`] resolves the environment.
-static NROOTS_FUSION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+/// `NROOTS_FUSION` states: unresolved, backend default, or pinned.
+const FUSE_UNRESOLVED: u32 = u32::MAX;
+const FUSE_AUTO: u32 = u32::MAX - 1;
+static NROOTS_FUSION: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(FUSE_UNRESOLVED);
 
 /// Pin the Rys-order fusion for the rest of this process: `Some(true)` fuses,
-/// `Some(false)` restores one dispatch per Rys order, `None` re-reads
-/// `CINTX_2E_FUSE`. For in-process A/B measurement.
+/// `Some(false)` restores one dispatch per Rys order, `None` restores the
+/// backend default. For in-process A/B measurement.
 ///
 /// A work list already planned is unaffected — the grouping is read when a
 /// [`crate::ResidentTwoEBasis`] plans a batch, so set this before the call
 /// whose grouping is being measured.
 pub fn set_two_e_nroots_fusion(fused: Option<bool>) {
     NROOTS_FUSION.store(
-        fused.map_or(u32::MAX, u32::from),
+        fused.map_or(FUSE_AUTO, u32::from),
         std::sync::atomic::Ordering::Relaxed,
     );
 }
@@ -3815,36 +3924,50 @@ fn run_2e_batches<R: Runtime>(
         //
         // A dispatch of one quartet per cube lasts as long as its slowest
         // quartet's *serial* walk over its primitive quartets, however few
-        // cubes it carries (GTH plan §10.5). Splitting the ket-pair range
-        // across `n_split` cubes shortens that walk by the same factor; each
-        // part accumulates into its own copy of the group's output, and one
-        // reduce kernel sums the copies in a fixed order. The per-unit shape
-        // never splits, and neither does a run under a memory budget: the
-        // partial copies are exactly the kind of peak the budget refuses.
-        let n_split = if per_unit || options.memory_limit_bytes.is_some() {
-            1
+        // cubes it carries (GTH plan §10.5). Splitting a quartet's ket-pair
+        // range across several cubes shortens that walk by the same factor;
+        // part 0 accumulates into the quartet's own output block, the rest into
+        // a compact partial region, and one reduce kernel sums them in a fixed
+        // order. The split is sized **per quartet** (§16), because a fused
+        // dispatch is heterogeneous: the `(dd|dd)` quartet that sets the
+        // critical path takes the parts and the `(ss|ss)` quartets beside it
+        // take none. The per-unit shape never splits, and neither does a run
+        // under a memory budget: the partial blocks are exactly the kind of
+        // peak the budget refuses.
+        let splits: Vec<u32> = if per_unit || options.memory_limit_bytes.is_some() {
+            vec![1; n_quartets]
         } else {
-            kl_split_factor::<R>(client, group)
+            kl_split_plan::<R>(client, group)
         };
+        let any_split = splits.iter().any(|&s| s > 1);
         let split_rows: Vec<u32>;
-        let rows: &[u32] = if n_split > 1 {
-            split_rows = expand_kl_split(&group.quartets, n_split, group.out_len);
+        let reduce_table: Vec<u32>;
+        let extra_len: usize;
+        let rows: &[u32] = if any_split {
+            let block_lens = quartet_block_lens(&group.quartets, group.out_len);
+            let (expanded, table, extra) =
+                expand_kl_split(&group.quartets, &splits, &block_lens, group.out_len);
+            split_rows = expanded;
+            reduce_table = table;
+            extra_len = extra;
             &split_rows
         } else {
+            reduce_table = Vec::new();
+            extra_len = 0;
             &group.quartets
         };
-        let n_rows = n_quartets * n_split;
+        let n_rows = rows.len() / QUARTET_ROW_STRIDE;
         probe
             .lock()
             .expect("device memory probe poisoned")
-            .note_kl_split(n_split as u32);
+            .note_kl_split(splits.iter().copied().max().unwrap_or(1));
 
         let quartets_h = client.create_from_slice(u32::as_bytes(rows));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         // The transform reads the same class shapes the evaluation does and the
         // *unsplit* quartet rows — one per quartet, pointing at the reduced
         // output — so it binds the same buffers where it can (M3).
-        let quartets_h_for_c2s = if n_split > 1 {
+        let quartets_h_for_c2s = if any_split {
             client.create_from_slice(u32::as_bytes(&group.quartets))
         } else {
             quartets_h.clone()
@@ -3852,9 +3975,11 @@ fn run_2e_batches<R: Runtime>(
         let shape_h_for_c2s = shape_h.clone();
         let factor_h = client.create_from_slice(f64::as_bytes(&group.class_factor));
         let idx_h = client.create_from_slice(u32::as_bytes(&group.class_idx));
-        let out_bytes = group.output_bytes();
-        // `n_split` copies of the group's output under the split (G1).
-        let out_h = client.empty(out_bytes * n_split);
+        // The group's output, followed by the compact partial region the split
+        // rows write into (G1, §16). `extra_len` is 0 when nothing is split,
+        // and this is then exactly the buffer the unsplit path always had.
+        let combined_len = group.out_len + extra_len;
+        let out_h = client.empty(combined_len * std::mem::size_of::<f64>());
         {
             let mut ledger = probe.lock().expect("device memory probe poisoned");
             ledger.charge_tables(
@@ -3862,7 +3987,7 @@ fn run_2e_batches<R: Runtime>(
                     + (rows.len() - group.quartets.len()) * std::mem::size_of::<u32>(),
                 4,
             );
-            ledger.charge_output(out_bytes * n_split);
+            ledger.charge_output(combined_len * std::mem::size_of::<f64>());
         }
 
         let dispatch = TwoEGroupDispatch::<R> {
@@ -3904,7 +4029,7 @@ fn run_2e_batches<R: Runtime>(
             nbas: pairs.nbas,
             acc_slots_max: accumulator_slots_max(),
             g_in_shared: use_shared_g,
-            out_len: group.out_len * n_split,
+            out_len: combined_len,
             n_quartets: n_rows as u32,
             n_cubes: two_e_cube_count::<R>(client, n_rows, g_size_u, group.max_ctr_len as usize),
             g_size: g_size_u,
@@ -3923,10 +4048,17 @@ fn run_2e_batches<R: Runtime>(
             probe: Arc::clone(&probe),
         };
         dispatch_2e_group(dispatch);
-        // G1: fold the partial copies into the group's output. The partial
+        // G1: fold the partial blocks into the group's output. The combined
         // buffer is dropped here, before the readback or transform allocates.
-        let out_h = if n_split > 1 {
-            reduce_kl_partials_into::<R>(client, &out_h, group.out_len, n_split, &probe)
+        let out_h = if any_split {
+            reduce_kl_partials_into::<R>(
+                client,
+                &out_h,
+                combined_len,
+                group.out_len,
+                &reduce_table,
+                &probe,
+            )
         } else {
             out_h
         };
@@ -4414,6 +4546,22 @@ fn two_e_geometry_tunables<R: Runtime>()
 /// too small to pay for a benchmark, or the process has already tuned as many
 /// distinct keys as it is allowed to — see [`crate::tuning`] for those bounds.
 fn dispatch_2e_group<R: Runtime>(dispatch: TwoEGroupDispatch<R>) {
+    // A pinned cube width is an instruction, not a hint: the tuner exists to
+    // *choose* a width, so running it against an override both wastes the
+    // benchmark and can launch at a width the caller did not ask for. Every
+    // A/B that pins the geometry — `two_e_cooperative_arm`'s four-lane arm,
+    // `gth_profile`'s unit-count curve — depends on the width it set being the
+    // width that runs.
+    //
+    // F1 (§16) is how this surfaced. Fusing the Rys orders makes a cooperative
+    // dispatch four times wider, which pushed the pinned four-lane arm over
+    // `MIN_TUNE_ITEMS` for the first time; the tuner then benchmarked every
+    // candidate width, and on the CubeCL CPU runtime each width is its own JIT
+    // compilation of the whole kernel. A 1.5 s gate became a 20 minute one.
+    if two_e_cube_dim_override().is_some() {
+        dispatch.launch(dispatch.heuristic_cube_dim);
+        return;
+    }
     let key = dispatch.tuning_key();
     if !crate::tuning::should_tune(&key, dispatch.n_quartets as usize) {
         dispatch.launch(dispatch.heuristic_cube_dim);
@@ -10147,7 +10295,7 @@ fn plan_2e_stream(
     );
     // F1 (§15): one grouping decision for the whole plan, taken here so the
     // pre-flight budget below and the dispatch cannot disagree about it.
-    let fuse = two_e_nroots_fusion_for(backend);
+    let fuse = two_e_nroots_fusion();
 
     // ── M1: evaluate in chunks of consecutive quartets ────────────────────
     //
@@ -11555,7 +11703,7 @@ pub fn prewarm_2e_work_list(
     // F1 (§15): warm the programs the real batch will dispatch, which means
     // grouping the representatives the way `plan_2e_stream` will group the
     // work list.
-    let fuse = two_e_nroots_fusion_for(backend);
+    let fuse = two_e_nroots_fusion();
     let mut report = PrewarmReport {
         items_per_class: units,
         ..Default::default()
@@ -11753,40 +11901,81 @@ mod chunk_cap_tests {
 
 #[cfg(test)]
 mod kl_split_tests {
-    use super::{QUARTET_ROW_STRIDE, expand_kl_split};
+    use super::{KL_REDUCE_ROW_STRIDE, QUARTET_ROW_STRIDE, expand_kl_split, quartet_block_lens};
+
+    /// Two rows: a 7-row ket range writing a 40-element block at offset 0, and
+    /// a 2-row range writing a 60-element block at offset 40. Group output 100.
+    const ROWS: [u32; 2 * QUARTET_ROW_STRIDE] = [
+        0, 1, 2, 3, 0, 5, 10, 17, //
+        0, 1, 3, 3, 40, 6, 30, 32,
+    ];
+
+    #[test]
+    fn block_lengths_come_from_the_gaps_between_output_offsets() {
+        assert_eq!(quartet_block_lens(&ROWS, 100), vec![40, 60]);
+    }
 
     #[test]
     fn parts_tile_the_ket_range_in_order_and_offset_their_output() {
-        // Two rows: a 7-row ket range and a 2-row one, group output 100 long.
-        let rows = [
-            0, 1, 2, 3, 0, 5, 10, 17, //
-            0, 1, 3, 3, 40, 6, 30, 32,
-        ];
-        let out = expand_kl_split(&rows, 3, 100);
+        let (out, table, extra) = expand_kl_split(&ROWS, &[3, 3], &[40, 60], 100);
         assert_eq!(out.len(), 2 * 3 * QUARTET_ROW_STRIDE);
         let parts: Vec<&[u32]> = out.chunks_exact(QUARTET_ROW_STRIDE).collect();
         // First quartet: 7 rows over 3 parts → 2, 2, 3, contiguous, in order.
         assert_eq!(&parts[0][6..], &[10, 12]);
         assert_eq!(&parts[1][6..], &[12, 14]);
         assert_eq!(&parts[2][6..], &[14, 17]);
-        // Each part writes its own copy of the output.
+        // Part 0 writes the quartet's own block; the rest take consecutive
+        // blocks of the partial region, which starts at `out_len`.
         assert_eq!(parts[0][4], 0);
         assert_eq!(parts[1][4], 100);
-        assert_eq!(parts[2][4], 200);
+        assert_eq!(parts[2][4], 140);
         // Second quartet: 2 rows over 3 parts → one part is empty.
         assert_eq!(&parts[3][6..], &[30, 30]);
         assert_eq!(&parts[4][6..], &[30, 31]);
         assert_eq!(&parts[5][6..], &[31, 32]);
-        assert_eq!(parts[5][4], 40 + 200);
+        assert_eq!(parts[3][4], 40);
+        assert_eq!(parts[4][4], 100 + 80);
+        assert_eq!(parts[5][4], 100 + 80 + 60);
         // Shells and class carry over unchanged.
         assert_eq!(&parts[4][..4], &[0, 1, 3, 3]);
         assert_eq!(parts[4][5], 6);
+        // The partial region holds exactly the non-zeroth parts.
+        assert_eq!(extra, 2 * 40 + 2 * 60);
+        assert_eq!(
+            table,
+            vec![
+                100, 2, 0, 40, //
+                180, 2, 40, 60,
+            ]
+        );
+        assert_eq!(table.len(), 2 * KL_REDUCE_ROW_STRIDE);
+    }
+
+    #[test]
+    fn an_unsplit_quartet_costs_no_partial_block_beside_a_split_one() {
+        // The shape a fused dispatch produces: one expensive quartet takes
+        // parts, its cheap neighbour takes none and keeps writing in place.
+        let (out, table, extra) = expand_kl_split(&ROWS, &[4, 1], &[40, 60], 100);
+        assert_eq!(out.len(), 5 * QUARTET_ROW_STRIDE);
+        let parts: Vec<&[u32]> = out.chunks_exact(QUARTET_ROW_STRIDE).collect();
+        assert_eq!(parts[0][4], 0);
+        assert_eq!(parts[1][4], 100);
+        assert_eq!(parts[2][4], 140);
+        assert_eq!(parts[3][4], 180);
+        // The unsplit quartet keeps its whole ket range and its own offset.
+        assert_eq!(&parts[4][6..], &[30, 32]);
+        assert_eq!(parts[4][4], 40);
+        // Only the split quartet's extra parts are charged.
+        assert_eq!(extra, 3 * 40);
+        assert_eq!(table, vec![100, 3, 0, 40, 220, 0, 40, 60]);
     }
 
     #[test]
     fn a_split_of_one_is_the_identity() {
-        let rows = [4, 3, 2, 1, 7, 0, 5, 9];
-        assert_eq!(expand_kl_split(&rows, 1, 50), rows.to_vec());
+        let (out, table, extra) = expand_kl_split(&ROWS, &[1, 1], &[40, 60], 100);
+        assert_eq!(out, ROWS.to_vec());
+        assert_eq!(extra, 0);
+        assert_eq!(table, vec![100, 0, 0, 40, 100, 0, 40, 60]);
     }
 }
 

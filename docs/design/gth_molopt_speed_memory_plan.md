@@ -4,7 +4,11 @@ Status: executed 2026-09-06 — §8 is the record of what landed and what was me
 §9 (S3), §10 (the profile-guided pass) and §11 (the GPU decomposition, G1, and
 the T4 measurement package), all 2026-09-07, extend it; §12–§14 (V1, the root-axis
 vector VRR, and what it does not apply to), 2026-09-08; §15 (F1, fusing the Rys
-orders into one dispatch), 2026-09-09.
+orders into one dispatch) and §16 (F1 on the GPU, and the per-quartet ket-pair
+split it needed), 2026-09-09.
+
+§15.4's account of why the fusion cost time on the GPU is **superseded by §16.1**,
+which measured it: one of the two mechanisms it named does nothing.
 Scope: the batched `int2e_sph` path over the two GTH-MOLOPT orbital bases
 `cintx-basis` exposes behind the `gth` feature (`DZVP-MOLOPT-SR-GTH`,
 `TZVP-MOLOPT-GTH`). `gth-tzvp-molopt-sr` does not exist upstream (CP2K ships
@@ -1365,3 +1369,168 @@ now records that the *grouping* is a property of the decomposition (it was
   primitives to amortise the `gctri` read-modify-write was costed from the
   `naive`/`staged` A/B — 3 read-modify-writes into a cache-hot slab are ~5% of
   the row — and is not worth a pass.
+
+## 16. F1 on the GPU: what actually blocked it (2026-09-09)
+
+§15 landed the Rys-order fusion on the per-unit arm and left it off the
+cooperative one, on a measurement (0.82x on ROCm/H2O-TZVP) and **two guesses**
+about why. This section is the attribution §15.4 should have done, the fix it
+points to, and the two defects that fell out on the way.
+
+### 16.1 Attribution: one guess was wrong, the other was the whole story
+
+`gth_profile` on ROCm (gfx1151, H2O, `CINTX_2E_CHUNK_QUARTETS=64`, best of 3,
+interleaved), with `CINTX_GTH_FUSE_PROBE=1` adding the pinned arms. The fusion
+is forced onto the cooperative shape and then each suspected mechanism is
+pinned back to what the *unfused* dispatch would have had:
+
+| variant | DZVP-SR (ms) | ratio | TZVP (ms) | ratio |
+|---|---|---|---|---|
+| `default` (unfused) | 158.26 | 1.000x | 474.40 | 1.000x |
+| `fuse=on` | 153.53 | 1.031x | 577.27 | **0.822x** |
+| `fuse=on,dim=64` | 150.57 | 1.051x | 577.22 | **0.822x** |
+| `fuse=on,split=49` | 103.72 | **1.526x** | 368.23 | **1.288x** |
+| `fuse=off,dim=64` | 144.07 | 1.098x | 484.26 | 0.980x |
+
+Pinning the cube width moved TZVP by **0.000x** — §15.4's claim that fusing
+"hands an `(ss|ss)` quartet a 256-lane cube" is true and *does not matter*.
+Pinning the ket-pair split turned 0.822x into 1.288x, i.e. the fusion was
+already worth 1.3x-1.5x and the split was giving it all back. The G-slab claim
+in §15.4 was wrong too, and for a reason worth recording: `shared_g_enabled()`
+is **off** by default, so the cooperative G tensor is in global memory and its
+size costs an allocation, not occupancy.
+
+One variable at a time, and one of the two candidates dies. This is what the
+manual's step 3 is for and what §15.4 skipped.
+
+### 16.2 Why a per-group split cannot serve a fused dispatch
+
+`kl_split_factor` chose one part count for a whole group. That was survivable
+while a group held one Rys order — a dispatch of `(dd|dd)` quartets is uniform,
+so one number fits it — and F1 made groups *heterogeneous*. The fused
+`(ibase, kbase)` dispatch carries an `(ss|ss)` quartet next to a `(dd|dd)` one
+whose serial walk is two hundred times longer, and one number cannot serve
+both: the occupancy term `target.div_ceil(n_quartets)` shrinks precisely
+*because* the group got wider, and the memory term
+`budget / group.output_bytes()` shrinks for the same reason. The
+`(dd|dd)` quartet that sets the critical path went from 49 parts to 8.
+
+### 16.3 What landed
+
+**The split is per quartet.** `kl_split_plan` returns one count per quartet row:
+
+- A cube's serial cost is its quartet's cost over its part count, so the plan
+  equalises `cost / parts`. It takes the per-part cost that would spread the
+  group over `KL_SPLIT_TARGET_CUBES_PER_UNIT` cubes per execution unit and
+  gives each quartet `ceil(cost / that)` parts, bounded by **its own** ket range
+  and by `KL_SPLIT_MAX`. Cheap quartets fall out at one part; the expensive few
+  take the parts. If the partial buffers exceed
+  `KL_SPLIT_PARTIAL_BUDGET_BYTES` the per-part cost doubles and the plan is
+  recomputed, so the budget narrows the split rather than the run growing.
+- The `quartet_cost_estimate` K2 already computes for the per-unit partition is
+  what ranks them; no new cost model.
+
+**The partial buffers are compact.** Part 0 of every quartet writes straight
+into the group's output at the offset it already carried, and parts 1.. write
+into a region past `out_len`, quartet by quartet. So the split costs
+`Σ_q (parts_q − 1) · block_q` rather than `n_split · out_len`, and **a quartet
+that is not split costs nothing at all** — no partial block, no copy. That is
+what makes a per-quartet plan affordable as the default: on a fused dispatch
+most quartets take one part.
+
+**The reduce is table-driven.** Four `u32` per quartet — `[extra_base,
+extra_parts, out_off, block_len]` — and one cube per quartet, its units striding
+the quartet's Cartesian block. A quartet with `extra_parts == 0` is a copy,
+which is why the table lists every quartet: the output leaves in its own buffer.
+The accumulator starts from part 0's value in place and adds parts
+`1, 2, …` in order, which is the same sequence of additions the per-group reduce
+performed, so the result is as deterministic as it was.
+
+**The fusion is on for both decompositions.** `two_e_nroots_fusion` no longer
+consults the decomposition; `CINTX_2E_FUSE=off` / `set_two_e_nroots_fusion` is
+the A/B on either.
+
+### 16.4 Measured (ROCm, gfx1151, all six fixtures)
+
+`gth_profile`, `default` against `fuse=off`, in-process and interleaved,
+`CINTX_2E_CHUNK_QUARTETS=64`:
+
+| workload | fused (ms) | `fuse=off` (ms) | **fusion** | launches | kl_split | G slab (KiB) |
+|---|---|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | 114.6 | 191.9 | **1.68x** | 24 ← 70 | 25 | 2 585 ← 1 269 |
+| CH4 / DZVP-MOLOPT-SR | 562.2 | 742.9 | **1.32x** | 108 | 25 | 2 585 ← 1 269 |
+| SO2 / DZVP-MOLOPT-SR | 424.3 | 668.5 | **1.57x** | 62 | 25 | 4 374 ← 3 615 |
+| H2O / TZVP-MOLOPT | 416.1 | 514.2 | **1.24x** | 24 ← 70 | 49 | 3 191 ← 3 259 |
+| CH4 / TZVP-MOLOPT | 1 950.7 | 2 218.0 | **1.14x** | 108 | 49 | 3 191 ← 3 259 |
+| SO2 / TZVP-MOLOPT | 1 601.5 | 1 986.2 | **1.24x** | 62 | 49 | 7 712 ← 7 021 |
+
+**1.14x–1.68x**, against 0.82x–1.03x before the split was fixed. The split now
+reaches 25 and 49 — the *whole* ket range, the widest that is any use — on a
+dispatch four times wider than the one that used to need that width, and the G
+slab pays 2x for it on DZVP-SR and nothing on TZVP. For contrast, forcing the
+old uniform split to 49 on a fused group (§16.1's probe row) cost 18.5 MB and
+40 MB of G slab; the per-quartet plan gets the same split where it matters for
+2.6 MB and 3.2 MB.
+
+The per-unit arm is untouched: it never splits, and `gth_profile`'s dump
+comparison against a pre-F1 dump is still 0 of 2 313 078 elements differing,
+with the §15.3 A/B unchanged (1.08x–1.29x on this pass, 1.16x–1.48x over the
+four passes now on record).
+
+### 16.5 Two defects this pass found
+
+**A wrong partial base, caught by the forced-split gate.** The first version
+stored the reduce table's `extra_base` relative to the partial region while the
+expanded rows carried it absolute. `ket_split_agrees_on_gth` — which pins the
+cooperative arm on the CPU backend and forces splits of 3 and 8 — failed at
+2.9e16 eps of block scale against a bound of 1 024. That gate exists for exactly
+this and it is worth its four seconds.
+
+**The autotuner ignored a pinned cube width.** `dispatch_2e_group` consulted
+`should_tune` before checking whether the caller had pinned the geometry, so a
+pinned width was a *suggestion*: the tuner would benchmark its candidates and
+launch at whichever won. Nothing had noticed because a pinned dispatch had never
+crossed `MIN_TUNE_ITEMS` (64 items) before — fusing the Rys orders makes a
+cooperative dispatch four times wider, and `two_e_cooperative_arm`'s four-lane
+arm crossed it for the first time. On the CubeCL CPU runtime each candidate
+width is its own JIT compilation of the whole kernel, so a 1.5 s gate became a
+20 minute one, which is how it was found. A pinned width is now an instruction:
+`two_e_cube_dim_override().is_some()` short-circuits to the pinned geometry.
+Every A/B that pins the width — that gate's four-lane arm, `gth_profile`'s
+unit-count curve — depended on this and none of them could have told you.
+
+### 16.6 Verification
+
+- **Forced-split gate**: `ket_split_agrees_on_{def2,gth}` — def2 at 2 and 7
+  parts bit-identical to the unsplit arm (its parts go empty), GTH at 3 and 8
+  parts within 19.6 / 19.6 / 76.7 / 74.9 eps of block scale against a bound of
+  1 024, and every arm within 1e-12 of the vendor. The GTH figures are §11.2's
+  to the tenth of an eps, which is what a layout change that is only a *layout*
+  change looks like.
+- **Unit**: `kl_split_tests` rewritten for the per-quartet form — the block
+  lengths come from the gaps between output offsets, the parts tile the ket
+  range in order, an unsplit quartet beside a split one costs no partial block,
+  and an all-ones plan is the identity on the rows.
+- **CPU, unchanged**: `gth_profile` dump comparison against the pre-F1 dump
+  (0 of 2 313 078), the six throughput rows (1.96x–2.44x faster than
+  single-threaded libcint, every `max|diff|` the §10.4 figure), the whole
+  `cintx-cubecl` unit suite and the whole `cintx-oracle` default suite.
+- **ROCm**: `def2_batch_rocm_parity::def2_2e_batch_matches_between_cpu_and_rocm`,
+  `gth_contraction_ab` cross-backend on all six (staged over naive 1.04x–1.63x;
+  cpu-vs-rocm 49.1 / 577.4 eps of block scale on H2O, the §11.3 figures),
+  `gth_profile` on ROCm (§16.4).
+- **Still failing on `main` and still not ours**: the two `def2_batch_rocm_parity`
+  cases §15.6 records, from §13's odd-width `Vector<f64, 3>` on the 3c2e/2c2e
+  ROCm path.
+
+### 16.7 What is left
+
+- **The per-unit arm still never splits.** The `(dd|dd)` quartet that §15.7
+  named as H2O's remaining floor is now split on the GPU and not on the CPU.
+  The machinery is per-quartet and decomposition-agnostic; what stops it is that
+  a split is not bit-identical, and the CPU arm's bit-identity against the
+  pre-F1 dump is a claim worth keeping until someone wants the trade.
+- **`KL_SPLIT_TARGET_CUBES_PER_UNIT` is still 8 and still unmeasured.** The plan
+  now spends that target sensibly, which makes it worth sweeping.
+- The cube width remains sized from the group's widest block. §16.1 says it
+  costs nothing today; it is on record as measured-and-left, not overlooked.

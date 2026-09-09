@@ -24,14 +24,14 @@
 //!                    partition (K2), when the kernel carries it.
 //! - `xform=device` — `set_device_transform(Some(true))`: M3 on the CPU
 //!                    runtime, for the memory column as much as the time.
-//! - `fuse=off`     — CPU only: `set_two_e_nroots_fusion(false)`, one dispatch
-//!                    per Rys order — the grouping before F1 (§15), and the
-//!                    fusion is per-unit-only, so there is nothing for this
-//!                    variant to measure on a GPU. It is the one variant that
-//!                    is a different *compiled program* rather than a kernel
-//!                    scalar, because `nr_max` is comptime; it is still
-//!                    interleaved in-process, and both arms must dump the same
-//!                    bits.
+//! - `fuse=off`     — `set_two_e_nroots_fusion(false)`: one dispatch per Rys
+//!                    order, the grouping before F1 (§15). It is the one
+//!                    variant that is a different *compiled program* rather
+//!                    than a kernel scalar, because `nr_max` is comptime; it is
+//!                    still interleaved in-process. On the per-unit arm both
+//!                    arms must dump the same bits; on the cooperative arm they
+//!                    need not, because the ket-pair split each chooses differs
+//!                    (§16).
 //! - `klsplit=off`  — GPU only: `set_two_e_kl_split(Some(1))`, one quartet
 //!                    per cube, the shape before G1.
 //! - `coop=lane0`   — GPU only: the pre-S3 G build.
@@ -173,7 +173,7 @@ fn reset() {
     set_two_e_balance(None);
     set_cooperative_build_split(true);
     set_two_e_kl_split(None);
-    set_two_e_nroots_fusion(Some(true));
+    set_two_e_nroots_fusion(None);
     set_device_transform(Some(false));
 }
 
@@ -222,6 +222,15 @@ fn variants() -> Vec<Variant> {
         limited: false,
     });
     out.push(Variant {
+        name: "fuse=off",
+        apply: |b, s| {
+            reset();
+            set_two_e_nroots_fusion(Some(false));
+            resident(b, s)
+        },
+        limited: false,
+    });
+    out.push(Variant {
         name: "probe:no-ctr",
         apply: |b, s| {
             reset();
@@ -250,15 +259,6 @@ fn variants() -> Vec<Variant> {
             limited: false,
         });
     } else {
-        out.push(Variant {
-            name: "fuse=off",
-            apply: |b, s| {
-                reset();
-                set_two_e_nroots_fusion(Some(false));
-                resident(b, s)
-            },
-            limited: false,
-        });
         out.push(Variant {
             name: "balance=uniform",
             apply: |b, s| {

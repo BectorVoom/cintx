@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the ket-pair split is sized per quartet, and the 2e dispatch fuses on the GPU too (2026-09-09)
+
+The Rys-order fusion in the entry below landed on the CPU arm only, because forcing it onto the
+cooperative (GPU) arm measured **0.82x** on H2O/TZVP-MOLOPT. That entry named two suspects and
+fixed neither. Measuring them, one at a time, settled it in one table: pinning the cube width
+moved the number by **0.000x**, and pinning the ket-pair split back to what the *unfused*
+dispatch chose turned 0.82x into **1.29x**. The cube-width story was wrong; the split was the
+whole thing.
+
+`kl_split_factor` chose one part count for a whole launch group. That fitted a dispatch of one
+Rys order — those are uniform — and the fusion made groups heterogeneous: an `(ss|ss)` quartet
+now sits beside a `(dd|dd)` one whose serial walk is two hundred times longer, and one number
+cannot serve both. Worse, both of its terms shrink *because* the group got wider — the occupancy
+target divides by the quartet count, the memory budget divides by the group's output — so the
+`(dd|dd)` quartet that sets the critical path went from 49 parts to 8.
+
+The split is now sized per quartet. A cube's serial cost is its quartet's cost over its part
+count, so `kl_split_plan` equalises `cost / parts`: it takes the per-part cost that spreads the
+group over the target cubes per execution unit and gives each quartet `ceil(cost / that)` parts,
+bounded by **its own** ket range. Cheap quartets fall out at one part; the expensive few take
+the parts. The ranking uses the `quartet_cost_estimate` the per-unit partition already computes,
+so there is no new cost model.
+
+The partial buffers got compact with it. Part 0 of every quartet writes straight into the
+group's output at the offset it already carried, and only parts 1.. take space past `out_len` —
+so the split costs `Σ (parts−1)·block` instead of `n_split · out_len`, and **an unsplit quartet
+costs nothing at all**. The reduce is table-driven, four `u32` per quartet, one cube per quartet;
+it starts from part 0's value in place and adds the rest in order, which is the same sequence of
+additions the per-group reduce performed.
+
+Measured on ROCm (gfx1151, in-process against `CINTX_2E_FUSE=off`, interleaved):
+
+| workload | fusion | launches | split | G slab |
+|---|---|---|---|---|
+| H2O / DZVP-MOLOPT-SR | **1.68x** | 70 → 24 | 25 | 1.3 → 2.6 MiB |
+| CH4 / DZVP-MOLOPT-SR | **1.32x** | — | 25 | 1.3 → 2.6 MiB |
+| SO2 / DZVP-MOLOPT-SR | **1.57x** | — | 25 | 3.6 → 4.4 MiB |
+| H2O / TZVP-MOLOPT | **1.24x** | 70 → 24 | 49 | 3.3 → 3.2 MiB |
+| CH4 / TZVP-MOLOPT | **1.14x** | — | 49 | 3.3 → 3.2 MiB |
+| SO2 / TZVP-MOLOPT | **1.24x** | — | 49 | 7.0 → 7.7 MiB |
+
+The split reaches 25 and 49 — the whole ket range — on a dispatch four times wider than the one
+that used to need that width. Forcing the *old* uniform split to 49 on a fused group gets the
+same speed for 18.5 MB and 40 MB of G slab; the per-quartet plan gets it for 2.6 MB and 3.2 MB.
+
+The per-unit arm is untouched — it never splits, and its output is still bit-identical to the
+pre-fusion dump (0 of 2 313 078 elements).
+
+**Two defects fell out.** The first version stored the reduce table's partial base relative to
+the partial region while the rows carried it absolute; `ket_split_agrees_on_gth`, which pins the
+cooperative arm on the CPU backend and forces splits of 3 and 8, caught it at 2.9e16 eps of block
+scale against a bound of 1 024. And `dispatch_2e_group` consulted the autotuner *before* checking
+whether the caller had pinned the cube width, so a pinned width was only a suggestion — the tuner
+would benchmark its candidates and launch at whichever won. Nothing had noticed because a pinned
+dispatch had never crossed the 64-item tuning threshold; a fused one does, and since each
+candidate width is its own JIT compilation on the CPU runtime, a 1.5 s gate became a 20 minute
+one. A pinned width is now an instruction.
+
+Record: `docs/design/gth_molopt_speed_memory_plan.md` §16.
+
+
 ### Changed — the batched 2e dispatch carries every Rys order, not one (2026-09-09)
 
 A `int2e_sph` work list used to be cut into one dispatch per `(ibase, kbase, nroots)`: fifteen
@@ -53,12 +114,10 @@ unscreened goes from 1.05x *slower* than libcint to 1.62x faster, CH4/def2-SVP f
 2.87x, H2O/def2-TZVP from 1.67x to 1.88x (that one fuses to eight dispatches, not four — its
 `nroots` 6 and 7 classes keep their own).
 
-**Per-unit (CPU) only.** Forced on for the cooperative arm, ROCm measured 0.84x on
-H2O/TZVP-MOLOPT, and the harness says why: `kl_split_factor` spends G1's partial-buffer budget
-against the whole group's output, so a four-times wider group buys half the ket-pair split G1 is
-worth 5.5–6.9x for; and a cooperative cube is sized from the group's widest Cartesian block, so
-fusing hands an `(ss|ss)` quartet a `(dd|dd)`-shaped cube. Both are fixable and neither is fixed
-here, so the cooperative arm keeps one dispatch per order.
+**Per-unit (CPU) only, in this change.** Forced on for the cooperative arm, ROCm measured 0.84x
+on H2O/TZVP-MOLOPT, so the cooperative arm kept one dispatch per order. The entry above —
+*the ket-pair split is sized per quartet* — measured that regression properly and removed it;
+of the two mechanisms named here, one turned out to do nothing at all.
 
 Costs, all reported through the existing ledger: the device G slab peak goes 203 → 422 KiB on
 the DZVP-MOLOPT-SR rows (a fused group's slab is sized to its widest class and now has a slot
