@@ -463,7 +463,7 @@ jobs:
             - name: Run GPU benchmark suites (advisory)
               run: |
                   # Keep commands aligned with ci/gpu-bench.yml policy template.
-                  cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
+                  cargo bench -p cintx --features bench --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
                   cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
 
             - name: Upload GPU advisory artifacts

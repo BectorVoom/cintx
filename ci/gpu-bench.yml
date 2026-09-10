@@ -75,7 +75,7 @@ jobs:
 
       - name: Run benchmark suites
         run: |
-          cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
+          cargo bench -p cintx --features bench --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
 
       - name: Generate benchmark + diagnostics reports
         run: |

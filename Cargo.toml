@@ -2,13 +2,29 @@
 name = "cintx"
 version = "0.1.0"
 edition = "2024"
+# The benchmark sources and the vendored upstream tree are verification-only
+# inputs; they must not travel in the published .crate. `benches/` is reachable
+# only through the `bench` feature and `libcint-master/` only through the
+# `libcint` feature, so neither is needed to build this package.
+# The 120 committed `*:Zone.Identifier` files (WSL download-provenance streams)
+# carry a `:`, which cargo refuses to package at all, so they are excluded too.
+autobenches = false
+exclude = [
+    "**/*:Zone.Identifier",
+    "/artifacts",
+    "/benches",
+    "/libcint-master",
+    "/libcint-master.zip",
+]
 
 [dependencies]
 anyhow = "1.0.102"
 cintx-capi = { path = "crates/cintx-capi", optional = true, default-features = false }
 cintx-rs = { path = "crates/cintx-rs", optional = true, default-features = false }
 cubecl = "0.10.0"
-libcint = "0.2.2"
+# Verification-only: the upstream comparison oracle, gated behind the `libcint`
+# feature together with the `cc` build of `libcint-master/` in build.rs.
+libcint = { version = "0.2.2", optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.18"
@@ -16,18 +32,28 @@ tracing = "0.1.41"
 
 [features]
 default = []
+# Upstream libcint 6.1.3 as a comparison oracle: pulls the `libcint` crate and
+# makes build.rs compile the vendored `libcint-master/` sources with `cc`. Off
+# by default so a consumer of the published crate needs neither the vendored
+# tree nor a C toolchain.
+libcint = ["dep:libcint"]
+# The criterion benchmark targets under `benches/`. Off by default so the bench
+# sources — and criterion — are never part of a consumer's build.
+bench = []
 # Keep the public feature names hyphenated while mapping to upstream underscore features.
+# The `libcint?/` forwards are weak: they configure the oracle when `libcint` is
+# also enabled, without dragging it into a plain `--features with-f12` build.
 with-f12 = [
     "dep:cintx-rs",
     "dep:cintx-capi",
-    "libcint/with_f12",
+    "libcint?/with_f12",
     "cintx-rs/with-f12",
     "cintx-capi/with-f12",
 ]
 with-4c1e = [
     "dep:cintx-rs",
     "dep:cintx-capi",
-    "libcint/with_4c1e",
+    "libcint?/with_4c1e",
     "cintx-rs/with-4c1e",
     "cintx-capi/with-4c1e",
 ]
@@ -47,14 +73,17 @@ cintx-rs = { path = "crates/cintx-rs" }
 [[bench]]
 name = "micro_families"
 harness = false
+required-features = ["bench"]
 
 [[bench]]
 name = "macro_molecules"
 harness = false
+required-features = ["bench"]
 
 [[bench]]
 name = "crossover_cpu_gpu"
 harness = false
+required-features = ["bench"]
 
 [workspace]
 members = [

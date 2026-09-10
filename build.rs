@@ -173,6 +173,16 @@ fn render_config_header(template: &str) -> String {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    // The vendored upstream oracle is verification-only and lives behind the
+    // `libcint` feature, alongside the `libcint` crate it links against. With
+    // the feature off there is nothing to compile here, and the build needs
+    // neither `libcint-master/` nor a C toolchain.
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_LIBCINT");
+    if env::var_os("CARGO_FEATURE_LIBCINT").is_none() {
+        return;
+    }
+
     let manifest_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR")
             .unwrap_or_else(|error| fail(BuildDiagnosticKind::IoFailure, error.to_string())),
@@ -207,7 +217,6 @@ fn main() {
         );
     }
 
-    println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed={}", cint_h_template.display());
     println!("cargo:rerun-if-changed={}", cint_config_template.display());
 
