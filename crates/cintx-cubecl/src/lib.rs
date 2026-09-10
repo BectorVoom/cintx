@@ -67,9 +67,11 @@ pub use kernels::two_electron::{
     cooperative_build_mode, evaluate_2e_quartet_batch, evaluate_2e_quartet_batch_into,
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_quartet_classes,
     prewarm_2e_work_list, schwarz_bounds, set_accumulator_slots_max, set_contraction_mode,
-    set_contraction_probe, set_cooperative_build_split, set_shared_g_enabled,
-    set_staged_contraction, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
-    set_two_e_nroots_fusion, set_two_e_per_unit, stream_2e_quartet_batch,
+    set_contraction_probe, set_cooperative_build_split, set_cooperative_cubes_per_unit,
+    set_cooperative_rows, set_cooperative_scratch_budget, set_lds_pad, set_shared_g_enabled,
+    set_shared_tier_cap_paired, set_staged_contraction, set_sub_group_min_lanes, set_two_e_balance,
+    set_two_e_cube_dim, set_two_e_kl_split, set_two_e_nroots_fusion, set_two_e_per_unit,
+    stream_2e_quartet_batch, sub_group_min_lanes,
 };
 pub use memory_probe::{DeviceMemoryProbe, residency_profiling_enabled};
 pub use plane::{

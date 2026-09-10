@@ -2365,3 +2365,188 @@ memory pressure now has a measured curve rather than a guess.
   (they are too wide for any tier), `B_TARGET_DEFAULT` and
   `SHARED_G_TIER_CAP` were swept on this APU only, and the T4 package is
   still unrun.
+
+## 24. R1–R7 — the block on the GPU, attributed and swept; the grid's scratch budgeted (2026-09-11)
+
+The instruction this section answers: *optimise the memory efficiency and the
+speed of the on-device kernel for `gth-dzvp-molopt-sr` and
+`gth-tzvp-molopt-sr`, following the profiling manual, bit-exact.* The manual
+is `cubecl_manual/manual/Cubecl/16_profiling_and_bottleneck_identification.md`
+(verify first; time portably; attribute with one change per measurement;
+interleave the candidates; discard an unstable number rather than publish it)
+and `profiling_tools.md`. This host still has no `rocprofv3`, so attribution
+is `gth_profile`'s in-process A/B, extended here with two probes, a variant
+filter and a dump of the split arm.
+
+**Bit-exactness, the standing gate.** Every arm in every run below reads
+`=bits` against the default of its process, and every default reads
+`unsplit 0 of N elements differ (max|d| = 0.000e0)` against a dump taken
+from the committed binary before any code moved — 2 313 078 elements across
+the six workloads, checked after each of the seven changes. The seven CPU
+cooperative-arm gates and `def2_2e_batch_matches_between_cpu_and_rocm` pass
+on the final tree.
+
+### 24.1 Where the baseline stood, and what the dispatch listing said
+
+ROCm, the committed kernel, best of 3 (the absolute band on this APU is
+±15% between processes; every claim below is an in-process ratio):
+
+| workload | default (ms) | device peak | of which g+ctr scratch | `no-build` | `no-roots` | `no-ctr` |
+|---|---|---|---|---|---|---|
+| H2O / DZVP-SR | 53.3 | 10.8 MiB | 1.9 MiB | 2.36x | 1.44x | 1.09x |
+| CH4 / DZVP-SR | 165.1 | 26.4 | 5.0 | 2.98x | 1.95x | 1.23x |
+| SO2 / DZVP-SR | 149.3 | 45.7 | 18.7 | 2.10x | 1.42x | 1.52x |
+| H2O / TZVP | 147.2 | 26.7 | 7.4 | 2.39x | 1.47x | 1.32x |
+| CH4 / TZVP | 569.6 | 93.8 | 24.7 | 2.80x | 1.69x | 1.30x |
+| SO2 / TZVP | 590.9 | 109.7 | 53.2 | 2.00x | 1.28x | 1.62x |
+
+Two new probes complete the block's attribution: `probe:no-sync` (the three
+barriers between VRR, the two HRR raises and the contraction skipped) is
+**1.02–1.03x**, and `probe:no-screen` (the primitive screen's `f64` division
+and square root replaced by multiplies) is **0.99–1.06x**. So of the block:
+the Rys roots are 24–43%, the recurrences 20–30%, the contraction 7–37%
+(SO2's `d` classes), the barriers 2–3%, the screen's transcendentals ≤ 5%.
+
+`CINTX_2E_GROUPS=1` on H2O/DZVP-SR then said where the cost sits: the four
+`(dd|dd)`-family quartets (`g_size = 1125`, the global slab, one primitive
+quartet per 256-lane cube) are **25.8%** of the estimated cost, and the nine
+`(pd|pd)`/`(pp|dd)`-family ones (`g_size = 256`, 768 slots a tensor) another
+**26.1%** — and at the 1 024 cap their tier holds *one* tensor, so they too
+build one primitive quartet per block. `CINTX_2E_TRACE=1` on the launch-floor
+list put the 45-row dispatch of that family at 10.9 ms of H2O's 53: **the
+launch floor is the `b_max = 1` classes.**
+
+### 24.2 What landed
+
+- **R7 — a scratch budget for the cooperative grid.** `two_e_cube_count`
+  sized the grid by `MAX_BATCH_SCRATCH_BYTES` (256 MiB) and the 64-cubes-per-
+  unit cap, so a dispatch of generally contracted `l = 2` classes — 50–100 KiB
+  of contraction scratch a cube — reserved 512 slabs for a device that runs
+  a few dozen cubes at once. The grid now also honours
+  `COOPERATIVE_SCRATCH_BUDGET_BYTES = 16 MiB` (`CINTX_2E_SCRATCH_MIB`,
+  `set_cooperative_scratch_budget`), which binds only on those groups. The
+  256 MiB arm against it, in-process: **0.96 / 1.02 / 1.02 / 0.97 / 1.02 /
+  1.00x** — inside the band — for a device peak of **108 → 49 MiB on
+  SO2/TZVP, 94 → 76 on CH4/TZVP, 46 → 26 on SO2/DZVP** (the g+ctr scratch
+  53 → 14, 25 → 13, 19 → 8.5 MiB). H2O and CH4/DZVP never reached the budget
+  and are unchanged. The per-unit arm reads the old constant and is
+  unaffected (16 MiB over a 30–130 KiB slot is hundreds of units).
+- **Attribution aids:** `probe:no-sync` and `probe:no-screen` (`ctr_mode` 5
+  and 6); `CINTX_GTH_VARIANTS=a,b` runs only the named variants (a quiet
+  process for `CINTX_2E_TRACE`); `CINTX_GTH_DUMP` also writes the *default*
+  arm and `CINTX_GTH_COMPARE` reports its count beside the strict one, so a
+  kernel change that leaves the split rule alone is held to the split bits
+  too.
+- **Four knobs, each a measured null, each defaulting to the committed
+  behaviour:** `CINTX_2E_SG_MIN` (R2), `CINTX_2E_ROWS=ranged` (R5),
+  `CINTX_2E_TIER_CAP_PAIRED` (R4), `CINTX_2E_LDS_PAD=on` (R6). Runtime
+  scalars or host rules, so each A/B is one compiled program per tier, and
+  the record below is reproducible from `gth_profile` without a rebuild.
+
+### 24.3 The null results, each with its mechanism
+
+All bit-identical; all ROCm, in-process, best of 3 unless noted.
+
+- **R1 — the staged `i` stage in registers.** `gctri[ci][q]` was a global
+  read-modify-write per element per primitive quartet, a dependent chain
+  through memory across a block's ten rows. Accumulating a lane's share in
+  registers (unrolled, literal indices) and folding at the `pj` boundary is
+  the same additions in the same order. **Null**: the global arm against it
+  measured 0.98 / 1.07 / 1.04 / 0.99 / 0.99 / 0.96x in one run and
+  1.03 / 1.05 / 1.00 / 1.06 / 1.00 / 0.98x in another — mean 0.995 over six
+  paired runs. The element walk's cost is its `f64` arithmetic (`root_dot`,
+  the two multiplies per `ci`), not the store. **Removed**, not switched off:
+  its unrolled body was compiled into every width of the contraction ladder
+  whether or not any dispatch entered it, which §23.2 measured at 16% for a
+  comparable dead unroll.
+- **R2 — the build sub-group's width.** B1 cuts a cube into `b_max` sub-groups
+  of `3 * nroots` lanes. Wider sub-groups (fewer rows per block) lose
+  monotonically — `sg ≥ 8/16/32`: 0.86–0.99 / 0.71–0.89 / **0.46–0.75x** —
+  and narrower ones (`sg = 1, 2, 4`) are 0.98–1.09x, inside the band. Rows
+  per block is what matters, and it is the shared tier, not the lane rule,
+  that bounds it for every class that costs anything.
+- **R3 — the Rys roots solved once per row and pooled through shared
+  memory.** Every lane of a sub-group solves its row's roots, so a cube of
+  three planes issues the solver three times over per block. One lane per
+  row on the first plane, the rest reading the pool: **0.9x across the
+  board, and `probe:no-roots` unchanged at 1.25–1.86x.** The solver's cost is
+  its *serial latency* per block, not the planes that issue it; the pool
+  bought a barrier and 1.5 KiB of LDS per cube for nothing. Reverted.
+- **R4 — a paired tier above the cap.** §24.1's `g_size = 256` classes get
+  the 2 048 tier only where it holds a *pair* of tensors (`b_max` 1 → 2), and
+  the 1 440-slot classes — which the old cap-2048 sweep also moved, to a tier
+  that still held one — stay global. The launch floor falls (43 → 36 ms on
+  H2O/DZVP) but two more dispatches are paid and occupancy halves for those
+  classes: **0.88 / 0.99 / 1.06 / 0.88 / 1.02 / 0.97x** vs the plain cap,
+  and a 4 096 cap is 0.84–1.07x. Default `1024` (the plain cap); the knob
+  stays.
+- **R5 — cost-balanced contiguous row ranges for cooperative cubes** (K2's
+  partition, the per-unit arm's method). The interleaved grid-stride beats
+  it: **0.98–1.12x** in its favour, and `balance=uniform` beats balanced on
+  four of six. With more cubes than rows the hardware's own cube scheduling
+  balances one-row cubes better than any static cut, and at a small grid
+  (`cubes=8`) both walks lose the same 7–9% on the TZVP lists. Default
+  grid-stride; the knob stays.
+- **R6 — padding the shared G strides against LDS bank conflicts.** A
+  `g_size` that is a multiple of 16 puts axis planes 0 and 2, and every other
+  sub-slab, on the same 32 banks; rounding the axis stride to `4 (mod 8)`
+  spreads them. **0.85–1.04x**: the pad costs a block row wherever
+  `3 * g_size` sat just under a tier boundary (`g_size = 54` at 512, 3 → 2
+  rows), and on this latency-bound block the bank spread bought nothing that
+  outweighed it. Default off; the knob stays.
+
+### 24.4 What the sweeps say about the block
+
+Put together, R2, R3 and R5 fix the model the host can build without
+counters. A block's time is `F + b_max · R`: a fixed serial chain — the
+dependent pair-data loads, the screen, the Rys solve, VRR, three barriers,
+the two HRR raises — and a per-row contraction. From the R2 sweep, `F` is
+2.7–10x `R`, i.e. **21–50% of a ten-row block is the chain**, and the chain
+is *latency*: redistributing its work across lanes or planes (R3, `coop`
+lane splits) does not shorten it, only more rows per block amortise it, and
+the rows per block are bounded by the shared tier. The roots are the largest
+term of the chain and the one nothing bit-exact shortens — Horner's order is
+the vendor's, and a different evaluation order is a different `f64`.
+
+What would move it, and why it was not taken here: a `4 096`/`6 144` tier for
+the `1 125`- and `1 440`-slot classes with two or three cubes per unit (R4's
+4 096 arm says the occupancy cost exceeds the gain on this part); a
+lower-latency root evaluation (not bit-exact); a larger cube-count-independent
+block (needs LDS this part does not have). The T4 package and a wave64 part
+remain the places where the tier and cap sweeps should be redone.
+
+### 24.5 Verification
+
+- `CINTX_GTH_COMPARE` against the committed binary's dump: **unsplit 0 of
+  2 313 078 elements differ** on all six workloads, on the final tree and
+  after every intermediate change.
+- `cooperative_g_build_is_bit_identical_on_{def2,gth}`,
+  `cooperative_block_is_bit_identical_on_gth`, the four `ket_split_agrees_*`
+  gates (both decompositions): pass. `def2_2e_batch_matches_between_cpu_and_rocm`:
+  pass.
+- The committed binary and the final one, alternated in one session on ROCm,
+  three rounds, defaults only, are the table in §24.6.
+
+### 24.6 Measured — the committed binary and this one, alternated on ROCm
+
+Three rounds, defaults only, best of 3 repeats per round (every round's
+value in parentheses); the bit compare against the committed dump read
+`unsplit 0 of N elements differ` on all eighteen final runs.
+
+| workload | committed (ms) | final (ms) | speed | device peak | g+ctr scratch |
+|---|---|---|---|---|---|
+| H2O / DZVP-SR | 56.4 (62, 56, 56) | 52.1 (53, 52, 53) | 1.08x | 10.8 → 8.9 MiB | 1.9 → 1.9 MiB |
+| CH4 / DZVP-SR | 162.4 (178, 163, 162) | 159.3 (159, 167, 169) | 1.02x | 26.4 → 23.2 MiB | 5.0 → 5.0 MiB |
+| SO2 / DZVP-SR | 144.2 (157, 144, 147) | 134.1 (134, 143, 147) | 1.08x | 45.7 → 24.5 MiB | 18.7 → 8.5 MiB |
+| H2O / TZVP | 146.1 (152, 146, 146) | 144.8 (145, 148, 148) | 1.01x | 26.7 → 24.0 MiB | 7.4 → 7.4 MiB |
+| CH4 / TZVP | 536.2 (581, 536, 538) | 534.0 (538, 538, 534) | 1.00x | 93.8 → 73.9 MiB | 24.7 → 12.9 MiB |
+| SO2 / TZVP | 540.2 (540, 552, 555) | 563.2 (563, 568, 565) | **0.96x** | 109.7 → 47.3 MiB | 53.2 → 14.2 MiB |
+
+Read it as: the only default-behaviour change is R7, and it does what it was
+sized to do — the device peak falls **2.3x on SO2/TZVP and 1.3–1.9x on the
+other budget-bound lists**, the DZVP H2O/CH4 rows never reach the budget and
+move only with the day's clocks. The one row to watch is SO2/TZVP: all three
+rounds put the budgeted grid 3–4% behind, which is the §23.3 curve at the
+~20 cubes per unit the 16 MiB budget leaves that list (16 per unit measured
+2–4% there). `CINTX_2E_SCRATCH_MIB=256` restores the old grid for a caller
+who would rather have those percent than the 60 MiB.

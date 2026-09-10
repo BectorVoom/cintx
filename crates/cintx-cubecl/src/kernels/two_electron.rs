@@ -1642,6 +1642,22 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     ctr_stride: u32,
     ctr_mode: u32,
     coop_build: u32,
+    // R2 (plan §24): the lane sub-group a block is cut into, `0` for the B1
+    // rule (one lane per `(axis, root)` VRR task). Swept 1..32: wider loses
+    // monotonically (fewer rows per block), narrower is a null — the shared
+    // tier, not this rule, bounds the rows per block. `CINTX_2E_SG_MIN`.
+    sg_min: u32,
+    // R5 (plan §24): `1` walks the cooperative arm over K2's cost-balanced
+    // contiguous row ranges (`slot_bounds`), as the per-unit arm does — the
+    // `CINTX_2E_ROWS=ranged` A/B, measured 0.89–1.02x; `0` is the
+    // interleaved grid-stride, the default.
+    coop_rows: u32,
+    // R6 (plan §24): `1` pads the shared G region's axis and sub-slab strides
+    // to `4 (mod 8)` slots so the three axis planes and consecutive
+    // sub-slabs land on distinct LDS bank sets (`CINTX_2E_LDS_PAD=on`, a
+    // measured null); `0` is the packed layout. Layout only — bit-identical
+    // either way.
+    lds_pad: u32,
     #[comptime] ibase: u32,
     #[comptime] kbase: u32,
     // F1 (§15): the widest Rys order this dispatch carries, not *the* Rys
@@ -1803,13 +1819,22 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     // the two partitions are bit-identical by construction. The index is
     // `slot * punit`, so the cooperative arm reads the two-element
     // placeholder it is handed and keeps its interleaved walk.
-    let bidx = slot * punit;
-    let qi_start = slot_bounds[bidx as usize] * punit + slot * coop;
-    let mut qi_stop = slot_bounds[(bidx + 1u32) as usize] * punit + n_quartets * coop;
+    //
+    // R5 (§24): the cooperative arm takes the same bounds when `coop_rows`
+    // is set — one contiguous, cost-balanced range per cube. It is the A/B,
+    // not the default: with more cubes than rows the hardware's own cube
+    // scheduling balances one-row cubes better than any static cut, and the
+    // interleaved walk measured 0.98–1.12x faster. Same arithmetic
+    // selection, on a flag that is `1` for either arm that takes the bounds.
+    let ranged = punit + coop * coop_rows;
+    let strided = 1u32 - ranged;
+    let bidx = slot * ranged;
+    let qi_start = slot_bounds[bidx as usize] * ranged + slot * strided;
+    let mut qi_stop = slot_bounds[(bidx + 1u32) as usize] * ranged + n_quartets * strided;
     if qi_stop > n_quartets {
         qi_stop = n_quartets;
     }
-    let qi_step = n_slots * coop + punit;
+    let qi_step = n_slots * strided + ranged;
 
     let mut qi = qi_start;
     while qi < qi_stop {
@@ -2062,13 +2087,25 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         // `builds` is whether this lane takes any task at all: not under
         // `lane0` off sub-lane 0, and not in a sub-group past `b_max` — the
         // lanes left over when `lanes` is not a multiple of `sg`.
-        let g3 = 3u32 * g_size;
+        // R6: the padded axis stride. A `g_size` that is a multiple of 16
+        // puts axis planes 0 and 2 — and every other sub-slab — on the same
+        // 32 banks; `4 (mod 8)` spreads them. Only the shared region pads:
+        // the per-slot global slab is sized on the host from `g_size`.
+        let mut gs_p = g_size;
+        if comptime!(shared_tier > 0u32) {
+            gs_p = g_size + ((12u32 - g_size % 8u32) % 8u32) * lds_pad;
+        }
+        let g3 = 3u32 * gs_p;
         let tier_slots = comptime!(shared_tier);
         let b_cap = comptime!(B_MAX);
         let mut b_max: u32 = 1u32;
         if comptime!(shared_tier > 0u32) {
             b_max = tier_slots / g3;
-            let by_lanes = lanes_u / (3u32 * nroots);
+            let mut sg_floor = 3u32 * nroots;
+            if sg_min > 0u32 {
+                sg_floor = sg_min;
+            }
+            let by_lanes = lanes_u / sg_floor;
             if by_lanes < b_max {
                 b_max = by_lanes;
             }
@@ -2329,7 +2366,15 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
 
                             a1 = aij * akl;
-                            a0 = a1 / (aij + akl);
+                            // Probe 6 (§24): the screen's division and square
+                            // root replaced by multiplies — output undefined;
+                            // the difference against the default is what those
+                            // two `f64` sequences cost on the block's chain.
+                            if ctr_mode == 6u32 {
+                                a0 = a1 * (aij + akl);
+                            } else {
+                                a0 = a1 / (aij + akl);
+                            }
                             x_rys = a0 * rr;
 
                             // Primitive-quartet screening (Task 34-D).
@@ -2387,7 +2432,11 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             // (`cint2e.c:238-240`): the two exponentials
                             // multiply *each other* first, not the running
                             // product in turn.
-                            fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * (fac_env * (fac_ij * fac_kl));
+                            if ctr_mode == 6u32 {
+                                fac1 = (a0 * (a1 * a1 * a1)) * (fac_env * (fac_ij * fac_kl));
+                            } else {
+                                fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * (fac_env * (fac_ij * fac_kl));
+                            }
                             // On the magnitude: now that the contraction
                             // coefficients ride inside `fac1`, its sign is the
                             // sign of their product, and a contracted s shell
@@ -2518,7 +2567,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         &uslice,
                                         &wslice,
                                         g_off,
-                                        g_size,
+                                        gs_p,
                                         nmax,
                                         mmax,
                                         g2d_ijmax,
@@ -2549,7 +2598,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         &uslice,
                                         &wslice,
                                         g_off,
-                                        g_size,
+                                        gs_p,
                                         nmax,
                                         mmax,
                                         g2d_ijmax,
@@ -2580,7 +2629,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         &uslice,
                                         &wslice,
                                         g_off,
-                                        g_size,
+                                        gs_p,
                                         nmax,
                                         mmax,
                                         g2d_ijmax,
@@ -2611,7 +2660,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         &uslice,
                                         &wslice,
                                         g_off,
-                                        g_size,
+                                        gs_p,
                                         nmax,
                                         mmax,
                                         g2d_ijmax,
@@ -2665,7 +2714,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     let b10 = tmp5 + tmp4 * akl;
                                     let b01 = tmp5 + tmp4 * aij;
 
-                                    let off = g_off + axis * g_size;
+                                    let off = g_off + axis * gs_p;
                                     let mut xkl = xij_kl;
                                     let mut rijrx = rijrxx;
                                     let mut rklrx = rklrxx;
@@ -2787,8 +2836,12 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                     }
                     // The HRR reads every root's VRR output at its `(axis,
                     // root)`, which another lane of the sub-group wrote.
+                    // Probe 5 (§24) skips this and the two HRR barriers —
+                    // output undefined — to price the three of them.
                     if comptime!(per_unit == 0u32) {
-                        sync_cube();
+                        if ctr_mode != 5u32 {
+                            sync_cube();
+                        }
                     }
 
                     // ── HRR transfer on the per-unit arm: the nest as it was ──
@@ -2806,7 +2859,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             // ── HRR transfer (branch by comptime kbase/ibase) ──────
                             #[unroll]
                             for axis2 in 0..3u32 {
-                                let off = g_off + axis2 * g_size;
+                                let off = g_off + axis2 * gs_p;
                                 let mut rirj = rirjx;
                                 let mut rkrl = rkrlx;
                                 if axis2 == 1u32 {
@@ -3081,7 +3134,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 if r_hi > nroots {
                                     r_hi = nroots;
                                 }
-                                let off = g_off + axis2 * g_size;
+                                let off = g_off + axis2 * gs_p;
                                 let mut rirj = rirjx;
                                 let mut rkrl = rkrlx;
                                 if axis2 == 1u32 {
@@ -3153,7 +3206,9 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                         }
                     }
                     if comptime!(per_unit == 0u32) {
-                        sync_cube();
+                        if ctr_mode != 5u32 {
+                            sync_cube();
+                        }
                     }
 
                     // ── HRR transfer, second raise ────────────────────────
@@ -3179,7 +3234,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 if r_hi > nroots {
                                     r_hi = nroots;
                                 }
-                                let off = g_off + axis2 * g_size;
+                                let off = g_off + axis2 * gs_p;
                                 let mut rirj = rirjx;
                                 let mut rkrl = rkrlx;
                                 if axis2 == 1u32 {
@@ -3287,7 +3342,9 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                         }
                     }
                     if comptime!(per_unit == 0u32) {
-                        sync_cube();
+                        if ctr_mode != 5u32 {
+                            sync_cube();
+                        }
                     }
 
                     // ── Contraction phase: the block's rows, in row order ──
@@ -3379,7 +3436,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 cart_out,
                                 idx_off,
                                 gb,
-                                g_size,
+                                gs_p,
                                 block_len,
                                 q_start,
                                 lanes_u,
@@ -3569,10 +3626,41 @@ pub fn set_contraction_probe() {
 /// Set the raw contraction mode: `0` naive, `1` staged, `2` the no-contraction
 /// probe, `3` the no-G-build probe (roots, VRR and HRR skipped; the staged
 /// contraction runs over a stale slab), `4` the no-roots probe (VRR/HRR run on
-/// stale roots). Every probe's output is undefined. Measurement aid only.
+/// stale roots), `5` the no-build-barrier probe (the three barriers between
+/// VRR, the two HRR raises and the contraction skipped), `6` the no-screen
+/// probe (the primitive screen's division and square root replaced by
+/// multiplies). Every probe's output is undefined. Measurement aid only.
 #[doc(hidden)]
 pub fn set_contraction_mode(mode: u32) {
     CONTRACTION_MODE.store(mode, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The build sub-group a cooperative block is cut into (R2, plan §24), with
+/// `CINTX_2E_SG_MIN` applied; `0` (the default) is B1's rule — one lane per
+/// `(axis, root)` VRR task. Swept on ROCm: 8/16/32 lanes lose 0.86–0.99 /
+/// 0.71–0.89 / 0.46–0.75x (fewer rows per block), 1/2/4 are inside the band.
+/// A runtime scalar so a sweep is one compiled program; which sub-group
+/// builds a row cannot change its value.
+pub fn sub_group_min_lanes() -> u32 {
+    let current = SG_MIN.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env = env_u32_override("CINTX_2E_SG_MIN").unwrap_or(0);
+    SG_MIN.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`sub_group_min_lanes`] resolves the environment.
+static SG_MIN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Override the sub-group floor for the rest of this process (`None`
+/// re-reads `CINTX_2E_SG_MIN`); for in-process sweeps.
+pub fn set_sub_group_min_lanes(lanes: Option<u32>) {
+    SG_MIN.store(
+        lanes.unwrap_or(u32::MAX),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// The per-unit partition switch, with `CINTX_2E_BALANCE` applied (K2).
@@ -4472,7 +4560,12 @@ fn two_e_cube_count<R: Runtime>(
         return 1;
     }
     let per_cube = slot_scratch_bytes(g_size, ctr_len);
-    let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_cube.max(1)).max(1);
+    // R7 (§24): the cooperative grid's scratch budget. It binds only on the
+    // groups whose per-cube contraction scratch is wide — the generally
+    // contracted `l = 2` classes, 50–100 KiB a cube — where a grid of
+    // `COOPERATIVE_CUBES_PER_UNIT` cubes would reserve ten times what the
+    // device runs at once.
+    let by_memory = (cooperative_scratch_budget() / per_cube.max(1)).max(1);
     // B1 (§22.4): one cube per row put thousands of cubes — and thousands of
     // contraction-scratch slabs, 158 MiB on SO2/TZVP-MOLOPT — into a dispatch
     // the device runs a few dozen cubes of at a time. The grid is capped at
@@ -4493,12 +4586,91 @@ fn two_e_cube_count<R: Runtime>(
 /// is bounded by the machine rather than by the work list.
 pub const COOPERATIVE_CUBES_PER_UNIT: u32 = 64;
 
+/// Bytes of per-cube G and contraction scratch one cooperative dispatch may
+/// reserve across its grid (R7, plan §24). `CINTX_2E_SCRATCH_MIB` overrides
+/// it; [`set_cooperative_scratch_budget`] for an in-process sweep.
+pub const COOPERATIVE_SCRATCH_BUDGET_BYTES: usize = 16 * 1024 * 1024;
+
+fn cooperative_scratch_budget() -> usize {
+    let current = SCRATCH_BUDGET.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u64::MAX {
+        return current as usize;
+    }
+    let from_env = env_u32_override("CINTX_2E_SCRATCH_MIB")
+        .map_or(COOPERATIVE_SCRATCH_BUDGET_BYTES, |mib| {
+            mib as usize * 1024 * 1024
+        });
+    SCRATCH_BUDGET.store(from_env as u64, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u64::MAX` until [`cooperative_scratch_budget`] resolves the environment.
+static SCRATCH_BUDGET: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Override the cooperative scratch budget for the rest of this process
+/// (`None` re-reads `CINTX_2E_SCRATCH_MIB`).
+pub fn set_cooperative_scratch_budget(bytes: Option<usize>) {
+    SCRATCH_BUDGET.store(
+        bytes.map_or(u64::MAX, |b| b as u64),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
 fn cooperative_cubes_per_unit() -> u32 {
-    use std::sync::OnceLock;
-    static CAP: OnceLock<u32> = OnceLock::new();
-    *CAP.get_or_init(|| {
-        env_u32_override("CINTX_2E_CUBES_PER_UNIT").unwrap_or(COOPERATIVE_CUBES_PER_UNIT)
-    })
+    let current = CUBES_PER_UNIT.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env =
+        env_u32_override("CINTX_2E_CUBES_PER_UNIT").unwrap_or(COOPERATIVE_CUBES_PER_UNIT);
+    CUBES_PER_UNIT.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`cooperative_cubes_per_unit`] resolves the environment.
+static CUBES_PER_UNIT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Override the cooperative grid cap for the rest of this process (`None`
+/// re-reads `CINTX_2E_CUBES_PER_UNIT`); for in-process sweeps.
+pub fn set_cooperative_cubes_per_unit(cap: Option<u32>) {
+    CUBES_PER_UNIT.store(
+        cap.unwrap_or(u32::MAX),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// The cooperative arm's row walk (R5, plan §24), with `CINTX_2E_ROWS`
+/// applied: `ranged` walks K2's cost-balanced contiguous ranges, one per
+/// cube; anything else — including unset — keeps the interleaved grid-stride,
+/// which measured 0.98–1.12x *faster* (§24: the hardware's own cube
+/// scheduling balances one-row cubes better than any static cut). A runtime
+/// scalar so both are one compiled program; which cube evaluates a row cannot
+/// change its value.
+pub fn cooperative_rows_mode() -> u32 {
+    let current = COOP_ROWS_MODE.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env =
+        if std::env::var("CINTX_2E_ROWS").is_ok_and(|value| value.eq_ignore_ascii_case("ranged")) {
+            1
+        } else {
+            0
+        };
+    COOP_ROWS_MODE.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`cooperative_rows_mode`] resolves the environment.
+static COOP_ROWS_MODE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Override the cooperative row walk for the rest of this process: `true`
+/// the balanced ranges, `false` grid-stride; `None` re-reads `CINTX_2E_ROWS`.
+pub fn set_cooperative_rows(ranged: Option<bool>) {
+    COOP_ROWS_MODE.store(
+        ranged.map_or(u32::MAX, u32::from),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// Flattened basis shared by every launch class in one batched run.
@@ -4613,10 +4785,16 @@ pub const B_MAX: u32 = 32;
 /// global slab, one primitive quartet per cube — for a class wider than every
 /// such tier.
 pub fn class_shared_tier(g_size: usize, max_shared_bytes: usize) -> u32 {
-    let need = 3 * g_size;
+    let need = 3 * padded_g_size(g_size);
     let cap = shared_tier_cap();
+    // R4 (plan §24): a tier past the cap is admitted only where it holds a
+    // *pair* of tensors — a block of two where the capped tier holds one. A
+    // class the capped tier already blocks keeps it; a class no admitted
+    // tier can pair keeps the global slab, so a wider tier is never paid for
+    // occupancy alone.
+    let paired = shared_tier_cap_paired().max(cap);
     let fits = |tier: u32| {
-        tier <= cap
+        (tier <= cap || (tier <= paired && 2 * need <= tier as usize))
             && (tier + G_META_SLOTS) as usize * std::mem::size_of::<f64>() <= max_shared_bytes
     };
     let want = need * b_target() as usize;
@@ -4652,6 +4830,83 @@ fn shared_tier_cap() -> u32 {
     use std::sync::OnceLock;
     static CAP: OnceLock<u32> = OnceLock::new();
     *CAP.get_or_init(|| env_u32_override("CINTX_2E_TIER_CAP").unwrap_or(SHARED_G_TIER_CAP))
+}
+
+/// The widest tier a class may take when that tier holds a *pair* of its G
+/// tensors where [`SHARED_G_TIER_CAP`] holds one (R4, plan §24). The
+/// `g_size = 256` classes — `(pd|pd)`, `(pp|dd)`, 768 slots a tensor — are the
+/// case: at 1 024 they build one primitive quartet per block on a 256-lane
+/// cube, and their rows set the launch floor. `CINTX_2E_TIER_CAP_PAIRED`
+/// overrides it; [`set_shared_tier_cap_paired`] for an in-process sweep.
+pub const SHARED_G_TIER_CAP_PAIRED: u32 = 1024;
+
+/// The axis stride a class's G tensor takes in the shared region (R6, plan
+/// §24): `g_size` rounded up to `4 (mod 8)` slots when the pad is on, so the
+/// three axis planes and consecutive sub-slabs fall on distinct LDS bank
+/// sets. The kernel forms the same value; this is what the tier is sized to.
+pub fn padded_g_size(g_size: usize) -> usize {
+    if lds_pad_mode() == 1 {
+        g_size + (12 - g_size % 8) % 8
+    } else {
+        g_size
+    }
+}
+
+/// The LDS pad switch, with `CINTX_2E_LDS_PAD` applied: `on` pads; anything
+/// else — including unset — keeps the packed layout. Off by default because
+/// it measured 0.85–1.04x (§24): the pad costs a block row wherever a
+/// class's `3 * g_size` sat just under a tier boundary (`g_size = 54` at
+/// 512), and the bank spread bought nothing that outweighed it. Runtime, so
+/// both are one compiled program per tier.
+pub fn lds_pad_mode() -> u32 {
+    let current = LDS_PAD_MODE.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env =
+        if std::env::var("CINTX_2E_LDS_PAD").is_ok_and(|value| value.eq_ignore_ascii_case("on")) {
+            1
+        } else {
+            0
+        };
+    LDS_PAD_MODE.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`lds_pad_mode`] resolves the environment.
+static LDS_PAD_MODE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Override the LDS pad for the rest of this process (`None` re-reads
+/// `CINTX_2E_LDS_PAD`); for in-process A/B.
+pub fn set_lds_pad(pad: Option<bool>) {
+    LDS_PAD_MODE.store(
+        pad.map_or(u32::MAX, u32::from),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+fn shared_tier_cap_paired() -> u32 {
+    let current = TIER_CAP_PAIRED.load(std::sync::atomic::Ordering::Relaxed);
+    if current != u32::MAX {
+        return current;
+    }
+    let from_env = env_u32_override("CINTX_2E_TIER_CAP_PAIRED").unwrap_or(SHARED_G_TIER_CAP_PAIRED);
+    TIER_CAP_PAIRED.store(from_env, std::sync::atomic::Ordering::Relaxed);
+    from_env
+}
+
+/// `u32::MAX` until [`shared_tier_cap_paired`] resolves the environment.
+static TIER_CAP_PAIRED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+
+/// Override the paired tier cap for the rest of this process (`None`
+/// re-reads `CINTX_2E_TIER_CAP_PAIRED`). The tier is part of the launch
+/// signature, so each value is its own compiled program; the switch exists
+/// for `gth_profile`'s sweep.
+pub fn set_shared_tier_cap_paired(cap: Option<u32>) {
+    TIER_CAP_PAIRED.store(
+        cap.unwrap_or(u32::MAX),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// The shared-memory budget a cooperative dispatch on `backend` may size its
@@ -5356,6 +5611,9 @@ fn run_2e_batches<R: Runtime>(
             ctr_len: group.max_ctr_len as usize,
             ctr_mode: contraction_mode(),
             coop_build: cooperative_build_mode(),
+            sg_min: sub_group_min_lanes(),
+            coop_rows: cooperative_rows_mode(),
+            lds_pad: lds_pad_mode(),
             // K2 partitions *rows*, so the costs it ranks must be the rows'
             // (§17): one entry per expanded row when the split is on, the
             // group's own vector when it is not.
@@ -5680,6 +5938,13 @@ struct TwoEGroupDispatch<R: Runtime> {
     /// on lane 0. Meaningless under the per-unit decomposition, where a
     /// cooperative group is one lane either way.
     coop_build: u32,
+    /// Minimum lanes per build sub-group (R2), `0` for the B1 rule alone.
+    sg_min: u32,
+    /// `1` walks cooperative cubes over cost-balanced row ranges (R5), `0`
+    /// grid-stride.
+    coop_rows: u32,
+    /// `1` pads the shared G strides against LDS bank conflicts (R6).
+    lds_pad: u32,
     /// Per-row cost estimates the per-unit partition is cut from (K2);
     /// shared, because the tuner clones this dispatch per candidate width.
     quartet_cost: Arc<Vec<u64>>,
@@ -5783,7 +6048,9 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
         // cooperative arm ignores them (it indexes `slot * punit == 0`) and is
         // handed a two-element placeholder. Recomputed per launch because the
         // slot count is the one thing the tuner's candidate widths change.
-        let slot_bounds: Vec<u32> = if self.per_unit {
+        // R5 (§24): the cooperative arm takes the same ranges, one per cube,
+        // when the `ranged` A/B is on.
+        let slot_bounds: Vec<u32> = if self.per_unit || self.coop_rows == 1 {
             per_unit_slot_bounds(
                 &self.quartet_cost[..self.n_quartets as usize],
                 n_slots,
@@ -5841,6 +6108,9 @@ impl<R: Runtime> TwoEGroupDispatch<R> {
                 ctr_stride as u32,
                 self.ctr_mode,
                 self.coop_build,
+                self.sg_min,
+                self.coop_rows,
+                self.lds_pad,
                 self.signature.ibase,
                 self.signature.kbase,
                 self.max_nroots,
@@ -10405,6 +10675,11 @@ mod device_tests {
             1u32,
             // S3 split; with one lane it is the same build either way.
             1u32,
+            // R2/R5/R6 (§24): the B1 sub-group rule, the grid-stride walk,
+            // the packed layout — the committed behaviour, all three.
+            0u32,
+            0u32,
+            0u32,
             shape.ibase as u32,
             shape.kbase as u32,
             // F1: `nr_max` — the widest Rys order the dispatch carries. One

@@ -23,6 +23,10 @@
 //! - `probe:no-build` / `probe:no-roots` / `probe:no-ctr` — the G build, the
 //!                    Rys roots, or the contraction skipped (output undefined):
 //!                    the per-phase attribution, §22.
+//! - `probe:no-sync` / `probe:no-screen` — the three barriers inside the
+//!                    block's build, or the primitive screen's `f64` division
+//!                    and square root, skipped (output undefined): the
+//!                    per-block chain attribution, §24.
 //! - `balance=…`    — `set_two_e_balance`: uniform vs cost-balanced per-unit
 //!                    partition (K2), when the kernel carries it.
 //! - `xform=host`   — `set_device_transform(Some(false))`: the transform back
@@ -75,8 +79,10 @@ use cintx_cubecl::backend::ResolvedBackend;
 use cintx_cubecl::{
     ResidentTwoEBasis, TwoEBatchOptions, TwoEBatchOutput, TwoEBatchStats as BatchExecutionStats,
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with, prewarm_2e_work_list,
-    set_contraction_probe, set_cooperative_build_split, set_device_transform, set_shared_g_enabled,
-    set_staged_contraction, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
+    set_contraction_probe, set_cooperative_build_split, set_cooperative_cubes_per_unit,
+    set_cooperative_rows, set_cooperative_scratch_budget, set_device_transform, set_lds_pad,
+    set_shared_g_enabled, set_shared_tier_cap_paired, set_staged_contraction,
+    set_sub_group_min_lanes, set_two_e_balance, set_two_e_cube_dim, set_two_e_kl_split,
     set_two_e_nroots_fusion,
 };
 use cintx_driver::{BasisView, bucket_quartets, enumerate_pairs, enumerate_quartets};
@@ -191,6 +197,12 @@ fn reset() {
     set_two_e_nroots_fusion(None);
     set_device_transform(None);
     set_shared_g_enabled(true);
+    set_sub_group_min_lanes(None);
+    set_shared_tier_cap_paired(None);
+    set_cooperative_rows(None);
+    set_cooperative_cubes_per_unit(None);
+    set_cooperative_scratch_budget(None);
+    set_lds_pad(None);
 }
 
 fn resident(backend: &ResolvedBackend, shells: &[cintx_cubecl::BatchShell]) -> ResidentTwoEBasis {
@@ -282,7 +294,128 @@ fn variants() -> Vec<Variant> {
         },
         limited: false,
     });
+    out.push(Variant {
+        name: "probe:no-sync",
+        apply: |b, s| {
+            reset();
+            cintx_cubecl::set_contraction_mode(5);
+            resident(b, s)
+        },
+        limited: false,
+    });
+    out.push(Variant {
+        name: "probe:no-screen",
+        apply: |b, s| {
+            reset();
+            cintx_cubecl::set_contraction_mode(6);
+            resident(b, s)
+        },
+        limited: false,
+    });
     if gpu {
+        // R2 (§24): the build sub-group's width; `0` is B1's rule
+        // (`3 * nroots` lanes, one per VRR task). One lane is the other end.
+        out.push(Variant {
+            name: "sg=1",
+            apply: |b, s| {
+                reset();
+                set_sub_group_min_lanes(Some(1));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        // R4 (§24): the paired tier cap — `1024` is the shape before R4
+        // (every class at the plain cap), `4096` admits a 32 KiB tier for the
+        // 1 440-slot classes too. Each is its own compiled program.
+        // R5 (§24): the cooperative row walk and the grid cap. `rows=stride`
+        // is the interleaved walk before R5 at the default cap; `cubes=N`
+        // caps the grid at N cubes per compute unit on the balanced walk —
+        // read the `gslab KiB` column: the per-cube contraction scratch
+        // scales with it.
+        out.push(Variant {
+            name: "rows=ranged",
+            apply: |b, s| {
+                reset();
+                set_cooperative_rows(Some(true));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        // R6/R7 (§24): the packed shared-G layout, and the unbudgeted grid
+        // (the 256 MiB ceiling the grid had before R7).
+        out.push(Variant {
+            name: "pad=on",
+            apply: |b, s| {
+                reset();
+                set_lds_pad(Some(true));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "scratch=256MiB",
+            apply: |b, s| {
+                reset();
+                set_cooperative_scratch_budget(Some(256 * 1024 * 1024));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "cubes=16",
+            apply: |b, s| {
+                reset();
+                set_cooperative_cubes_per_unit(Some(16));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "cubes=8",
+            apply: |b, s| {
+                reset();
+                set_cooperative_cubes_per_unit(Some(8));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "cubes=8;ranged",
+            apply: |b, s| {
+                reset();
+                set_cooperative_cubes_per_unit(Some(8));
+                set_cooperative_rows(Some(true));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "balance=uniform",
+            apply: |b, s| {
+                reset();
+                set_two_e_balance(Some(false));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "tierpair=1024",
+            apply: |b, s| {
+                reset();
+                set_shared_tier_cap_paired(Some(1024));
+                resident(b, s)
+            },
+            limited: false,
+        });
+        out.push(Variant {
+            name: "tierpair=4096",
+            apply: |b, s| {
+                reset();
+                set_shared_tier_cap_paired(Some(4096));
+                resident(b, s)
+            },
+            limited: false,
+        });
         out.push(Variant {
             name: "coop=lane0",
             apply: |b, s| {
@@ -436,7 +569,20 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
     });
     let limit = output_bytes + cart_bytes;
 
-    let variants = variants();
+    // `CINTX_GTH_VARIANTS=a,b,c` runs only the named variants (the default
+    // is always first), for a trace or a sweep that wants a quiet process.
+    let only: Option<Vec<String>> = std::env::var("CINTX_GTH_VARIANTS")
+        .ok()
+        .map(|v| v.split(',').map(|s| s.trim().to_owned()).collect());
+    let variants: Vec<Variant> = variants()
+        .into_iter()
+        .filter(|v| {
+            v.name == "default"
+                || only
+                    .as_ref()
+                    .is_none_or(|names| names.iter().any(|n| n == v.name))
+        })
+        .collect();
     let residents: Vec<ResidentTwoEBasis> = variants
         .iter()
         .map(|v| (v.apply)(&backend, &shells))
@@ -603,10 +749,8 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
     // to them keeps the strict rule exactly where it still applies (K1's index
     // table, K2's partition, F1's grouping). The default is still compared, and
     // reported, against the same block-scale bound the forced-split gates use.
-    let strict = measured
-        .iter()
-        .find(|m| m.name == "klsplit=off")
-        .unwrap_or(base);
+    let unsplit = measured.iter().find(|m| m.name == "klsplit=off");
+    let strict = unsplit.unwrap_or(base);
 
     if let Ok(dir) = std::env::var("CINTX_GTH_DUMP") {
         let path = std::path::Path::new(&dir).join(format!("{}.f64", sanitize(label)));
@@ -617,6 +761,13 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
             strict.values.len(),
             path.display()
         );
+        // The default arm too (§24): a kernel change that leaves the
+        // split rule alone must reproduce the split output bit for bit as
+        // well, and `CINTX_GTH_COMPARE` reports that count beside the strict
+        // one when this file is present.
+        let path = std::path::Path::new(&dir).join(format!("{}.default.f64", sanitize(label)));
+        let bytes: Vec<u8> = base.values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(&path, bytes).expect("dump");
     }
     if let Ok(dir) = std::env::var("CINTX_GTH_COMPARE") {
         let path = std::path::Path::new(&dir).join(format!("{}.f64", sanitize(label)));
@@ -645,15 +796,40 @@ fn run_workload(label: &str, arrays: &RawArrays) -> Vec<Measured> {
             path.display(),
             reference.len()
         );
-        assert_eq!(
-            differing, 0,
-            "{label}: the unsplit arm is not bit-identical to the reference dump"
-        );
+        // Only the unsplit arm is held to zero; under `CINTX_GTH_VARIANTS`
+        // without `klsplit=off` the strict row *is* the split default, whose
+        // divergence is the re-association the block-scale bound covers.
+        if unsplit.is_some() {
+            assert_eq!(
+                differing, 0,
+                "{label}: the unsplit arm is not bit-identical to the reference dump"
+            );
+        }
         assert!(
             split_eps <= 1024.0,
             "{label}: the split default is {split_eps:.1} eps of block scale from the \
              reference dump, which is past what re-associating the ket-pair sum explains"
         );
+        // Reported, not asserted: the default arm's bits move whenever the
+        // split rule does, and this comparison exists for the kernel changes
+        // that do not touch it.
+        let path = std::path::Path::new(&dir).join(format!("{}.default.f64", sanitize(label)));
+        if let Ok(bytes) = std::fs::read(&path) {
+            let reference: Vec<f64> = bytes
+                .chunks_exact(8)
+                .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+                .collect();
+            let differing = reference
+                .iter()
+                .zip(&base.values)
+                .filter(|(a, b)| a.to_bits() != b.to_bits())
+                .count();
+            println!(
+                "  vs {}: default {differing} of {} elements differ",
+                path.display(),
+                reference.len()
+            );
+        }
     }
     measured
 }
