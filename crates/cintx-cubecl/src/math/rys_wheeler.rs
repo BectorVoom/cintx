@@ -3812,12 +3812,15 @@ pub(crate) fn rys_roots_ext_dev(
             ext_lwheeler_dev(tab, x, x > bp, u, w, &mut flag, nroots);
         }
 
-        // `segment_solve`'s recovery path (rys_roots.c:42): on a solver error
-        // the host retries through the f64 Schmidt solver and returns that
-        // result. Inline, that is the same callee — and, as on the host, its
+        // `segment_solve`'s recovery path (`rys_roots.c:137-139`): on a solver
+        // error the vendor retries through `CINTqrys_schmidt`, which is its
+        // **long-double** Schmidt in this build because quadmath is disabled.
+        // The dd emulation of that is `ext_lschmidt_dev`, and it has to be the
+        // same callee the host dispatch recovers with (`segment_solve`) or the
+        // two disagree exactly where the recovery fires. As on the host, its
         // own error is not retried.
         if flag[(0) as usize] != 0.0 {
-            ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
+            ext_lschmidt_dev(x, turnover, u, w, &mut flag, nroots);
         }
     }
 }
@@ -3911,9 +3914,19 @@ fn segment_solve(
         fn2(n, x, roots, weights)
     };
     if error != 0 {
-        // C falls back to CINTqrys_schmidt; with quadmath disabled that is CINTlrys_schmidt.
-        // For lower==0 our schmidt is f64; use it as the recovery path.
-        return rys_schmidt(n, x, roots, weights);
+        // `segment_solve` (`rys_roots.c:130-142`) recovers with
+        // `CINTqrys_schmidt`, which is `CINTlrys_schmidt` in this build —
+        // quadmath is disabled, so the vendor's own fallback is its
+        // **long-double** Schmidt, not its `double` one.
+        //
+        // This used to recover with the f64 `rys_schmidt`, a strictly weaker
+        // solver than the arm that had just failed. Where the vendor recovers,
+        // it did not: at `nroots` 11 and 12 in `3e-7 < x < 1e-4` both the dd
+        // Jacobi and the f64 Schmidt fail, and the caller's `debug_assert`
+        // fired — 5 points at 11 and 40 at 12 on the sub-envelope sweep.
+        // `lrys_schmidt` is the double-double emulation of the vendor's
+        // long-double path and is what belongs here.
+        return lrys_schmidt(n, x, roots, weights);
     }
     error
 }

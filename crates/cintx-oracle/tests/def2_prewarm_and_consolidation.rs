@@ -25,6 +25,10 @@ mod def2_fixtures;
 
 use cintx_basis::{StandardBasis, to_raw_arrays};
 use cintx_cubecl::backend::ResolvedBackend;
+use cintx_cubecl::kernels::two_electron::{
+    FUSED_NROOTS_BUCKET, MAX_FUSED_NROOTS, class_shared_tier, shared_tier_limit,
+    two_e_nroots_fusion,
+};
 use cintx_cubecl::{evaluate_2e_quartet_batch, prewarm_2e_quartet_classes};
 use cintx_driver::{BasisView, bucket_quartets, enumerate_pairs, enumerate_quartets};
 use cintx_runtime::{BackendIntent, BackendKind};
@@ -119,9 +123,14 @@ fn prewarm_covers_def2_tzvp_completely() {
 /// The plan's exit criterion is "one launch per (class, chunk)" verified via
 /// `ExecutionStats.kernel_launch_count`, with any per-quartet residue closed.
 /// What the batch path actually achieves is stronger — one launch per
-/// *signature*, with every angular-momentum class sharing `(nroots, ibase,
-/// kbase)` merged into it — so that is what this asserts, against the signature
-/// count derived independently from the bucket list.
+/// *signature*, with every angular-momentum class sharing one merged into it —
+/// so that is what this asserts, against the signature count re-derived from
+/// the bucket list.
+///
+/// The signature is `(ibase, kbase, nroots, tier)`, and neither of the last two
+/// is the class's own value: F1 buckets the fusible Rys orders together and B1
+/// adds the shared-memory tier. On H2O/def2-SVP that is 4 dispatches, not the
+/// 15 the class's raw `nroots` would predict.
 #[test]
 fn def2_batches_launch_once_per_signature() {
     for (label, molecule) in [
@@ -139,16 +148,39 @@ fn def2_batches_launch_once_per_signature() {
             .collect();
         let shells = batch_shells(&arrays);
 
-        // The signature count, derived from the work list without asking the
-        // backend: `(ibase, kbase, nroots)` from the canonical class, exactly as
-        // `TwoELaunchSignature::of` computes it from `build_2e_shape`.
-        let mut signatures: BTreeSet<(bool, bool, u32)> = BTreeSet::new();
+        // The signature count, re-derived from the bucket list rather than read
+        // back from the planner, so this measures the dispatch count against
+        // something other than the planner's own bookkeeping.
+        //
+        // `TwoELaunchSignature::of` folds in two decisions taken once per plan
+        // from the backend, and both belong here:
+        //
+        // - **F1 (§15)** buckets every Rys order at or below `MAX_FUSED_NROOTS`
+        //   into `FUSED_NROOTS_BUCKET`, so those orders share one dispatch and
+        //   carry their own order as a runtime column. Deriving the raw
+        //   `nroots` instead counts the dispatches the *pre-fusion* planner
+        //   made — 15 of them on H2O/def2-SVP against the 4 it now makes.
+        // - **B1 (§22)** puts the shared-memory tier in the signature, because
+        //   the tier is comptime in the kernel. It is `0` — the per-slot global
+        //   slab — for the whole plan under the per-unit decomposition, which
+        //   is what `shared_tier_limit` reports as `None`.
+        let backend = fresh_backend();
+        let fuse = two_e_nroots_fusion();
+        let shared_limit = shared_tier_limit(&backend);
+        let mut signatures: BTreeSet<(bool, bool, u32, u32)> = BTreeSet::new();
         for bucket in bucket_quartets(&basis, &quartets) {
             let [li, lj, lk, ll] = bucket.class.angular_momenta;
-            signatures.insert((li > lj, lk > ll, bucket.class.nroots));
+            let nroots = if fuse && bucket.class.nroots <= MAX_FUSED_NROOTS {
+                FUSED_NROOTS_BUCKET
+            } else {
+                bucket.class.nroots
+            };
+            let tier =
+                shared_limit.map_or(0, |limit| class_shared_tier(bucket.class.g_size(), limit));
+            signatures.insert((li > lj, lk > ll, nroots, tier));
         }
 
-        let output = evaluate_2e_quartet_batch(&fresh_backend(), &shells, &list).expect("batch");
+        let output = evaluate_2e_quartet_batch(&backend, &shells, &list).expect("batch");
         println!(
             "{label:<14} quartets={} classes={} signatures(derived)={} \
              launches={} launch_classes={} readbacks={}",

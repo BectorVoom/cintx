@@ -4670,7 +4670,12 @@ fn shared_tier_cap() -> u32 {
 ///
 /// Consulted once per plan, like the fusion decision, so the grouping a
 /// pre-flight budget was computed for is the grouping that is dispatched.
-fn shared_tier_limit(backend: &ResolvedBackend) -> Option<usize> {
+///
+/// Public for the same reason as [`two_e_nroots_fusion`]: it is the other
+/// backend-level input to a launch signature. `None` — the per-slot global slab
+/// — under the per-unit decomposition or when the shared-memory G tensor is
+/// switched off.
+pub fn shared_tier_limit(backend: &ResolvedBackend) -> Option<usize> {
     if !shared_g_enabled() {
         return None;
     }
@@ -4786,7 +4791,13 @@ impl TwoELaunchSignature {
 /// only ever fitted a dispatch of one Rys order. Sizing it per quartet
 /// ([`kl_split_plan`]) is what makes a fused, heterogeneous dispatch work, and
 /// with it the fusion is worth 1.2x-1.5x on ROCm as well.
-fn two_e_nroots_fusion() -> bool {
+///
+/// Public because a launch signature cannot be derived without it: it is one of
+/// the two backend-level decisions `TwoELaunchSignature::of` folds in, and
+/// `def2_batches_launch_once_per_signature` re-derives the signature set from
+/// the bucket list to check the dispatch count against something other than the
+/// planner's own bookkeeping.
+pub fn two_e_nroots_fusion() -> bool {
     nroots_fusion_override().unwrap_or(true)
 }
 
