@@ -9,7 +9,7 @@ use crate::transform::c2s::{cart_to_sph_1e_into, cart_to_sph_3c1e_into, ncart, n
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
-pub(crate) const SQRTPI: f64 = 1.7724538509055159_f64;
+pub(crate) const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
 /// Same as one_electron.rs: CINTcommon_fac_sp(l).

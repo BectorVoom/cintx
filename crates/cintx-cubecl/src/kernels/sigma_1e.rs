@@ -64,7 +64,7 @@ use cubecl::client::ComputeClient;
 use cubecl::prelude::*;
 
 /// sqrt(pi) — G-tensor base-case normalization (matches `g1e.c` `SQRTPI`).
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// libcint `CINTcommon_fac_sp` s/p normalization factor (matches
 /// `one_electron::common_fac_sp` / `sigma_p::common_fac_sp`).

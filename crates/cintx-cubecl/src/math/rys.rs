@@ -33,6 +33,10 @@ use cubecl::prelude::*;
 // the constant is transcribed from `rys_roots.c` rather than recomputed.
 #[allow(clippy::approx_constant)]
 pub const LIBCINT_PIE4: f64 = 0.78539816339744827900_f64;
+
+/// `SMALLX_LIMIT` (`rys_roots.c:26`) — below this `CINTrys_roots` returns the
+/// affine `POLY_SMALLX_*` fit instead of calling a per-order solver.
+pub const LIBCINT_SMALLX_LIMIT: f64 = 3e-7;
 const PIE4: f64 = LIBCINT_PIE4;
 
 /// Clenshaw backward recurrence for a 14-coefficient Chebyshev polynomial.
@@ -106,6 +110,171 @@ pub fn clenshaw_d1<F: Float>(
 //  rys_root1 — nroots = 1
 //  Source: libcint-master/src/rys_roots.c lines 267-328
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Fixed-order device entry — the whole of `CINTrys_roots` for nroots 1..=5
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `CINTrys_roots` (`rys_roots.c:57-90`) for the fixed-order solvers, branches
+/// and all.
+///
+/// The per-order `rys_root1..5` functions below are only the *third* arm of that
+/// dispatch. libcint checks two global regimes first, and in those it never
+/// evaluates a polynomial fit at all:
+///
+/// ```c
+/// if (x <= SMALLX_LIMIT) {            // affine POLY_SMALLX_* fit
+///         u[i] = POLY_SMALLX_R0[off+i] + POLY_SMALLX_R1[off+i] * x;
+///         w[i] = POLY_SMALLX_W0[off+i] + POLY_SMALLX_W1[off+i] * x;
+/// } else if (x >= 35+nroots*5) {      // large-x asymptotic
+///         double t = sqrt(PIE4/x);
+///         rt = POLY_LARGEX_RT[off+i];
+///         u[i] = rt / (x - rt);
+///         w[i] = POLY_LARGEX_WW[off+i] * t;
+/// }
+/// ```
+///
+/// Calling `rys_root2..5` across the whole real line is therefore a different
+/// algorithm outside the middle band, not a differently-rounded one — measured
+/// at 0–22% bit-identical there against 100% inside it. Every fixed-order call
+/// site goes through here so both regimes are taken on CPU and GPU alike; the
+/// host twin is [`rys_roots_asymptotic`], reading the same tables from a
+/// `const` rather than the uploaded blob.
+///
+/// `tab` is the [`crate::math::rys_wheeler::ext_rys_tables`] blob. The
+/// triangular offsets fold at JIT time because `nroots` is comptime.
+#[cube]
+pub fn rys_roots_fixed<F: Float>(
+    tab: &Array<f64>,
+    x: F,
+    u: &mut Array<F>,
+    w: &mut Array<F>,
+    pie4: F,
+    #[comptime] nroots: u32,
+) {
+    use crate::math::rys_wheeler::{
+        EXT_TAB_LARGEX_RT, EXT_TAB_LARGEX_WW, EXT_TAB_SMALLX_R0, EXT_TAB_SMALLX_R1,
+        EXT_TAB_SMALLX_W0, EXT_TAB_SMALLX_W1,
+    };
+
+    let tri = comptime!(nroots * (nroots - 1) / 2);
+    let smallx_r0 = comptime!(EXT_TAB_SMALLX_R0 + tri);
+    let smallx_r1 = comptime!(EXT_TAB_SMALLX_R1 + tri);
+    let smallx_w0 = comptime!(EXT_TAB_SMALLX_W0 + tri);
+    let smallx_w1 = comptime!(EXT_TAB_SMALLX_W1 + tri);
+    let largex_rt = comptime!(EXT_TAB_LARGEX_RT + tri);
+    let largex_ww = comptime!(EXT_TAB_LARGEX_WW + tri);
+
+    if x <= F::cast_from(comptime!(LIBCINT_SMALLX_LIMIT)) {
+        #[unroll]
+        for i in 0..nroots {
+            u[i as usize] = F::cast_from(tab[(smallx_r0 + i) as usize])
+                + F::cast_from(tab[(smallx_r1 + i) as usize]) * x;
+            w[i as usize] = F::cast_from(tab[(smallx_w0 + i) as usize])
+                + F::cast_from(tab[(smallx_w1 + i) as usize]) * x;
+        }
+    } else if x >= F::cast_from(comptime!(f64::from(35 + nroots * 5))) {
+        let t = F::sqrt(pie4 / x);
+        #[unroll]
+        for i in 0..nroots {
+            let rt = F::cast_from(tab[(largex_rt + i) as usize]);
+            u[i as usize] = rt / (x - rt);
+            w[i as usize] = F::cast_from(tab[(largex_ww + i) as usize]) * t;
+        }
+    } else {
+        // The middle band, where the per-order polynomial fits are already
+        // bit-identical to the vendor. Only the arm that occurs is emitted:
+        // `nroots` is comptime, so this ladder costs nothing at runtime
+        // (a runtime ladder over comptime widths would emit all five).
+        if comptime!(nroots == 1u32) {
+            rys_root1::<F>(x, u, w, pie4);
+        } else if comptime!(nroots == 2u32) {
+            rys_root2::<F>(x, u, w, pie4);
+        } else if comptime!(nroots == 3u32) {
+            rys_root3::<F>(x, u, w, pie4);
+        } else if comptime!(nroots == 4u32) {
+            rys_root4::<F>(x, u, w, pie4);
+        } else {
+            rys_root5::<F>(x, u, w, pie4);
+        }
+    }
+}
+
+/// [`rys_roots_fixed`] with a **runtime** `nroots`.
+///
+/// The 2e path fuses the Rys orders into one dispatch (plan §15/F1): `nroots`
+/// is a column of the class row and only `nr_max` is comptime. The two global
+/// `CINTrys_roots` branches apply just the same, so they are taken here with a
+/// runtime triangular offset rather than a JIT-folded one.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub fn rys_roots_fixed_rt<F: Float>(
+    tab: &Array<f64>,
+    x: F,
+    u: &mut Array<F>,
+    w: &mut Array<F>,
+    pie4: F,
+    nroots: u32,
+    #[comptime] nr_max: u32,
+) {
+    use crate::math::rys_wheeler::{
+        EXT_TAB_LARGEX_RT, EXT_TAB_LARGEX_WW, EXT_TAB_SMALLX_R0, EXT_TAB_SMALLX_R1,
+        EXT_TAB_SMALLX_W0, EXT_TAB_SMALLX_W1,
+    };
+
+    let tri = nroots * (nroots - 1u32) / 2u32;
+    // `35 + nroots*5` is integer arithmetic in the vendor, compared against a
+    // double; forming it the same way keeps the boundary case on the same side.
+    let large_x = F::cast_from(35u32 + nroots * 5u32);
+
+    if x <= F::cast_from(comptime!(LIBCINT_SMALLX_LIMIT)) {
+        let r0 = comptime!(EXT_TAB_SMALLX_R0) + tri;
+        let r1 = comptime!(EXT_TAB_SMALLX_R1) + tri;
+        let w0 = comptime!(EXT_TAB_SMALLX_W0) + tri;
+        let w1 = comptime!(EXT_TAB_SMALLX_W1) + tri;
+        let mut i = 0u32;
+        while i < nroots {
+            u[i as usize] =
+                F::cast_from(tab[(r0 + i) as usize]) + F::cast_from(tab[(r1 + i) as usize]) * x;
+            w[i as usize] =
+                F::cast_from(tab[(w0 + i) as usize]) + F::cast_from(tab[(w1 + i) as usize]) * x;
+            i += 1u32;
+        }
+    } else if x >= large_x {
+        let rtb = comptime!(EXT_TAB_LARGEX_RT) + tri;
+        let wwb = comptime!(EXT_TAB_LARGEX_WW) + tri;
+        let t = F::sqrt(pie4 / x);
+        let mut i = 0u32;
+        while i < nroots {
+            let rt = F::cast_from(tab[(rtb + i) as usize]);
+            u[i as usize] = rt / (x - rt);
+            w[i as usize] = F::cast_from(tab[(wwb + i) as usize]) * t;
+            i += 1u32;
+        }
+    } else {
+        // The middle band: the per-order fits, each behind the `nr_max` guard
+        // that keeps an order the dispatch cannot carry out of the program.
+        if nroots == 1u32 {
+            rys_root1::<F>(x, u, w, pie4);
+        } else if nroots == 2u32 {
+            if comptime!(nr_max >= 2u32) {
+                rys_root2::<F>(x, u, w, pie4);
+            }
+        } else if nroots == 3u32 {
+            if comptime!(nr_max >= 3u32) {
+                rys_root3::<F>(x, u, w, pie4);
+            }
+        } else if nroots == 4u32 {
+            if comptime!(nr_max >= 4u32) {
+                rys_root4::<F>(x, u, w, pie4);
+            }
+        } else {
+            if comptime!(nr_max >= 5u32) {
+                rys_root5::<F>(x, u, w, pie4);
+            }
+        }
+    }
+}
 
 /// Compute Rys quadrature root and weight for nroots=1.
 ///
@@ -7590,6 +7759,50 @@ pub fn rys_roots_host<F: CintFloat>(nroots: usize, x: F) -> (Vec<F>, Vec<F>) {
     (r, w)
 }
 
+/// libcint's `x <= SMALLX_LIMIT` and `x >= 35 + nroots*5` table branches.
+///
+/// Returns `None` in the band where `CINTrys_roots` falls through to the
+/// per-order solvers. Shared by the host dispatcher and mirrored on the device
+/// by [`rys_asymptotic_dev`] so both backends take the same branch on the same
+/// input — the kernels are identical in principle, only the table access
+/// differs (a Rust `const` here, an uploaded `Array<f64>` there).
+#[must_use]
+pub fn rys_roots_asymptotic(nroots: usize, x: f64) -> Option<(Vec<f64>, Vec<f64>)> {
+    use crate::math::rys_smallx_data as tab;
+
+    let off = nroots * (nroots - 1) / 2;
+    if off + nroots > tab::POLY_SMALLX_R0.len() {
+        // nroots > 12: the vendored tables stop there, and so does the
+        // validated ceiling — fall through rather than read out of bounds.
+        return None;
+    }
+
+    if x <= LIBCINT_SMALLX_LIMIT {
+        let mut u = Vec::with_capacity(nroots);
+        let mut w = Vec::with_capacity(nroots);
+        for i in 0..nroots {
+            u.push(tab::POLY_SMALLX_R0[off + i] + tab::POLY_SMALLX_R1[off + i] * x);
+            w.push(tab::POLY_SMALLX_W0[off + i] + tab::POLY_SMALLX_W1[off + i] * x);
+        }
+        return Some((u, w));
+    }
+
+    // `35+nroots*5` in `int` arithmetic, compared against a double.
+    if x >= (35 + nroots * 5) as f64 {
+        let t = (LIBCINT_PIE4 / x).sqrt();
+        let mut u = Vec::with_capacity(nroots);
+        let mut w = Vec::with_capacity(nroots);
+        for i in 0..nroots {
+            let rt = tab::POLY_LARGEX_RT[off + i];
+            u.push(rt / (x - rt));
+            w.push(tab::POLY_LARGEX_WW[off + i] * t);
+        }
+        return Some((u, w));
+    }
+
+    None
+}
+
 /// Unified host-side Rys quadrature dispatcher.
 ///
 /// Returns `(roots, weights)` as `Vec<f64>` for the given number of quadrature points.
@@ -7598,6 +7811,14 @@ pub fn rys_roots_host<F: CintFloat>(nroots: usize, x: F) -> (Vec<F>, Vec<F>) {
 /// nroots >= 13: quadmath path, not compiled in the vendor build — panics with a
 ///   clear error; T-25-01 (UnsupportedApi contract, not a silent wrong result).
 fn rys_roots_host_f64(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
+    // The two global early exits `CINTrys_roots` takes BEFORE dispatching to
+    // `rys_root1..5` (`rys_roots.c:57-80`). They are not an optimisation: in
+    // these regimes libcint never evaluates the polynomial fits at all, so a
+    // port that always runs them returns a differently-rounded answer. The
+    // polynomial band between the two is bit-identical without any of this.
+    if let Some(hit) = rys_roots_asymptotic(nroots, x) {
+        return hit;
+    }
     match nroots {
         1 => {
             let (u, w) = rys_root1_host(x);

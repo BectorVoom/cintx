@@ -36,8 +36,10 @@
 use super::shared::{SQRTPI, cart_comps, common_fac_sp};
 use crate::backend::ResolvedBackend;
 use crate::math::pdata::compute_pdata_host;
+use crate::math::rys::rys_roots_fixed;
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys_wheeler::EXT_TABLES_LEN;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::ncart;
 use crate::transform::c2spinor::cart_to_spinor_sf_4d;
@@ -539,6 +541,7 @@ fn fill_g_tensor_breit(
 #[cube(launch)]
 #[allow(clippy::too_many_arguments)]
 fn breit_g_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     urys: &mut Array<F>,
     wrys: &mut Array<F>,
@@ -604,16 +607,10 @@ fn breit_g_kernel<F: Float + CubeElement>(
         let x_rys = a0 * rr;
 
         // Rys roots/weights (comptime nroots branch).
-        if comptime!(nroots == 1u32) {
-            rys_root1::<F>(x_rys, urys, wrys, pie4);
-        } else if comptime!(nroots == 2u32) {
-            rys_root2::<F>(x_rys, urys, wrys, pie4);
-        } else if comptime!(nroots == 3u32) {
-            rys_root3::<F>(x_rys, urys, wrys, pie4);
-        } else if comptime!(nroots == 4u32) {
-            rys_root4::<F>(x_rys, urys, wrys, pie4);
-        } else {
-            rys_root5::<F>(x_rys, urys, wrys, pie4);
+        if comptime!(nroots <= 5u32) {
+            // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+            // the two global table branches the per-order fits sit behind.
+            rys_roots_fixed::<F>(rys_tab, x_rys, urys, wrys, pie4, nroots);
         }
 
         // fac1 = sqrt(a0/(a1^3)) * fac_env (host: fac1 then w_weights *= fac1).
@@ -1023,11 +1020,16 @@ fn run_breit_g_device<R: Runtime>(
     let rys_zero = vec![0.0_f64; nroots_u];
     let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
     let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+    // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+    let rys_tab_h =
+        client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
 
     breit_g_kernel::launch::<f64, R>(
         client,
         crate::plane::single_cube_count(),
         crate::plane::backend_plane_cube_dim::<R>(client),
+        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
         unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_size_u) },
         unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
         unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
@@ -2071,10 +2073,15 @@ mod tests {
         let rys_zero = vec![0.0_f32; nroots_u];
         let u_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+        // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+        let rys_tab_h =
+            client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
         breit_g_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
             crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
+            unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
             unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_size_u) },
             unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
             unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },

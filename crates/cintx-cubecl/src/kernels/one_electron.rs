@@ -44,8 +44,8 @@ use crate::math::obara_saika::hrr_step_host;
 // (one in-kernel call site) and by the test module's own import.
 #[cfg(test)]
 use crate::math::obara_saika::vrr_step_host;
+use crate::math::rys::rys_roots_fixed;
 use crate::math::rys::rys_roots_host;
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
 };
@@ -63,7 +63,7 @@ use cubecl::tune::{LocalTuner, Tunable, TunableSet, TuneGroup, local_tuner};
 
 /// sqrt(pi) constant — used in G-tensor base case normalization.
 /// Matches libcint `g1e.c` `SQRTPI = sqrt(M_PI)`.
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
 /// Matches `rys_roots.c` `PIE4`. Used by the on-device nuclear-attraction arm.
@@ -275,6 +275,7 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
     shell_meta: &Array<u32>,
     pairs: &Array<u32>,
     class_shape: &Array<u32>,
+    class_fac: &Array<F>,
     atom_coords: &Array<F>,
     atom_charges: &Array<F>,
     rys_tab: &Array<f64>,
@@ -356,6 +357,14 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
         let srow = cls * comptime!(ONE_E_SHAPE_STRIDE as u32);
         let li = class_shape[srow as usize];
         let lj = class_shape[(srow + 1u32) as usize];
+
+        // `envs->common_factor * CINTcommon_fac_sp(i_l) * CINTcommon_fac_sp(j_l)`
+        // (`cint1e.c:120`), already multiplied out on the host in that order.
+        // libcint folds it into `fac1j` *before* the recurrence runs, so it
+        // rides through the whole VRR/HRR and the primitive sum; scaling the
+        // accumulated block afterwards is the same value only in exact
+        // arithmetic.
+        let common_factor = class_fac[cls as usize];
 
         let nci = (li + 1u32) * (li + 2u32) / 2u32;
         let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
@@ -478,12 +487,26 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
         let is_uncontracted_1e = (nctr_i == 1u32) && (nctr_j == 1u32);
 
         // ── Primitive loop ───────────────────────────────────────────────────
-        let mut pi = 0u32;
-        while pi < nprim_i {
-            let ai = exps[(eoff_i + pi) as usize];
-            let mut pj = 0u32;
-            while pj < nprim_j {
-                let aj = exps[(eoff_j + pj) as usize];
+        //
+        // `jp` outer, `ip` inner — `CINT1e_loop` (`cint1e.c:104-113`). The
+        // nesting is not a free choice: it fixes the order the primitive
+        // contributions are summed into the accumulator, and a sum reordered is
+        // a sum rounded differently.
+        let mut pj = 0u32;
+        while pj < nprim_j {
+            let aj = exps[(eoff_j + pj) as usize];
+
+            // `fac1j = common_factor * cj[jp]` when the ket is uncontracted,
+            // else `common_factor` alone and `cj` rides the contraction step
+            // (`cint1e.c:106-110`).
+            let mut fac1j = common_factor;
+            if nctr_j == 1u32 {
+                fac1j = common_factor * coeffs[(coff_j + pj) as usize];
+            }
+
+            let mut pi = 0u32;
+            while pi < nprim_i {
+                let ai = exps[(eoff_i + pi) as usize];
 
                 // Pair data, computed in-kernel in F (norm_i = norm_j = 1.0),
                 // in libcint's own association.
@@ -514,17 +537,29 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                 let rirjy = riy - rjy;
                 let rirjz = riz - rjz;
                 let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
-                let fac = F::exp(-(rr * ai * aj * aij_inv));
+                let expij = F::exp(-(rr * ai * aj * aij_inv));
                 let wj = aj * aij_inv;
                 let px = rix + wj * (rjx - rix);
                 let py = riy + wj * (rjy - riy);
                 let pz = riz + wj * (rjz - riz);
 
-                let prim_weight_1e = if is_uncontracted_1e {
-                    coeffs[(coff_i + pi) as usize] * coeffs[(coff_j + pj) as usize]
-                } else {
-                    F::new(0.0_f32)
-                };
+                // `envs->fac[0]` — the single scalar the whole G tensor is
+                // seeded from (`cint1e.c:111-115`):
+                //
+                // ```c
+                // if (i_ctr == 1) fac1i = fac1j*ci[ip]*expij;
+                // else            fac1i = fac1j*expij;
+                // ```
+                //
+                // The recurrence is linear in it, so folding the contraction
+                // coefficients in *here* rather than multiplying the finished
+                // block by `ci*cj` is the same integral and a different `f64`:
+                // the coefficients round once, at the seed, instead of once at
+                // the end of a degree-`nmax` chain.
+                let mut fac = fac1j * expij;
+                if nctr_i == 1u32 {
+                    fac = fac1j * coeffs[(coff_i + pi) as usize] * expij;
+                }
 
                 if comptime!(op_kind == 0u32 || op_kind == 1u32) {
                     if lane == 0u32 {
@@ -562,6 +597,24 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                 one_electron_hrr_axis::<F>(g, gy, hrr_dy, dj, nmax, hrr_levels);
                                 one_electron_hrr_axis::<F>(g, gz, hrr_dz, dj, nmax, hrr_levels);
                             }
+
+                            // `g2 = D_J(g0)` at `(i_l, j_l+1)` — `intor1.c:27`.
+                            // The second pass (`g3 = D_J(g2)`, `intor1.c:28`) is
+                            // taken per element in the gout below: `D_J` is
+                            // elementwise in the output index, so evaluating it
+                            // there reads the same `g2` values and rounds the
+                            // same way materialising `g3` would.
+                            one_electron_dj_1e::<F>(
+                                g,
+                                gbase,
+                                gbase + 3u32 * g_per_axis,
+                                g_per_axis,
+                                i_stride,
+                                j_stride,
+                                li,
+                                lj + 1u32,
+                                F::new(-2.0_f32) * aj,
+                            );
                         }
                     }
                     if comptime!(per_unit == 0u32) {
@@ -602,7 +655,13 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                                 g[(gz + jz * j_stride + iz * i_stride) as usize];
                                             val = vx * vy * vz;
                                         } else {
-                                            // Kinetic: T = -0.5*(g3x*g0y*g0z + ...)
+                                            // Kinetic: `CINTgout1e_int1e_kin`
+                                            // (`intor1.c:33-45`) sums the three
+                                            // terms as `- s[0] - s[4] - s[8]`,
+                                            // and the operator's 0.5 lives in
+                                            // `envs.common_factor` (`intor1.c:57`),
+                                            // where it rides the recurrence — not
+                                            // as a `-0.5 *` on the finished sum.
                                             let nx = jx * j_stride + ix * i_stride;
                                             let ny = jy * j_stride + iy * i_stride;
                                             let nz = jz * j_stride + iz * i_stride;
@@ -610,33 +669,65 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                             let vy0 = g[(gy + ny) as usize];
                                             let vz0 = g[(gz + nz) as usize];
 
-                                            let g3x = one_electron_kin_d2::<F>(
-                                                g, gx, nx, j_stride, jx, aj,
+                                            // Second `D_J` pass over `g2`,
+                                            // `f = j*g[n-dj] + aj2*g[n+dj]`.
+                                            let d2 = gbase + 3u32 * g_per_axis;
+                                            let aj2n = F::new(-2.0_f32) * aj;
+                                            let g3x = one_electron_dj_elem::<F>(
+                                                g, d2, nx, j_stride, jx, aj2n,
                                             );
-                                            let g3y = one_electron_kin_d2::<F>(
-                                                g, gy, ny, j_stride, jy, aj,
+                                            let g3y = one_electron_dj_elem::<F>(
+                                                g,
+                                                d2 + g_per_axis,
+                                                ny,
+                                                j_stride,
+                                                jy,
+                                                aj2n,
                                             );
-                                            let g3z = one_electron_kin_d2::<F>(
-                                                g, gz, nz, j_stride, jz, aj,
+                                            let g3z = one_electron_dj_elem::<F>(
+                                                g,
+                                                d2 + 2u32 * g_per_axis,
+                                                nz,
+                                                j_stride,
+                                                jz,
+                                                aj2n,
                                             );
-                                            val = F::new(-0.5_f32)
-                                                * (g3x * vy0 * vz0
-                                                    + vx0 * g3y * vz0
-                                                    + vx0 * vy0 * g3z);
+                                            let s0 = g3x * vy0 * vz0;
+                                            let s4 = vx0 * g3y * vz0;
+                                            let s8 = vx0 * vy0 * g3z;
+                                            // `F::new(-1.0) * s0` rather than
+                                            // `0.0 - s0`: the two differ on a
+                                            // signed zero, and the comparison
+                                            // this path exists for is on bits.
+                                            val = F::new(-1.0_f32) * s0 - s4 - s8;
                                         }
 
                                         if is_uncontracted_1e {
+                                            // Both coefficients are already in
+                                            // `fac`, exactly as libcint's
+                                            // `i_ctr == 1 && j_ctr == 1` path
+                                            // leaves `gout` the finished block.
                                             cart_out[(out_off + cj_idx * nci + ci_idx) as usize] +=
-                                                prim_weight_1e * val;
+                                                val;
                                         } else {
+                                            // `PRIM2CTR0` applies the coefficient
+                                            // of a *contracted* side only; an
+                                            // uncontracted one already rode in
+                                            // through `fac1j`/`fac1i` above.
                                             let mut ci = 0u32;
                                             while ci < nctr_i {
-                                                let coeff_i_val =
-                                                    coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                                let mut coeff_i_val = F::new(1.0_f32);
+                                                if nctr_i > 1u32 {
+                                                    coeff_i_val = coeffs
+                                                        [(coff_i + pi * nctr_i + ci) as usize];
+                                                }
                                                 let mut cj = 0u32;
                                                 while cj < nctr_j {
-                                                    let coeff_j_val = coeffs
-                                                        [(coff_j + pj * nctr_j + cj) as usize];
+                                                    let mut coeff_j_val = F::new(1.0_f32);
+                                                    if nctr_j > 1u32 {
+                                                        coeff_j_val = coeffs
+                                                            [(coff_j + pj * nctr_j + cj) as usize];
+                                                    }
                                                     let base = (ci * nctr_j + cj) * block_len;
                                                     cart_out[(out_off
                                                         + base
@@ -667,6 +758,23 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                     }
                 } else {
                     // Nuclear: sum over atoms and Rys roots FIRST, building G-tensor once per (atom, root)
+                    //
+                    // `CINTgout1e_nuc` (`cint1e.c`) sums the Rys roots into a
+                    // *local* `s` that starts at zero, and only that sum is
+                    // grouped: with `i_ctr == j_ctr == 1`, `CINT1e_loop` aliases
+                    // `gout` onto `gctr` itself (`gout = gctri = gctrj = gctr`),
+                    // so atoms and primitive pairs accumulate flat into the
+                    // output. The shape is therefore
+                    // `out += (Σ_roots t)` per (pair, atom) — not the fully flat
+                    // `((out + t₀) + t₁)` cintx had, which summed the roots into
+                    // the output one at a time. Same value in exact arithmetic;
+                    // one ULP apart in `f64`, and only when `nroots > 1` — which
+                    // is why `(p,p)` was the one failing tuple.
+                    //
+                    // `s` lives past the tensor in this slot's slab; the class
+                    // reserved room for it in `push_class`.
+                    let s_b = gbase + 3u32 * g_per_axis;
+
                     let mut atom = 0u32;
                     while atom < natm {
                         let z_c = atom_charges[atom as usize];
@@ -703,18 +811,22 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                         // zero, which contribute exactly zero — the
                         // tolerance-zero identity gate.
                         if F::abs(fac1) > prim_tol {
+                            // `s = 0` before the root loop (`CINTgout1e_nuc`).
+                            let mut ze = lane;
+                            while ze < block_len {
+                                g[(s_b + ze) as usize] = F::new(0.0_f32);
+                                ze += lanes;
+                            }
                             if lane == 0u32 {
-                                // Rys roots/weights (comptime nroots).
-                                if comptime!(nroots == 1u32) {
-                                    rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                                } else if comptime!(nroots == 2u32) {
-                                    rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                                } else if comptime!(nroots == 3u32) {
-                                    rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                                } else if comptime!(nroots == 4u32) {
-                                    rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                                } else if comptime!(nroots == 5u32) {
-                                    rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                                // Rys roots/weights (comptime nroots). The
+                                // fixed orders go through `rys_roots_fixed`,
+                                // which is the whole of `CINTrys_roots` —
+                                // including the two global table branches the
+                                // per-order solvers sit behind.
+                                if comptime!(nroots <= 5u32) {
+                                    rys_roots_fixed::<F>(
+                                        rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots,
+                                    );
                                 } else {
                                     // nroots 6..=12: the inline Wheeler/Jacobi
                                     // entry (task 33-01), reachable only once
@@ -744,7 +856,13 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                     let u_n = urys[irys as usize];
                                     let w_n = wrys[irys as usize];
                                     let tau = u_n / (F::new(1.0_f32) + u_n);
-                                    let rt = aij2 * (F::new(1.0_f32) - tau);
+                                    // `CINTg1e_nuc` (`g1e.c:285`) writes this as
+                                    // `aij2 - aij2 * ru`, a multiply then a
+                                    // subtract. Factoring it to
+                                    // `aij2 * (1 - ru)` rounds the subtraction
+                                    // first and seeds the whole VRR with a
+                                    // different `f64`.
+                                    let rt = aij2 - aij2 * tau;
 
                                     let c00x = (px - vrr_rx) + tau * crijx;
                                     let c00y = (py - vrr_ry) + tau * crijy;
@@ -805,27 +923,13 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                                         as usize];
                                                     let val = vx * vy * vz;
 
-                                                    let mut ci = 0u32;
-                                                    while ci < nctr_i {
-                                                        let coeff_i_val = coeffs
-                                                            [(coff_i + pi * nctr_i + ci) as usize];
-                                                        let mut cj = 0u32;
-                                                        while cj < nctr_j {
-                                                            let coeff_j_val =
-                                                                coeffs[(coff_j + pj * nctr_j + cj)
-                                                                    as usize];
-                                                            let base =
-                                                                (ci * nctr_j + cj) * block_len;
-                                                            cart_out[(out_off
-                                                                + base
-                                                                + cj_idx * nci
-                                                                + ci_idx)
-                                                                as usize] +=
-                                                                coeff_i_val * coeff_j_val * val;
-                                                            cj += 1u32;
-                                                        }
-                                                        ci += 1u32;
-                                                    }
+                                                    // `s += gx[i]*gy[i]*gz[i]`
+                                                    // for this root. The
+                                                    // coefficients wait until
+                                                    // `gout` reaches the output,
+                                                    // where `PRIM2CTR0` applies
+                                                    // them.
+                                                    g[(s_b + elem_idx) as usize] += val;
                                                 }
 
                                                 ci_idx += 1u32;
@@ -843,15 +947,47 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                     sync_cube();
                                 }
                             }
+
+                            // This atom's finished root sum into the output —
+                            // `gout` being `gctr` itself for the uncontracted
+                            // shape, so there is no per-pair stage between them.
+                            // A *contracted* side's coefficient is applied here,
+                            // where `PRIM2CTR0` applies it; an uncontracted one
+                            // already rode in through `fac`.
+                            let mut oe = lane;
+                            while oe < block_len {
+                                let acc = g[(s_b + oe) as usize];
+                                let mut ci = 0u32;
+                                while ci < nctr_i {
+                                    let mut coeff_i_val = F::new(1.0_f32);
+                                    if nctr_i > 1u32 {
+                                        coeff_i_val = coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                    }
+                                    let mut cj = 0u32;
+                                    while cj < nctr_j {
+                                        let mut coeff_j_val = F::new(1.0_f32);
+                                        if nctr_j > 1u32 {
+                                            coeff_j_val =
+                                                coeffs[(coff_j + pj * nctr_j + cj) as usize];
+                                        }
+                                        let base = (ci * nctr_j + cj) * block_len;
+                                        cart_out[(out_off + base + oe) as usize] +=
+                                            coeff_i_val * coeff_j_val * acc;
+                                        cj += 1u32;
+                                    }
+                                    ci += 1u32;
+                                }
+                                oe += lanes;
+                            }
                         }
 
                         atom += 1u32;
                     }
                 }
 
-                pj += 1u32;
+                pi += 1u32;
             }
-            pi += 1u32;
+            pj += 1u32;
         }
 
         qi += qi_step;
@@ -921,23 +1057,70 @@ fn one_electron_hrr_axis<F: Float>(
     }
 }
 
-/// Second ket-derivative `D_j^2(g0)[j, i]` on one axis (kinetic operator).
+/// One `CINTnabla1j_1e` pass (`g1e.c:191-221`): `f = D_J(g)` over ket levels
+/// `0..=lj_out` and bra levels `0..=li`, on all three axes.
 ///
-/// `g3 = jx*(jx-1)*g0[jx-2] - 2*aj*(2*jx+1)*g0[jx] + 4*aj^2*g0[jx+2]`, stepping
-/// `±2` j-levels (`±2*dj` in the flat index). `nx = jx*dj + ix` is the base flat
-/// offset within the axis sub-block at `base`. Matches `contract_kinetic`.
+/// libcint materialises each derivative tensor and differentiates the *result*
+/// again, so the kinetic `g3` is `D_J` applied twice with a rounding step in
+/// between. A fused closed form for the same polynomial is the same value in
+/// exact arithmetic and a different `f64` — which is the whole difference this
+/// kernel is trying not to have.
 #[cube]
-fn one_electron_kin_d2<F: Float>(g: &Array<F>, base: u32, nx: u32, dj: u32, jx: u32, aj: F) -> F {
-    let g_hi = g[(base + nx + 2u32 * dj) as usize];
-    let v0 = g[(base + nx) as usize];
-    let jxf = F::cast_from(jx);
-    let mut lo = F::new(0.0_f32);
-    if jx >= 2u32 {
-        lo = g[(base + nx - 2u32 * dj) as usize];
+#[allow(clippy::too_many_arguments)]
+fn one_electron_dj_1e<F: Float>(
+    g: &mut Array<F>,
+    src: u32,
+    dst: u32,
+    g_per_axis: u32,
+    i_stride: u32,
+    j_stride: u32,
+    li: u32,
+    lj_out: u32,
+    aj2: F,
+) {
+    let mut axis = 0u32;
+    while axis < 3u32 {
+        let so = src + axis * g_per_axis;
+        let dof = dst + axis * g_per_axis;
+        let mut jj = 0u32;
+        while jj <= lj_out {
+            let jjf = F::cast_from(jj);
+            let mut ii = 0u32;
+            while ii <= li {
+                let n = jj * j_stride + ii * i_stride;
+                // `j == 0` has no `j * g[i-dj]` term at all (the first loop of
+                // `CINTnabla1j_1e`), and writing `0.0 * g[..]` instead would
+                // differ on a signed zero or a non-finite neighbour.
+                if jj == 0u32 {
+                    g[(dof + n) as usize] = aj2 * g[(so + n + j_stride) as usize];
+                } else {
+                    g[(dof + n) as usize] = jjf * g[(so + n - j_stride) as usize]
+                        + aj2 * g[(so + n + j_stride) as usize];
+                }
+                ii += 1u32;
+            }
+            jj += 1u32;
+        }
+        axis += 1u32;
     }
-    F::new(4.0_f32) * aj * aj * g_hi
-        - F::new(2.0_f32) * aj * (F::new(2.0_f32) * jxf + F::new(1.0_f32)) * v0
-        + jxf * (jxf - F::new(1.0_f32)) * lo
+}
+
+/// One element of `CINTnabla1j_1e`, for the second kinetic `D_J` pass.
+#[cube]
+fn one_electron_dj_elem<F: Float>(
+    g: &Array<F>,
+    base: u32,
+    n: u32,
+    j_stride: u32,
+    jx: u32,
+    aj2: F,
+) -> F {
+    let hi = aj2 * g[(base + n + j_stride) as usize];
+    let mut out = hi;
+    if jx > 0u32 {
+        out = F::cast_from(jx) * g[(base + n - j_stride) as usize] + hi;
+    }
+    out
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4720,16 +4903,13 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
                         let crijz = rcz - pz;
                         let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 5u32) {
-                            rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                            // fixed orders: the two global table branches first, the
+                            // per-order polynomial fit only in the band between them.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi entry (task
                             // 33-01). Reachable only once `device_nroots_ceiling` was
@@ -4757,7 +4937,7 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
                             let u_n = urys[irys as usize];
                             let w_n = wrys[irys as usize];
                             let tau = u_n / (F::new(1.0_f32) + u_n);
-                            let rt = aij2 * (F::new(1.0_f32) - tau);
+                            let rt = aij2 - aij2 * tau;
 
                             let c00x = (px - rix) + tau * crijx;
                             let c00y = (py - riy) + tau * crijy;
@@ -6115,16 +6295,13 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
                         let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
                         // Rys roots/weights (comptime nroots).
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 5u32) {
-                            rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                            // fixed orders: the two global table branches first, the
+                            // per-order polynomial fit only in the band between them.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi entry (task
                             // 33-01). Reachable only once `device_nroots_ceiling` was
@@ -6153,7 +6330,7 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
                             let u_n = urys[irys as usize];
                             let w_n = wrys[irys as usize];
                             let tau = u_n / (F::new(1.0_f32) + u_n);
-                            let rt = aij2 * (F::new(1.0_f32) - tau);
+                            let rt = aij2 - aij2 * tau;
 
                             let c00x = (px - rix) + tau * crijx;
                             let c00y = (py - riy) + tau * crijy;
@@ -7060,16 +7237,11 @@ fn one_electron_rinv_kernel<F: Float + CubeElement>(
                     let crijz = rcz - pz;
                     let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                    if comptime!(nroots == 1u32) {
-                        rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 2u32) {
-                        rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 3u32) {
-                        rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 4u32) {
-                        rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 5u32) {
-                        rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                    if comptime!(nroots <= 5u32) {
+                        // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                        // fixed orders: the two global table branches first, the
+                        // per-order polynomial fit only in the band between them.
+                        rys_roots_fixed::<F>(rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots);
                     } else {
                         // nroots 6..=12: the inline Wheeler/Jacobi entry (task
                         // 33-01). Reachable only once `device_nroots_ceiling` was
@@ -7098,7 +7270,7 @@ fn one_electron_rinv_kernel<F: Float + CubeElement>(
                         let u_n = urys[irys as usize];
                         let w_n = wrys[irys as usize];
                         let tau = u_n / (F::new(1.0_f32) + u_n);
-                        let rt = aij2 * (F::new(1.0_f32) - tau);
+                        let rt = aij2 - aij2 * tau;
 
                         let c00x = (px - rix) + tau * crijx;
                         let c00y = (py - riy) + tau * crijy;
@@ -7563,16 +7735,11 @@ fn one_electron_drinv_kernel<F: Float + CubeElement>(
                     let crijz = rcz - pz;
                     let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                    if comptime!(nroots == 1u32) {
-                        rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 2u32) {
-                        rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 3u32) {
-                        rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 4u32) {
-                        rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 5u32) {
-                        rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                    if comptime!(nroots <= 5u32) {
+                        // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                        // fixed orders: the two global table branches first, the
+                        // per-order polynomial fit only in the band between them.
+                        rys_roots_fixed::<F>(rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots);
                     } else {
                         // nroots 6..=12: the inline Wheeler/Jacobi entry (task
                         // 33-01). Reachable only once `device_nroots_ceiling` was
@@ -7600,7 +7767,7 @@ fn one_electron_drinv_kernel<F: Float + CubeElement>(
                         let u_n = urys[irys as usize];
                         let w_n = wrys[irys as usize];
                         let tau = u_n / (F::new(1.0_f32) + u_n);
-                        let rt = aij2 * (F::new(1.0_f32) - tau);
+                        let rt = aij2 - aij2 * tau;
 
                         let c00x = (px - rix) + tau * crijx;
                         let c00y = (py - riy) + tau * crijy;
@@ -8094,16 +8261,13 @@ fn one_electron_nuc_grad_both_kernel<F: Float + CubeElement>(
                         let crijz = rcz - pz;
                         let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 5u32) {
-                            rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                            // fixed orders: the two global table branches first, the
+                            // per-order polynomial fit only in the band between them.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi entry (task
                             // 33-01). Reachable only once `device_nroots_ceiling` was
@@ -8131,7 +8295,7 @@ fn one_electron_nuc_grad_both_kernel<F: Float + CubeElement>(
                             let u_n = urys[irys as usize];
                             let w_n = wrys[irys as usize];
                             let tau = u_n / (F::new(1.0_f32) + u_n);
-                            let rt = aij2 * (F::new(1.0_f32) - tau);
+                            let rt = aij2 - aij2 * tau;
 
                             let c00x = (px - rix) + tau * crijx;
                             let c00y = (py - riy) + tau * crijy;
@@ -8698,16 +8862,13 @@ fn one_electron_nuc_gradgrad_bra_kernel<F: Float + CubeElement>(
                         let crijz = rcz - pz;
                         let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 5u32) {
-                            rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                            // fixed orders: the two global table branches first, the
+                            // per-order polynomial fit only in the band between them.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi entry (task
                             // 33-01). Reachable only once `device_nroots_ceiling` was
@@ -8735,7 +8896,7 @@ fn one_electron_nuc_gradgrad_bra_kernel<F: Float + CubeElement>(
                             let u_n = urys[irys as usize];
                             let w_n = wrys[irys as usize];
                             let tau = u_n / (F::new(1.0_f32) + u_n);
-                            let rt = aij2 * (F::new(1.0_f32) - tau);
+                            let rt = aij2 - aij2 * tau;
 
                             let c00x = (px - rix) + tau * crijx;
                             let c00y = (py - riy) + tau * crijy;
@@ -9768,6 +9929,10 @@ pub struct OneELaunchGroup {
     pub nroots: u32,
     /// [`ONE_E_SHAPE_STRIDE`] `u32` per merged class: `li, lj`.
     pub class_shape: Vec<u32>,
+    /// One `f64` per merged class: `common_factor * CINTcommon_fac_sp(li) *
+    /// CINTcommon_fac_sp(lj)` (`cint1e.c:120`), which the kernel folds into
+    /// `fac1j` before the recurrence rather than scaling the finished block by.
+    pub class_fac: Vec<f64>,
     /// `[si, sj, out_off, class]` per pair.
     pub pairs: Vec<u32>,
     /// Total Cartesian output elements across this group's pairs.
@@ -9785,6 +9950,7 @@ impl OneELaunchGroup {
         Self {
             nroots,
             class_shape: Vec::new(),
+            class_fac: Vec::new(),
             pairs: Vec::new(),
             out_len: 0,
             max_g_per_axis: 0,
@@ -9797,16 +9963,38 @@ impl OneELaunchGroup {
     /// `kinetic` selects the `op_kind == 1` G-tensor headroom, matching the
     /// kernel's comptime branch — the slab must be sized for the same shape the
     /// kernel will index.
-    pub fn push_class(&mut self, li: u32, lj: u32, kinetic: bool) -> u32 {
+    pub fn push_class(&mut self, li: u32, lj: u32, op_kind: u32) -> u32 {
+        let kinetic = op_kind == 1;
         let index = (self.class_shape.len() / ONE_E_SHAPE_STRIDE) as u32;
         self.class_shape.extend_from_slice(&[li, lj]);
+        // `cint1e.c:120`, left-to-right and starting from `envs->common_factor`
+        // — `1` for overlap and nuclear, and `1 * 0.5` for kinetic, whose
+        // `int1e_kin_*` entry applies `envs.common_factor *= 0.5`
+        // (`intor1.c:57`) before the driver reads it. Folding the 0.5 here is
+        // what puts it ahead of the recurrence, where libcint has it.
+        let operator_factor = if kinetic { 1.0 * 0.5 } else { 1.0 };
+        self.class_fac
+            .push(operator_factor * common_fac_sp(li as u8) * common_fac_sp(lj as u8));
         let (li_u, lj_u) = (li as usize, lj as usize);
         let (nmax, lj_ext) = if kinetic {
             (li_u + lj_u + 2, lj_u + 2)
         } else {
             (li_u + lj_u, lj_u)
         };
-        self.max_g_per_axis = self.max_g_per_axis.max((nmax + 1) * (lj_ext + 1));
+        // Kinetic keeps a second tensor of the same extent beside `g0` — the
+        // materialised `g2 = D_J(g0)` the two-pass derivative needs — so its
+        // slot reserves two, and the kernel puts `g2` at `gbase + 3*g_per_axis`.
+        //
+        // Nuclear reserves a Cartesian block's worth beyond the tensor, for the
+        // two accumulators `CINTgout1e_nuc`/`make_g1e_gout` keep: the per-atom
+        // root sum `s` and the per-primitive-pair `gout` it folds into. Three
+        // axes' worth of `block` is more than the two blocks needed, which
+        // keeps the reservation a function of `(li, lj)` alone.
+        let per_axis = (nmax + 1) * (lj_ext + 1);
+        let slots = if kinetic { 2 } else { 1 };
+        let block = ncart(li as u8) * ncart(lj as u8);
+        let extra = if op_kind == 2 { block } else { 0 };
+        self.max_g_per_axis = self.max_g_per_axis.max(per_axis * slots + extra);
         index
     }
 
@@ -9964,6 +10152,7 @@ fn run_1e_batches<R: Runtime>(
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&class.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&class.class_shape));
+        let class_fac_h = client.create_from_slice(f64::as_bytes(&class.class_fac));
         // The extended-Rys constant tables (~4.7 KB), read only by a nuclear
         // class whose Rys order is past the polynomial-fit ceiling.
         let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
@@ -9981,12 +10170,14 @@ fn run_1e_batches<R: Runtime>(
             shell_meta_len: *shell_meta_len,
             pairs: pairs_h,
             class_shape: shape_h,
+            class_fac: class_fac_h,
             atom_coords: coords_h.clone(),
             atom_charges: charges_h.clone(),
             rys_tables: rys_tab_h,
             out: out_h.clone(),
             pairs_len: class.pairs.len(),
             class_shape_len: class.class_shape.len(),
+            class_fac_len: class.class_fac.len(),
             atom_coords_len: coords_src.len(),
             atom_charges_len: charges_src.len(),
             out_len: class.out_len,
@@ -10030,12 +10221,14 @@ struct OneEGroupDispatch<R: Runtime> {
     shell_meta_len: usize,
     pairs: cubecl::server::Handle,
     class_shape: cubecl::server::Handle,
+    class_fac: cubecl::server::Handle,
     atom_coords: cubecl::server::Handle,
     atom_charges: cubecl::server::Handle,
     rys_tables: cubecl::server::Handle,
     out: cubecl::server::Handle,
     pairs_len: usize,
     class_shape_len: usize,
+    class_fac_len: usize,
     atom_coords_len: usize,
     atom_charges_len: usize,
     out_len: usize,
@@ -10094,6 +10287,7 @@ impl<R: Runtime> OneEGroupDispatch<R> {
                         ArrayArg::from_raw_parts(self.shell_meta.clone(), self.shell_meta_len),
                         ArrayArg::from_raw_parts(self.pairs.clone(), self.pairs_len),
                         ArrayArg::from_raw_parts(self.class_shape.clone(), self.class_shape_len),
+                        ArrayArg::from_raw_parts(self.class_fac.clone(), self.class_fac_len),
                         ArrayArg::from_raw_parts(self.atom_coords.clone(), self.atom_coords_len),
                         ArrayArg::from_raw_parts(self.atom_charges.clone(), self.atom_charges_len),
                         ArrayArg::from_raw_parts(self.rys_tables.clone(), EXT_TABLES_LEN),
@@ -10315,8 +10509,6 @@ struct OneEClassPlacement {
     cart_offsets: Vec<usize>,
     /// Cartesian elements per contraction block for this class.
     cart_block: usize,
-    /// Half-open range of the group's Cartesian buffer this class owns.
-    cart_span: (usize, usize),
 }
 
 pub fn evaluate_1e_pair_batch(
@@ -10451,7 +10643,13 @@ pub fn evaluate_1e_pair_batch_resident_with(
     // Classes are merged into dispatch groups keyed on the Rys order (Task
     // 35-M2). `op_kind` is fixed by `operator`, so it needs no key: overlap and
     // kinetic are `nroots == 1` throughout and collapse to one dispatch.
-    let kinetic = operator == OneEOperator::Kinetic;
+    // The kernel's comptime `op_kind`: 0 overlap, 1 kinetic, 2 nuclear. The
+    // class reservation needs it too — nuclear keeps two extra accumulators.
+    let op_kind = match operator {
+        OneEOperator::Overlap => 0u32,
+        OneEOperator::Kinetic => 1u32,
+        OneEOperator::Nuclear => 2u32,
+    };
     // Task 33-03: nuclear-attraction classes past the polynomial-fit ceiling
     // are accepted only where the feature, this backend's FMA probe and the
     // `int1e` flip all agree.
@@ -10491,13 +10689,12 @@ pub fn evaluate_1e_pair_batch_resident_with(
             }
         };
         let group = &mut groups[group_index];
-        let class_index = group.push_class(u32::from(li), u32::from(lj), kinetic);
+        let class_index = group.push_class(u32::from(li), u32::from(lj), op_kind);
 
         let cart_block = ncart(li) * ncart(lj);
         group.max_block_len = group.max_block_len.max(cart_block as u32);
         group.pairs.reserve(members.len() * 4);
         let mut cart_offsets = Vec::with_capacity(members.len());
-        let cart_span_start = group.out_len;
         for &index in &members {
             let p = pairs[index];
             let nctr_product =
@@ -10516,15 +10713,11 @@ pub fn evaluate_1e_pair_batch_resident_with(
             members,
             cart_offsets,
             cart_block,
-            // Members were appended contiguously, so the class owns exactly
-            // this half-open range of the group's Cartesian buffer. The s/p
-            // normalization below scales that range and no other class's.
-            cart_span: (cart_span_start, group.out_len),
         });
     }
 
     let dispatch_start = std::time::Instant::now();
-    let mut carts = dispatch_1e_batches(
+    let carts = dispatch_1e_batches(
         backend,
         operator.op_kind(),
         resident.handles(),
@@ -10562,25 +10755,11 @@ pub fn evaluate_1e_pair_batch_resident_with(
     // CINTcommon_fac_sp(j_l)`), so the c2s tables carry 1.0 there. Without
     // this factor s/p integrals come out ~4*pi too large.
     //
-    // Applied to the *Cartesian* buffer, before the transform, exactly where
-    // the per-pair launcher applies it: scaling the spherical result instead
-    // would reorder the multiplication and cost a ULP against that path.
-    //
-    // Scoped to this class's own span of the group buffer: after Task 35-M2
-    // a dispatch carries several classes, and each has its own `sp_scale`.
-    //
-    // This prepass mutates `carts`, so it stays serial and runs to completion
-    // before the transform below reads any of it (Task 36-T2).
-    for class in &classes {
-        let (li, lj) = (class.li as u8, class.lj as u8);
-        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
-        let (span_start, span_end) = class.cart_span;
-        if (sp_scale - 1.0).abs() > 1e-15 {
-            for value in carts[class.group][span_start..span_end].iter_mut() {
-                *value *= sp_scale;
-            }
-        }
-    }
+    // `one_electron_scalar_kernel` now folds it into `fac1j` per class
+    // (`OneELaunchGroup::class_fac`) the way `cint1e.c:120` does, before the
+    // recurrence and the primitive sum. Scaling the finished Cartesian block
+    // here instead was the same integral to within a few ULP, which is the
+    // difference this path exists to remove — so there is no post-pass left.
     let carts = &carts;
 
     // Task 36-T2: one job per pair, in the caller's order, each writing a
@@ -10777,7 +10956,7 @@ fn run_1e_scalar_device<R: Runtime>(
     let handles = crate::kernels::two_electron::upload_2e_basis::<R>(client, &basis);
 
     let mut group = OneELaunchGroup::new(nroots);
-    let class_index = group.push_class(li, lj, op_kind == 1);
+    let class_index = group.push_class(li, lj, op_kind);
     group.pairs.extend_from_slice(&[0, 1, 0, class_index]);
     group.out_len = out_len;
     group.max_block_len = block_len as u32;
@@ -12064,7 +12243,7 @@ fn contract_nuclear(
 
             // Modified recurrence coefficient b10 = aij2 * (1 - tau) = aij2 - aij2*tau
             // Source: g1e.c line 229
-            let rt = pd.aij2 * (1.0 - tau);
+            let rt = pd.aij2 - pd.aij2 * tau;
 
             // Modified center displacement: r0[d] = (P[d] - ri[d]) + tau * crij[d]
             // Note: crij[d] = rc[d] - rp[d], and for nuc VRR the displacement is
@@ -12252,7 +12431,7 @@ fn contract_nuclear_grad(
             let w_n = w_arr[n];
 
             let tau = u_n / (1.0 + u_n);
-            let rt = pd.aij2 * (1.0 - tau);
+            let rt = pd.aij2 - pd.aij2 * tau;
 
             let c00 = [
                 (rp[0] - ri[0]) + tau * crij[0],
@@ -14734,7 +14913,8 @@ fn launch_one_electron_typed<F: CintFloat>(
         backend,
         crate::device_rys_ceiling::RysFamily::Int1e,
     );
-    let cart_blocks = if op_kind == 2 && nroots as usize > scalar_ceiling {
+    let host_nuclear_fallback = op_kind == 2 && nroots as usize > scalar_ceiling;
+    let cart_blocks = if host_nuclear_fallback {
         let nci = ncart(li);
         let ncj = ncart(lj);
         let block_len = nci * ncj;
@@ -14784,18 +14964,20 @@ fn launch_one_electron_typed<F: CintFloat>(
     };
     let mut cart_blocks = cart_blocks;
 
-    // Apply the libcint `CINTcommon_fac_sp` normalization scale to the
-    // accumulated Cartesian buffer.  libcint moves the spherical normalization
-    // for s (l=0) and p (l=1) shells out of the c2s tables and into the
-    // primitive loop (`g1e.c` line 120: `common_factor * CINTcommon_fac_sp(i_l)
-    // * CINTcommon_fac_sp(j_l)`). The c2s coefficient tables in `cart2sph.c`
-    // therefore use 1.0 for s and p, and the cintx C2S_L0/C2S_L1 constants
-    // match that convention. Without this scale factor, s/p-type integrals
-    // are off by ~4*pi relative to vendored libcint output.
-    let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
-    if (sp_scale - 1.0).abs() > 1e-15 {
-        for v in cart_blocks.iter_mut() {
-            *v *= sp_scale;
+    // libcint moves the spherical normalization for s (l=0) and p (l=1) shells
+    // out of the c2s tables and into the primitive loop (`cint1e.c:120`), so
+    // the c2s tables carry 1.0 there and cintx's C2S_L0/C2S_L1 match that.
+    //
+    // The device kernel folds it into `fac1j` before the recurrence, where
+    // libcint folds it. Only the host nuclear fallback above — which runs its
+    // own primitive loop when the Rys order is past the device ceiling — still
+    // needs it applied to the finished block.
+    if host_nuclear_fallback {
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart_blocks.iter_mut() {
+                *v *= sp_scale;
+            }
         }
     }
 
@@ -15971,7 +16153,7 @@ mod tests {
                     let u_n = u_arr[n];
                     let w_n = w_arr[n];
                     let tau = u_n / (1.0 + u_n);
-                    let rt = pd.aij2 * (1.0 - tau);
+                    let rt = pd.aij2 - pd.aij2 * tau;
                     let c00 = [
                         (rp[0] - ri[0]) + tau * crij[0],
                         (rp[1] - ri[1]) + tau * crij[1],
@@ -16174,6 +16356,8 @@ mod tests {
         // `[si, sj, out_off, class]` — one class, index 0.
         let pairs: [u32; 4] = [0, 1, 0, 0];
         let class_shape: [u32; ONE_E_SHAPE_STRIDE] = [0, 0];
+        // `common_fac_sp(0) * common_fac_sp(0)` for the one (s,s) class.
+        let class_fac = [(common_fac_sp(0) * common_fac_sp(0)) as f32];
         let coords = [0.0_f32]; // unused for overlap, must be len>0
         let charges = [0.0_f32];
         // overlap s-s: nmax=0, lj_ext=0, g_per_axis=1 → 3 g elements; out_len=1.
@@ -16186,6 +16370,7 @@ mod tests {
         let meta_h = client.create_from_slice(u32::as_bytes(&shell_meta));
         let pairs_h = client.create_from_slice(u32::as_bytes(&pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&class_shape));
+        let class_fac_h = client.create_from_slice(f32::as_bytes(&class_fac));
         let coords_h = client.create_from_slice(f32::as_bytes(&coords));
         let charges_h = client.create_from_slice(f32::as_bytes(&charges));
         let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
@@ -16205,6 +16390,7 @@ mod tests {
             unsafe { ArrayArg::from_raw_parts(meta_h, shell_meta.len()) },
             unsafe { ArrayArg::from_raw_parts(pairs_h, pairs.len()) },
             unsafe { ArrayArg::from_raw_parts(shape_h, class_shape.len()) },
+            unsafe { ArrayArg::from_raw_parts(class_fac_h, class_fac.len()) },
             unsafe { ArrayArg::from_raw_parts(coords_h, 1) },
             unsafe { ArrayArg::from_raw_parts(charges_h, 1) },
             unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },

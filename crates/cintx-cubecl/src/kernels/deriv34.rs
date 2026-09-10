@@ -1908,7 +1908,7 @@ fn contract_deriv34_pair(
             let u_n = u_arr[n];
             let w_n = w_arr[n];
             let tau = u_n / (1.0 + u_n);
-            let rt = aij2 * (1.0 - tau);
+            let rt = aij2 - aij2 * tau;
             let c00 = [
                 (rp[0] - ri[0]) + tau * crij[0],
                 (rp[1] - ri[1]) + tau * crij[1],
@@ -2185,7 +2185,7 @@ pub fn nuclear_origins(atoms: &[Atom]) -> Vec<([f64; 3], f64)> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::backend::ResolvedBackend;
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys::rys_roots_fixed;
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, ext_rys_tables, rys_roots_ext_dev,
 };
@@ -2381,16 +2381,11 @@ fn deriv34_pair_kernel<F: Float + CubeElement>(
             let charge = origins[(ob + 3u32) as usize];
             let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-            if comptime!(nroots == 1u32) {
-                rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-            } else if comptime!(nroots == 2u32) {
-                rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-            } else if comptime!(nroots == 3u32) {
-                rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-            } else if comptime!(nroots == 4u32) {
-                rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-            } else if comptime!(nroots == 5u32) {
-                rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+            if comptime!(nroots <= 5u32) {
+                // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                // fixed orders: the two global table branches first, the
+                // per-order polynomial fit only in the band between them.
+                rys_roots_fixed::<F>(rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots);
             } else {
                 // Orders six through twelve: the inline Wheeler/Jacobi entry
                 // (task 33-01). This is the arm whose absence routed these
@@ -2416,7 +2411,7 @@ fn deriv34_pair_kernel<F: Float + CubeElement>(
                 let u_n = urys[nr as usize];
                 let w_n = wrys[nr as usize];
                 let tau = u_n / (F::new(1.0_f32) + u_n);
-                let rt = aij2 * (F::new(1.0_f32) - tau);
+                let rt = aij2 - aij2 * tau;
 
                 // g0 is zeroed and re-seeded per root, exactly as the host does.
                 let mut t = 0u32;

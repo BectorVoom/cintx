@@ -32,7 +32,9 @@
 
 use super::shared::{SQRTPI, common_fac_sp, make_exec_stats};
 use crate::backend::ResolvedBackend;
+use crate::math::rys::rys_roots_fixed;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys_wheeler::EXT_TABLES_LEN;
 // Host reference helpers (cart_comps / PairData / compute_pdata_host /
 // rys_roots_host) are used only by the `#[cfg(test)]` cross-check oracle.
 #[cfg(test)]
@@ -638,6 +640,7 @@ fn contract_3c2e_ssc(g: &[f64], li: u8, lj: u8, lk: u8, nrys_roots: usize) -> Ve
 #[cube(launch)]
 #[allow(clippy::too_many_arguments)]
 fn ssc_scalar_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     exps_i: &Array<F>,
     exps_j: &Array<F>,
     exps_k: &Array<F>,
@@ -742,16 +745,10 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                     let x_rys = a0 * rr;
 
                     // Rys roots/weights (comptime nroots branch).
-                    if comptime!(nroots == 1u32) {
-                        rys_root1::<F>(x_rys, urys, wrys, pie4);
-                    } else if comptime!(nroots == 2u32) {
-                        rys_root2::<F>(x_rys, urys, wrys, pie4);
-                    } else if comptime!(nroots == 3u32) {
-                        rys_root3::<F>(x_rys, urys, wrys, pie4);
-                    } else if comptime!(nroots == 4u32) {
-                        rys_root4::<F>(x_rys, urys, wrys, pie4);
-                    } else {
-                        rys_root5::<F>(x_rys, urys, wrys, pie4);
+                    if comptime!(nroots <= 5u32) {
+                        // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+                        // the two global table branches the per-order fits sit behind.
+                        rys_roots_fixed::<F>(rys_tab, x_rys, urys, wrys, pie4, nroots);
                     }
 
                     // rijrx = center_p - ri (host fill uses ri here).
@@ -1093,6 +1090,10 @@ fn run_ssc_scalar_device<R: Runtime>(
     let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
     let out_zero = vec![0.0_f64; out_len];
     let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+    // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+    let rys_tab_h =
+        client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
 
     macro_rules! launch_with {
         ($nr:literal) => {
@@ -1100,6 +1101,7 @@ fn run_ssc_scalar_device<R: Runtime>(
                 client,
                 crate::plane::single_cube_count(),
                 crate::plane::backend_plane_cube_dim::<R>(client),
+                ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
@@ -1375,6 +1377,10 @@ mod device_tests {
         let u_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+        // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+        // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+        let rys_tab_h =
+            client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
 
         let common_factor = ((PI * PI * PI) * 2.0 / SQRTPI
             * common_fac_sp(0)
@@ -1385,6 +1391,7 @@ mod device_tests {
             &client,
             crate::plane::single_cube_count(),
             crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
+            unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },

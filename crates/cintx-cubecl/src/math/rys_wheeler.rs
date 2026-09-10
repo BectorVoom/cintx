@@ -3327,11 +3327,20 @@ pub(crate) const EXT_TAB_SMALLX_R1: u32 = 662;
 pub(crate) const EXT_TAB_SMALLX_W0: u32 = 740;
 /// Offset of `POLY_SMALLX_W1` (78 f64).
 pub(crate) const EXT_TAB_SMALLX_W1: u32 = 818;
+/// Offset of `POLY_LARGEX_RT` (78 f64) — the vendor's global
+/// `x >= 35 + nroots*5` table, read at the same triangular offset.
+///
+/// The fixed-order entry ([`crate::math::rys::rys_roots_fixed`]) needs these
+/// as much as the extended one does: `CINTrys_roots` takes both global
+/// branches before it ever reaches a per-order solver.
+pub(crate) const EXT_TAB_LARGEX_RT: u32 = 896;
+/// Offset of `POLY_LARGEX_WW` (78 f64).
+pub(crate) const EXT_TAB_LARGEX_WW: u32 = 974;
 /// Total length of the concatenated blob, in f64.
 ///
 /// Public because a family launcher that opts into the extended path has to
 /// create the buffer at exactly this length.
-pub const EXT_TABLES_LEN: usize = 896;
+pub const EXT_TABLES_LEN: usize = 1052;
 
 /// Build the concatenated extended-Rys table blob the inline entry reads.
 ///
@@ -3353,6 +3362,8 @@ pub fn ext_rys_tables() -> Vec<f64> {
     blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_R1);
     blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_W0);
     blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_W1);
+    blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_LARGEX_RT);
+    blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_LARGEX_WW);
     debug_assert_eq!(blob.len(), EXT_TABLES_LEN);
     blob
 }
@@ -4837,9 +4848,10 @@ mod tests {
     #[test]
     fn ext_table_offsets_match_lengths() {
         use crate::math::rys_smallx_data::{
-            POLY_SMALLX_R0, POLY_SMALLX_R1, POLY_SMALLX_W0, POLY_SMALLX_W1,
+            POLY_LARGEX_RT, POLY_LARGEX_WW, POLY_SMALLX_R0, POLY_SMALLX_R1, POLY_SMALLX_W0,
+            POLY_SMALLX_W1,
         };
-        let expected: [(u32, usize); 13] = [
+        let expected: [(u32, usize); 15] = [
             (EXT_TAB_JACOBI_ALPHA, data::JACOBI_ALPHA.len()),
             (EXT_TAB_JACOBI_BETA, data::JACOBI_BETA.len()),
             (EXT_TAB_JACOBI_RN_PART2, data::JACOBI_RN_PART2.len()),
@@ -4853,6 +4865,8 @@ mod tests {
             (EXT_TAB_SMALLX_R1, POLY_SMALLX_R1.len()),
             (EXT_TAB_SMALLX_W0, POLY_SMALLX_W0.len()),
             (EXT_TAB_SMALLX_W1, POLY_SMALLX_W1.len()),
+            (EXT_TAB_LARGEX_RT, POLY_LARGEX_RT.len()),
+            (EXT_TAB_LARGEX_WW, POLY_LARGEX_WW.len()),
         ];
         let mut cursor = 0usize;
         for (offset, len) in expected {

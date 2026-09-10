@@ -79,7 +79,7 @@ use cubecl::client::ComputeClient;
 use cubecl::prelude::*;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI = sqrt(M_PI)`.
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
 ///
@@ -418,6 +418,14 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
             let rjrky = yjk;
             let rjrkz = zjk;
 
+            // libcint's `gempty` (`cint1e.c`/`cint3c1e.c` `PRIM2CTR0`): the first
+            // surviving primitive *assigns* into the accumulator and only later
+            // ones add to it. `0.0 + x == x` for every `x` except `-0.0`, where
+            // it yields `+0.0` — so zeroing and always accumulating silently
+            // loses the sign of a zero the vendor keeps. On this fixture that
+            // was 64 of 343 elements: numerically equal, different bits.
+            let mut gempty: u32 = 1u32;
+
             // Primitive loops: kp outer, then jp, then ip (matching CINT3c1e_loop_nopt).
             let mut kp = 0u32;
             while kp < nprim_k {
@@ -442,15 +450,37 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
 
                         // No `continue`: guard the primitive body, always advance ip.
                         if eijk <= expcutoff {
-                            // Per-primitive prefactor including contraction coeffs:
-                            //   dijk = exp(-eijk) / (aijk * sqrt(aijk))
-                            //   fac  = common_factor * dijk * ci*cj*ck
-                            let weight = ci_coeff * cj_coeff * ck_coeff;
-                            let inv_aijk = F::new(1.0_f32) / aijk;
-                            let dijk = F::exp(-eijk) * inv_aijk / F::sqrt(aijk);
-                            let fac = common_factor * dijk * weight;
+                            // `CINT3c1e_loop_nopt` (`cint3c1e.c:141-175`) folds
+                            // the coefficients one at a time, outermost first,
+                            // and divides once by the product:
+                            //
+                            // ```c
+                            // fac1k = common_factor * ck[kp];
+                            // fac1j = fac1k * cj[jp];
+                            // fac1i = fac1j * ci[ip] * exp(-eijk);
+                            // dijk  = fac1i / (aijk * sqrt(aijk));
+                            // ```
+                            //
+                            // Grouping the three coefficients into one `weight`
+                            // and reciprocal-multiplying by `aijk` are both the
+                            // same value in exact arithmetic and a different
+                            // `f64`; this is the seed of the whole recurrence.
+                            // Unconditional, unlike `cint3c1e.c`'s `x_ctr == 1`
+                            // guards: this kernel emits one work row per
+                            // `(ci, cj, ck)` triple and each row folds its own
+                            // selected coefficient, where libcint stages a
+                            // general contraction through `PRIM2CTR0`. For an
+                            // uncontracted shell the two coincide exactly; for
+                            // `nctr > 1` the accumulation order over primitives
+                            // still differs, which is the remaining gap here.
+                            let fac1k = common_factor * ck_coeff;
+                            let fac1j = fac1k * cj_coeff;
+                            let fac1i = fac1j * ci_coeff * F::exp(-eijk);
+                            let fac = fac1i / (aijk * F::sqrt(aijk));
 
-                            let aijk1 = F::new(0.5_f32) * inv_aijk;
+                            // `.5 / aijk` (`g3c1e.c:145`) — a true division, not
+                            // `0.5 * (1/aijk)`.
+                            let aijk1 = F::new(0.5_f32) / aijk;
 
                             // ── Fill the G-tensor ─────────────────────────────────
                             // Base case: gx[0]=1, gy[0]=1, gz[0]=fac.
@@ -608,7 +638,12 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                                                     let vy = g[(gy + iy + base_jky) as usize];
                                                     let vz = g[(gz + iz + base_jkz) as usize];
                                                     let out_idx = cjk_out_off + ci_idx;
-                                                    cart_out[out_idx as usize] += vx * vy * vz;
+                                                    let contrib = vx * vy * vz;
+                                                    if gempty == 1u32 {
+                                                        cart_out[out_idx as usize] = contrib;
+                                                    } else {
+                                                        cart_out[out_idx as usize] += contrib;
+                                                    }
 
                                                     ci_idx += 1u32;
                                                     ib += 1u32;
@@ -627,6 +662,9 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                                 }
                                 ka += 1u32;
                             }
+                            // Set after the *whole* element walk, so every
+                            // element of this primitive took the same branch.
+                            gempty = 0u32;
                         }
 
                         ip += 1u32;

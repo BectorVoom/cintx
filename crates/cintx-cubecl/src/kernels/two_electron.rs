@@ -31,7 +31,7 @@ use crate::kernels::f12::Gauge2eKind;
 use crate::kernels::pair_table::{PAIR_DATA_STRIDE, PAIR_INDEX_STRIDE};
 use crate::math::pdata::compute_pdata_host;
 use crate::math::root_vec::{roots_load, vrr_fill_axis_roots};
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys::rys_roots_fixed_rt;
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
 };
@@ -51,7 +51,7 @@ use std::f64::consts::PI;
 use std::sync::{Arc, Mutex};
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
 // Verbatim libcint literal, not `std::f64::consts::FRAC_PI_4`: result compatibility
@@ -85,8 +85,14 @@ fn common_fac_sp(l: u8) -> f64 {
 /// invoke [`launch_int2e_spsp1_spinor_quartet`] with the identical normalization
 /// the eval_raw path uses, without duplicating the constant.
 pub fn int2e_common_factor(li: u8, lj: u8, lk: u8, ll: u8) -> f64 {
-    let sp_factor = common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk) * common_fac_sp(ll);
-    (PI * PI * PI) * 2.0 / SQRTPI * sp_factor
+    // Left-to-right, one `CINTcommon_fac_sp` at a time — `g2e.c:54-56` is a
+    // single chained expression, so grouping the four into an `sp_factor` first
+    // and scaling once rounds differently.
+    (PI * PI * PI) * 2.0 / SQRTPI
+        * common_fac_sp(li)
+        * common_fac_sp(lj)
+        * common_fac_sp(lk)
+        * common_fac_sp(ll)
 }
 
 /// Enumerate Cartesian component triples (ix, iy, iz) with ix+iy+iz = l.
@@ -1080,10 +1086,18 @@ fn contract_block_elems<F: Float>(
             // Read-modify-write rather than `+=`: a `Slice` index does not
             // carry the compound-assignment expansion an `Array` does. Same
             // operands, same order.
-            let prev = acc[acc_slot as usize];
-            acc[acc_slot as usize] = prev + weight * sum;
+            if iempty == 1u32 {
+                acc[acc_slot as usize] = weight * sum;
+            } else {
+                let prev = acc[acc_slot as usize];
+                acc[acc_slot as usize] = prev + weight * sum;
+            }
         } else if arm == 1u32 {
-            cart_out[(out_off + q_elem) as usize] += weight * sum;
+            if iempty == 1u32 {
+                cart_out[(out_off + q_elem) as usize] = weight * sum;
+            } else {
+                cart_out[(out_off + q_elem) as usize] += weight * sum;
+            }
         } else if arm == 2u32 {
             // The `i` stage: this primitive quartet into `gctri[ci][q]`.
             let w = weight * sum;
@@ -1963,6 +1977,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                 ai += 1u32;
             }
         }
+        // libcint's `gempty`, at quartet scope: the first contributing
+        // primitive quartet *assigns* into the accumulator (or the output) and
+        // only later ones add. `0.0 + x == x` for every `x` except `-0.0`,
+        // where it gives `+0.0`, so zero-then-always-accumulate silently loses
+        // the sign of a zero the vendor keeps. `iempty` cannot serve here: it
+        // is reset per ket primitive pair for the staged arm, while the
+        // accumulator's lifetime is the whole quartet.
+        let mut qempty: u32 = 1u32;
 
         // Zero this quartet's output block across the slot's lanes. Skipped
         // under the accumulator, which writes every element it owns exactly
@@ -2199,10 +2221,6 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         let mut kl_row = kl_start;
         while kl_row < kl_stop {
             let kl_d = kl_row * comptime!(PAIR_DATA_STRIDE as u32);
-            let rklx = pair_data[kl_d as usize];
-            let rkly = pair_data[(kl_d + 1u32) as usize];
-            let rklz = pair_data[(kl_d + 2u32) as usize];
-            let fac_kl = pair_data[(kl_d + 3u32) as usize];
             let ccekl = pair_data[(kl_d + 4u32) as usize];
 
             // `cint2e.c:205` — the whole ket pair is under the threshold.
@@ -2228,6 +2246,32 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                 let ak = exps[(eoff_k + pk) as usize];
                 let al = exps[(eoff_l + pl) as usize];
                 let akl = ak + al;
+
+                // The **ket** pair data, inline — `CINT2e_loop_nopt`
+                // (`cint2e.c:202-213`), which is the path a caller with no
+                // optimizer takes and the one the oracle compares against:
+                //
+                // ```c
+                // akl = ak[kp] + al[lp];
+                // ekl = rr_kl * ak[kp] * al[lp] / akl;
+                // rkl[0] = (ak[kp]*rk[0] + al[lp]*rl[0]) / akl;
+                // ekl = exp(-ekl);
+                // ```
+                //
+                // This is **not** `CINTset_pairdata`'s form, which the pair
+                // table stores and the *bra* still uses (`pdata_base`, built by
+                // `CINTset_pairdata`, is the bra's alone in this loop). The ket
+                // divides by `akl` instead of reusing a reciprocal, and takes
+                // the weighted-sum centre instead of the interpolation — the
+                // same value in exact arithmetic, one ULP apart in `f64`.
+                let klx = rkx - rlx;
+                let kly = rky - rly;
+                let klz = rkz - rlz;
+                let rr_kl = klx * klx + kly * kly + klz * klz;
+                let fac_kl = F::exp(F::new(0.0_f32) - (rr_kl * ak * al / akl));
+                let rklx = (ak * rkx + al * rlx) / akl;
+                let rkly = (ak * rky + al * rly) / akl;
+                let rklz = (ak * rkz + al * rlz) / akl;
                 // `cint2e.c:212`: what is left of the budget for a bra pair.
                 let eijcutoff = expcutoff - ccekl;
                 let rklrxx = rklx - rx_kl_x;
@@ -2317,8 +2361,51 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             // *not* bounded by one, so a non-zero tolerance is a
                             // proxy, not a certificate: set it well below the
                             // accuracy actually wanted.
-                            fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor * fac_ij * fac_kl;
-                            if fac1 > prim_tol {
+                            // `envs->fac[0]`, built in `CINT2e_loop`'s own
+                            // nesting order (`cint2e.c:75-119`):
+                            //
+                            // ```c
+                            // fac1l = common_factor * cl[lp];
+                            // fac1k = fac1l * ck[kp];
+                            // fac1j = fac1k * cj[jp];
+                            // fac1i = fac1j * ci[ip] * expij * expkl;
+                            // ```
+                            //
+                            // then `fac1 = sqrt(a0/a1^3) * fac1[0]`
+                            // (`g2e.c:17`). Each uncontracted side's
+                            // coefficient enters here, at the seed of the G
+                            // tensor, instead of multiplying the finished
+                            // contraction — the recurrence is linear in it, so
+                            // the two agree to within a few ULP and not
+                            // bit-for-bit.
+                            let mut fac_env = common_factor;
+                            if nctr_l == 1u32 {
+                                fac_env = fac_env * coeffs[(coff_l + pl) as usize];
+                            }
+                            if nctr_k == 1u32 {
+                                fac_env = fac_env * coeffs[(coff_k + pk) as usize];
+                            }
+                            if nctr_j == 1u32 {
+                                fac_env = fac_env * coeffs[(coff_j + pj) as usize];
+                            }
+                            if nctr_i == 1u32 {
+                                fac_env = fac_env * coeffs[(coff_i + pi) as usize];
+                            }
+                            // `expijkl = pdata_ij->eij * ekl` and then
+                            // `fac1i = fac1j * ci[ip] * expijkl`
+                            // (`cint2e.c:238-240`): the two exponentials
+                            // multiply *each other* first, not the running
+                            // product in turn.
+                            fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * (fac_env * (fac_ij * fac_kl));
+                            // On the magnitude: now that the contraction
+                            // coefficients ride inside `fac1`, its sign is the
+                            // sign of their product, and a contracted s shell
+                            // routinely carries a negative one (`-0.0999…` for
+                            // O-2s in STO-3G). Testing the signed value would
+                            // discard every primitive quartet whose coefficient
+                            // product is negative — the same reason the 1e
+                            // nuclear arm tests `F::abs(fac1)`.
+                            if F::abs(fac1) > prim_tol {
                                 state = 2u32;
                             }
                             rijrxx = rijx - rx_ij_x;
@@ -2361,25 +2448,15 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                         // tens of operations, and every lane still walks
                         // the same arm (a quartet's order is cube-uniform).
                         if comptime!(nr_max <= 5u32) {
-                            if nroots == 1u32 {
-                                rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if nroots == 2u32 {
-                                if comptime!(nr_max >= 2u32) {
-                                    rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                }
-                            } else if nroots == 3u32 {
-                                if comptime!(nr_max >= 3u32) {
-                                    rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                }
-                            } else if nroots == 4u32 {
-                                if comptime!(nr_max >= 4u32) {
-                                    rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                }
-                            } else {
-                                if comptime!(nr_max >= 5u32) {
-                                    rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                }
-                            }
+                            // `rys_roots_fixed_rt` is the whole of
+                            // `CINTrys_roots` for a *runtime* order: the two
+                            // global table branches first, the per-order fit
+                            // only in the band between them. It keeps the same
+                            // `nr_max` guards, so a `nroots <= 3` program still
+                            // does not compile `rys_root5`.
+                            rys_roots_fixed_rt::<F>(
+                                rys_tab, x_rys, &mut urys, &mut wrys, pie4, nroots, nr_max,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi
                             // entry (task 33-01), reachable only once
@@ -3194,26 +3271,13 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 // The weight: the four coefficients' product
                                 // for a segmented quartet, the segmented
                                 // shells' product for a staged one.
-                                let mut w = F::new(1.0_f32);
-                                if is_uncontracted {
-                                    w = coeffs[(coff_i + pi_b) as usize]
-                                        * coeffs[(coff_j + pj_b) as usize]
-                                        * coeffs[(coff_k + pk) as usize]
-                                        * coeffs[(coff_l + pl) as usize];
-                                } else if use_staged {
-                                    if nctr_i == 1u32 {
-                                        w *= coeffs[(coff_i + pi_b) as usize];
-                                    }
-                                    if nctr_j == 1u32 {
-                                        w *= coeffs[(coff_j + pj_b) as usize];
-                                    }
-                                    if nctr_k == 1u32 {
-                                        w *= coeffs[(coff_k + pk) as usize];
-                                    }
-                                    if nctr_l == 1u32 {
-                                        w *= coeffs[(coff_l + pl) as usize];
-                                    }
-                                }
+                                // Every uncontracted side's coefficient is
+                                // already inside `fac1`, where `CINT2e_loop`
+                                // puts it, so the block weight is 1 and only a
+                                // *contracted* side's coefficient is still
+                                // applied — by `stage_contract_out`, which is
+                                // libcint's `PRIM2CTR`.
+                                let w = F::new(1.0_f32);
                                 g_slab[(m + 1u32) as usize] = w;
                                 g_slab[(m + 2u32) as usize] = F::cast_from(pi_b);
                                 g_slab[(m + 3u32) as usize] = F::cast_from(pj_b);
@@ -3262,31 +3326,14 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                         }
                         if comptime!(shared_tier == 0u32) {
                             if st == 2u32 {
-                                if is_uncontracted {
-                                    w_b = coeffs[(coff_i + pi) as usize]
-                                        * coeffs[(coff_j + pj) as usize]
-                                        * coeffs[(coff_k + pk) as usize]
-                                        * coeffs[(coff_l + pl) as usize];
-                                } else if use_staged {
-                                    // The staged path's primitive weight: the
-                                    // coefficients of the *segmented* shells
-                                    // only, folded the way libcint folds them
-                                    // into `fac1` when `x_ctr == 1`; a generally
-                                    // contracted shell's coefficients are
-                                    // applied by its stage.
-                                    if nctr_i == 1u32 {
-                                        w_b *= coeffs[(coff_i + pi) as usize];
-                                    }
-                                    if nctr_j == 1u32 {
-                                        w_b *= coeffs[(coff_j + pj) as usize];
-                                    }
-                                    if nctr_k == 1u32 {
-                                        w_b *= coeffs[(coff_k + pk) as usize];
-                                    }
-                                    if nctr_l == 1u32 {
-                                        w_b *= coeffs[(coff_l + pl) as usize];
-                                    }
-                                }
+                                // The global-slab arm used to rebuild the
+                                // primitive weight here rather than read the
+                                // meta row. There is nothing left to rebuild:
+                                // every segmented shell's coefficient is inside
+                                // `fac1` (`cint2e.c:75-119`) and every generally
+                                // contracted one is applied by its stage, so the
+                                // weight is 1 on both arms.
+                                w_b = F::new(1.0_f32);
                             }
                         }
                         if st != 0u32 {
@@ -3349,7 +3396,10 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 out_off,
                                 ctr_i_off,
                                 mb,
-                                iempty,
+                                // The staged arm's flag is per ket primitive
+                                // pair; arms 0/1 accumulate for the whole
+                                // quartet and use `qempty`.
+                                if use_staged { iempty } else { qempty },
                                 ctr_arm,
                                 coff_i,
                                 pi,
@@ -3370,6 +3420,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             if use_staged {
                                 iempty = 0u32;
                             }
+                            qempty = 0u32;
                         }
                         b += 1u32;
                     }
@@ -9118,8 +9169,12 @@ fn launch_two_electron_typed<F: CintFloat>(
     let block_len = nfi * nfj * nfk * nfl;
 
     // Pitfall 2: all four common_fac_sp factors are required for 2e.
-    let sp_factor = common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk) * common_fac_sp(ll);
-    let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * sp_factor;
+    // `g2e.c:54-56` chains the four factors; see `int2e_common_factor`.
+    let common_factor = (PI * PI * PI) * 2.0 / SQRTPI
+        * common_fac_sp(li)
+        * common_fac_sp(lj)
+        * common_fac_sp(lk)
+        * common_fac_sp(ll);
 
     let n_prim_i = shell_i.nprim as usize;
     let n_prim_j = shell_j.nprim as usize;

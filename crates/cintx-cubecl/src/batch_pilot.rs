@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-const SQRTPI: f64 = 1.772_453_850_905_515_9;
+const SQRTPI: f64 = 1.772_453_850_905_516_027_298_167_483_341_145_1;
 
 /// One independent single-contraction Cartesian s-s tuple.
 ///

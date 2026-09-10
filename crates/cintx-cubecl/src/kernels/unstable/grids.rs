@@ -51,7 +51,9 @@ use super::shared::{apply_nabla_i_3axis, apply_nabla_j_3axis, cart_comps, common
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_2e_step_host};
 use crate::math::pdata::compute_pdata_host;
+use crate::math::rys::rys_roots_fixed;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5, rys_roots_host};
+use crate::math::rys_wheeler::EXT_TABLES_LEN;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::cintxRsError;
@@ -128,7 +130,7 @@ fn grids_contract_nuclear_like(
         let tau = u_n / (1.0 + u_n);
 
         // Modified recurrence coefficient b10 = aij2 * (1 - tau)
-        let rt = pd.aij2 * (1.0 - tau);
+        let rt = pd.aij2 - pd.aij2 * tau;
 
         // VRR c00: (P - ri) + tau * crij = (P - ri) + tau * (rc - rp)
         let c00 = [
@@ -260,6 +262,7 @@ fn grids_hrr_axis<F: Float>(g: &mut Array<F>, off: u32, rirj: F, dj: u32, li_max
 #[cube(launch)]
 #[allow(clippy::too_many_arguments)]
 fn grids_scalar_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     urys: &mut Array<F>,
     wrys: &mut Array<F>,
@@ -310,16 +313,10 @@ fn grids_scalar_kernel<F: Float + CubeElement>(
 
         // §20: the fixed-order solvers this dispatch may need, selected at
         // comptime so only one is emitted per specialization.
-        if comptime!(nroots == 1u32) {
-            rys_root1::<F>(x_boys, urys, wrys, pie4);
-        } else if comptime!(nroots == 2u32) {
-            rys_root2::<F>(x_boys, urys, wrys, pie4);
-        } else if comptime!(nroots == 3u32) {
-            rys_root3::<F>(x_boys, urys, wrys, pie4);
-        } else if comptime!(nroots == 4u32) {
-            rys_root4::<F>(x_boys, urys, wrys, pie4);
-        } else {
-            rys_root5::<F>(x_boys, urys, wrys, pie4);
+        if comptime!(nroots <= 5u32) {
+            // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+            // the two global table branches the per-order fits sit behind.
+            rys_roots_fixed::<F>(rys_tab, x_boys, urys, wrys, pie4, nroots);
         }
 
         let fac1 = two_pi * fac / zeta_ab;
@@ -432,6 +429,10 @@ fn run_grids_nuclear_device<R: Runtime>(
     let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
     let out_zero = vec![0.0_f64; out_len];
     let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+    // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+    let rys_tab_h =
+        client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
     let two_pi = 2.0 * std::f64::consts::PI;
 
     macro_rules! launch_with {
@@ -440,6 +441,7 @@ fn run_grids_nuclear_device<R: Runtime>(
                 client,
                 crate::plane::single_cube_count(),
                 crate::plane::backend_plane_cube_dim::<R>(client),
+                ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                 unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis as usize) },
                 unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
@@ -643,6 +645,7 @@ fn grids_nabla_j_axis<F: Float>(
 #[cube(launch)]
 #[allow(clippy::too_many_arguments)]
 fn grids_deriv_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     g0: &mut Array<F>,
     g1: &mut Array<F>,
     g2: &mut Array<F>,
@@ -713,16 +716,10 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
 
         // §20: the fixed-order solvers this dispatch may need, selected at
         // comptime so only one is emitted per specialization.
-        if comptime!(nroots == 1u32) {
-            rys_root1::<F>(x_boys, urys, wrys, pie4);
-        } else if comptime!(nroots == 2u32) {
-            rys_root2::<F>(x_boys, urys, wrys, pie4);
-        } else if comptime!(nroots == 3u32) {
-            rys_root3::<F>(x_boys, urys, wrys, pie4);
-        } else if comptime!(nroots == 4u32) {
-            rys_root4::<F>(x_boys, urys, wrys, pie4);
-        } else {
-            rys_root5::<F>(x_boys, urys, wrys, pie4);
+        if comptime!(nroots <= 5u32) {
+            // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+            // the two global table branches the per-order fits sit behind.
+            rys_roots_fixed::<F>(rys_tab, x_boys, urys, wrys, pie4, nroots);
         }
 
         let fac1 = two_pi * fac / zeta_ab;
@@ -948,6 +945,10 @@ fn run_grids_deriv_device<R: Runtime>(
     let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
     let out_zero = vec![0.0_f64; out_len];
     let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+    // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+    let rys_tab_h =
+        client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
     let two_pi = 2.0 * std::f64::consts::PI;
 
     macro_rules! launch_with {
@@ -956,6 +957,7 @@ fn run_grids_deriv_device<R: Runtime>(
                 client,
                 crate::plane::single_cube_count(),
                 crate::plane::backend_plane_cube_dim::<R>(client),
+                ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                 unsafe { ArrayArg::from_raw_parts(g0_h.clone(), axis_len) },
                 unsafe { ArrayArg::from_raw_parts(g1_h.clone(), axis_len) },
                 unsafe { ArrayArg::from_raw_parts(g2_h.clone(), axis_len) },
@@ -1124,7 +1126,7 @@ fn grids_contract_ip(
         let u_n = u_arr[n];
         let w_n = w_arr[n];
         let tau = u_n / (1.0 + u_n);
-        let rt = pd.aij2 * (1.0 - tau);
+        let rt = pd.aij2 - pd.aij2 * tau;
         let c00 = [
             (rp[0] - ri[0]) + tau * crij[0],
             (rp[1] - ri[1]) + tau * crij[1],
@@ -1241,7 +1243,7 @@ fn grids_contract_ipip(
         let u_n = u_arr[n];
         let w_n = w_arr[n];
         let tau = u_n / (1.0 + u_n);
-        let rt = pd.aij2 * (1.0 - tau);
+        let rt = pd.aij2 - pd.aij2 * tau;
         let c00 = [
             (rp[0] - ri[0]) + tau * crij[0],
             (rp[1] - ri[1]) + tau * crij[1],
@@ -1392,7 +1394,7 @@ fn grids_contract_ipvip(
         let u_n = u_arr[n];
         let w_n = w_arr[n];
         let tau = u_n / (1.0 + u_n);
-        let rt = pd.aij2 * (1.0 - tau);
+        let rt = pd.aij2 - pd.aij2 * tau;
         let c00 = [
             (rp[0] - ri[0]) + tau * crij[0],
             (rp[1] - ri[1]) + tau * crij[1],
@@ -2082,10 +2084,15 @@ mod tests {
         let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let out_zero = vec![0.0_f32; 1];
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+        // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+        // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+        let rys_tab_h =
+            client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
         grids_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
             crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
+            unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
             unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3) },
             unsafe { ArrayArg::from_raw_parts(u_h, 1) },
             unsafe { ArrayArg::from_raw_parts(w_h, 1) },
@@ -2368,12 +2375,17 @@ mod tests {
             let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
             let out_zero = vec![0.0_f32; out_len];
             let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+            // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+            // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+            let rys_tab_h = client
+                .create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
             macro_rules! launch_f32 {
                 ($nr:expr, $op:expr) => {
                     grids_deriv_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                         &client,
                         crate::plane::single_cube_count(),
                         crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
+                        unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
                         unsafe { ArrayArg::from_raw_parts(g0_h.clone(), axis_len) },
                         unsafe { ArrayArg::from_raw_parts(g1_h.clone(), axis_len) },
                         unsafe { ArrayArg::from_raw_parts(g2_h.clone(), axis_len) },

@@ -42,12 +42,12 @@ use crate::kernels::two_electron::{BatchOptions, ResidentBasis};
 use crate::kernels::two_electron::{
     build_2e_shape, build_2e_shape_omega, fill_g_tensor_2e_range, two_e_shape_as_f12,
 };
+use crate::math::rys::rys_roots_fixed;
 // Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
 use crate::kernels::f12::{gout_ip1ip2_l, gout_ipip1, gout_ipip2_l, gout_ipvip1};
 use crate::math::pdata::PairData;
 use crate::math::pdata::compute_pdata_host;
 use crate::math::root_vec::{roots_load, vrr_fill_axis_roots, vrr_fill_axis_roots_ket};
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
 };
@@ -65,7 +65,7 @@ use cubecl::prelude::*;
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI = sqrt(M_PI)`.
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Host Rys nroots ceiling (FND-02 Wheeler engine supports nroots 6..12). The
 /// multi-center Hessian families (ipip1/ipip2) route through the HOST
@@ -670,9 +670,20 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
             let li = class_shape[srow as usize];
             let lj = class_shape[(srow + 1u32) as usize];
             let lk = class_shape[(srow + 2u32) as usize];
+            // Whether the launcher exchanged `i` and `j`. Used as *arithmetic*
+            // on a 0/1 flag rather than a branch: a runtime `if` around a loop
+            // bound does not lower the way ordinary Rust does inside `#[cube]`
+            // — emitting one corrupted this kernel even on the path where it
+            // was never taken. Selecting integer offsets instead is exact.
+            let swap = class_shape[(srow + 3u32) as usize];
+            let nswap = 1u32 - swap;
             let common_factor = class_factor[cls as usize];
 
             let nmax = li + lj;
+            // libcint's `ibase` pivot (`g2e.c:139-150`) needs no branch here:
+            // the host launcher hands this kernel its shells in canonical
+            // `li >= lj` order and transposes the read-back, which lands on the
+            // same reference centre and the same `rirj` sign the pivot would.
             let mmax = lk;
             let dn = nrys;
             let dm = nrys * (nmax + 1u32);
@@ -727,33 +738,83 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
                 oi += 1u32;
             }
 
-            // rirj = ri - rj (for the j-HRR transfer).
+            // `envs->rirj`, whose sign flips with `ibase` so the transfer
+            // body stays the single expression `rirj*g(-1) + g(-1,+1)`.
             let rirj_x = rix - rjx;
             let rirj_y = riy - rjy;
             let rirj_z = riz - rjz;
 
+            // libcint's `gempty` (`PRIM2CTR0`): the first surviving primitive
+            // assigns, later ones add. `0.0 + x == x` for every `x` but `-0.0`,
+            // so zero-then-always-accumulate loses a zero's sign.
+            let mut gempty: u32 = 1u32;
+
             let mut kp = 0u32;
             while kp < nprim_k {
                 let ak = exps[(eoff_k + kp) as usize];
-                let mut jp = 0u32;
-                while jp < nprim_j {
-                    let aj = exps[(eoff_j + jp) as usize];
-                    let mut ip = 0u32;
-                    while ip < nprim_i {
-                        let ai = exps[(eoff_i + ip) as usize];
+                // `CINT3c2e_loop_nopt` nests the caller's `jp` outside its
+                // `ip`; under `swap` the canonical `i` *is* the caller's `j`,
+                // so the outer loop walks the canonical `i` instead. The
+                // nesting fixes the order the primitive contributions are
+                // summed, and reversing it is a different sum.
+                let n_outer = nprim_j * nswap + nprim_i * swap;
+                let n_inner = nprim_i * nswap + nprim_j * swap;
+                let mut po = 0u32;
+                while po < n_outer {
+                    let mut pinn = 0u32;
+                    while pinn < n_inner {
+                        // Canonical primitive indices, whichever way they run.
+                        let ip = pinn * nswap + po * swap;
+                        let jp = po * nswap + pinn * swap;
+                        // The caller's `i`/`j` selected by *offset*, so the
+                        // values are read, never blended.
+                        let e_oi = (eoff_i + ip) * nswap + (eoff_j + jp) * swap;
+                        let e_oj = (eoff_j + jp) * nswap + (eoff_i + ip) * swap;
+                        let a_oi = exps[e_oi as usize];
+                        let a_oj = exps[e_oj as usize];
+                        let k_oi = (coff_i + ip) * nswap + (coff_j + jp) * swap;
+                        let k_oj = (coff_j + jp) * nswap + (coff_i + ip) * swap;
+                        let c_oi = coeffs[k_oi as usize];
+                        let c_oj = coeffs[k_oj as usize];
+                        let g_oi = ci3 * nswap + cj3 * swap;
+                        let g_oj = cj3 * nswap + ci3 * swap;
+                        let r_oi_x = centers[g_oi as usize];
+                        let r_oi_y = centers[(g_oi + 1u32) as usize];
+                        let r_oi_z = centers[(g_oi + 2u32) as usize];
+                        let r_oj_x = centers[g_oj as usize];
+                        let r_oj_y = centers[(g_oj + 1u32) as usize];
+                        let r_oj_z = centers[(g_oj + 2u32) as usize];
+                        let nctr_oi = nctr_i * nswap + nctr_j * swap;
+                        let nctr_oj = nctr_j * nswap + nctr_i * swap;
 
-                        // ── Inlined Gaussian-product pdata (compute_pdata_host) ──
-                        // zeta_ab = ai+aj; center_p = (ai*ri+aj*rj)/zeta_ab;
-                        // fac = exp(-ai*aj/zeta_ab * |ri-rj|^2).
-                        let zeta_ab = ai + aj;
-                        let px = (ai * rix + aj * rjx) / zeta_ab;
-                        let py = (ai * riy + aj * rjy) / zeta_ab;
-                        let pz = (ai * riz + aj * rjz) / zeta_ab;
-                        let rij_x = rix - rjx;
-                        let rij_y = riy - rjy;
-                        let rij_z = riz - rjz;
+                        // ── Inlined `CINTset_pairdata` (`optimizer.c:320-333`) ──
+                        //
+                        // ```c
+                        // aij = 1/(ai[ip] + aj[jp]);
+                        // eij = rr_ij * ai[ip] * aj[jp] * aij;
+                        // wj  = aj[jp] * aij;
+                        // pdata->rij[0] = ri[0] + wj * (rj[0]-ri[0]);
+                        // pdata->eij    = exp(-eij);
+                        // ```
+                        //
+                        // The reciprocal is formed once and reused; the centre
+                        // is an interpolation from `ri`, not `(ai*ri+aj*rj)/aij`.
+                        // Both rewrites are exact-arithmetic identities and
+                        // different `f64`, and this seeds the whole recurrence.
+                        // On the caller's `i`/`j`: `rr` is symmetric, but the
+                        // product order, the reciprocal's operand and the
+                        // interpolation base are not.
+                        let zeta_ab = a_oi + a_oj;
+                        let aij_inv = F::new(1.0_f32) / zeta_ab;
+                        let rij_x = r_oi_x - r_oj_x;
+                        let rij_y = r_oi_y - r_oj_y;
+                        let rij_z = r_oi_z - r_oj_z;
                         let rr_ij = rij_x * rij_x + rij_y * rij_y + rij_z * rij_z;
-                        let pair_fac = F::exp(-ai * aj / zeta_ab * rr_ij);
+                        let pair_fac = F::exp(-(rr_ij * a_oi * a_oj * aij_inv));
+                        let wj = a_oj * aij_inv;
+                        let px = r_oi_x + wj * (r_oj_x - r_oi_x);
+                        let py = r_oi_y + wj * (r_oj_y - r_oi_y);
+                        let pz = r_oi_z + wj * (r_oj_z - r_oi_z);
 
                         // 2e-style pair: aij = zeta_ab, akl = ak.
                         let aij = zeta_ab;
@@ -766,7 +827,32 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
 
                         let a1 = aij * akl;
                         let a0 = a1 / (aij + akl);
-                        let fac_env = common_factor * pair_fac;
+                        // `CINT3c2e_loop_nopt` (`cint3c2e.c:160-190`):
+                        //
+                        // ```c
+                        // fac1k = common_factor * ck[kp];
+                        // fac1j = fac1k * cj[jp];
+                        // fac1i = fac1j * ci[ip] * expij;
+                        // ```
+                        //
+                        // then `fac1 = sqrt(a0/a1^3) * fac1[0]`. Each
+                        // uncontracted side's coefficient enters at the seed,
+                        // not on the finished block.
+                        let mut fac1k = common_factor;
+                        if nctr_k == 1u32 {
+                            fac1k = common_factor * coeffs[(coff_k + kp) as usize];
+                        }
+                        // `fac1j = fac1k * cj` then `* ci`, on the caller's
+                        // `i`/`j` — a swapped triple would otherwise multiply
+                        // the two coefficients the other way round.
+                        let mut fac1j = fac1k;
+                        if nctr_oj == 1u32 {
+                            fac1j = fac1k * c_oj;
+                        }
+                        let mut fac_env = fac1j * pair_fac;
+                        if nctr_oi == 1u32 {
+                            fac_env = fac1j * c_oi * pair_fac;
+                        }
                         let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * fac_env;
 
                         // Primitive-triple screening (Task 34-D2) — the same
@@ -788,25 +874,27 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
                         // bit. The Rys weights and the VRR/HRR coefficients are
                         // *not* bounded by one, so a non-zero tolerance is a
                         // proxy, not a certificate.
-                        if fac1 > prim_tol {
+                        // On the magnitude: the contraction coefficients are
+                        // inside `fac1` now, so its sign is the sign of their
+                        // product and a contracted s shell routinely carries a
+                        // negative one. See the same test in `two_electron`.
+                        if F::abs(fac1) > prim_tol {
                             let x_rys = a0 * rr;
 
-                            // rijrx = P - Ri (the bra-side reference displacement).
+                            // `rijrx = rij - rx_in_rijrx`: `ri` under `ibase`,
+                            // `rj` otherwise (`g2e.c:139-150`).
                             let rijrx_x = px - rix;
                             let rijrx_y = py - riy;
                             let rijrx_z = pz - riz;
 
                             // Rys roots/weights for this primitive triple.
-                            if comptime!(nroots == 1u32) {
-                                rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 2u32) {
-                                rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 3u32) {
-                                rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 4u32) {
-                                rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                            } else if comptime!(nroots == 5u32) {
-                                rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                            if comptime!(nroots <= 5u32) {
+                                // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                                // fixed orders: the two global table branches first, the
+                                // per-order polynomial fit only in the band between them.
+                                rys_roots_fixed::<F>(
+                                    rys_tab, x_rys, &mut urys, &mut wrys, pie4, nroots,
+                                );
                             } else {
                                 // nroots 6..=12: the inline Wheeler/Jacobi entry
                                 // (task 33-01). Reachable only when
@@ -1022,30 +1110,43 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
                                             i += 1u32;
                                         }
 
-                                        // HRR transfer along j.
-                                        let mut j = 1u32;
-                                        while j <= lj {
-                                            let prev = (j - 1u32) * work_stride;
-                                            let cur = j * work_stride;
-                                            let i_max = nmax - j;
-                                            let mut i2 = 0u32;
-                                            while i2 <= i_max {
-                                                work[(wbase + cur + i2) as usize] = rirj
-                                                    * work[(wbase + prev + i2) as usize]
-                                                    + work[(wbase + prev + i2 + 1u32) as usize];
-                                                i2 += 1u32;
+                                        // The transfer raises the index the 2D
+                                        // ladder was *not* built along: `j`
+                                        // under `ibase` (the ladder is `i`),
+                                        // and `i` otherwise. Same body, same
+                                        // operand order — `CINTg0_lj2d_4d` and
+                                        // `CINTg0_il2d_4d` are the one
+                                        // expression `rirj*g(-1) + g(-1,+1)`
+                                        // read from the two sides.
+                                        let raise_max = lj;
+                                        let mut r = 1u32;
+                                        while r <= raise_max {
+                                            let prev = (r - 1u32) * work_stride;
+                                            let cur = r * work_stride;
+                                            let base_max = nmax - r;
+                                            let mut b = 0u32;
+                                            while b <= base_max {
+                                                work[(wbase + cur + b) as usize] = rirj
+                                                    * work[(wbase + prev + b) as usize]
+                                                    + work[(wbase + prev + b + 1u32) as usize];
+                                                b += 1u32;
                                             }
-                                            j += 1u32;
+                                            r += 1u32;
                                         }
 
-                                        // Scatter (i in 0..=li, j in 0..=lj) into g_split.
+                                        // Scatter into `g_split`. The raised
+                                        // index is `j` under `ibase` and `i`
+                                        // otherwise, so the `work` subscript
+                                        // transposes with the branch while the
+                                        // output layout does not.
                                         let mut jj = 0u32;
                                         while jj <= lj {
                                             let mut ii = 0u32;
                                             while ii <= li {
                                                 let out_idx = ((root * nk + k) * nj + jj) * ni + ii;
+                                                let w_idx = jj * work_stride + ii;
                                                 g_split[(axis_out_off + out_idx) as usize] =
-                                                    work[(wbase + jj * work_stride + ii) as usize];
+                                                    work[(wbase + w_idx) as usize];
                                                 ii += 1u32;
                                             }
                                             jj += 1u32;
@@ -1115,30 +1216,53 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
                                                     // before) is correct only when every
                                                     // `nctr` is 1.
                                                     let elem = (k_idx * ncj + j_idx) * nci + i_idx;
+                                                    // Only a *contracted* side's
+                                                    // coefficient is applied here;
+                                                    // an uncontracted one already
+                                                    // rode in through `fac1`.
                                                     let mut cci = 0u32;
                                                     while cci < nctr_i {
-                                                        let coeff_i_val = coeffs
-                                                            [(coff_i + ip * nctr_i + cci) as usize];
+                                                        let mut coeff_i_val = F::new(1.0_f32);
+                                                        if nctr_i > 1u32 {
+                                                            coeff_i_val =
+                                                                coeffs[(coff_i + ip * nctr_i + cci)
+                                                                    as usize];
+                                                        }
                                                         let mut ccj = 0u32;
                                                         while ccj < nctr_j {
-                                                            let coeff_j_val =
-                                                                coeffs[(coff_j + jp * nctr_j + ccj)
+                                                            let mut coeff_j_val = F::new(1.0_f32);
+                                                            if nctr_j > 1u32 {
+                                                                coeff_j_val = coeffs[(coff_j
+                                                                    + jp * nctr_j
+                                                                    + ccj)
                                                                     as usize];
+                                                            }
                                                             let mut cck = 0u32;
                                                             while cck < nctr_k {
-                                                                let coeff_k_val = coeffs[(coff_k
-                                                                    + kp * nctr_k
-                                                                    + cck)
-                                                                    as usize];
+                                                                let mut coeff_k_val =
+                                                                    F::new(1.0_f32);
+                                                                if nctr_k > 1u32 {
+                                                                    coeff_k_val = coeffs[(coff_k
+                                                                        + kp * nctr_k
+                                                                        + cck)
+                                                                        as usize];
+                                                                }
                                                                 let ctr_base =
                                                                     ((cci * nctr_j + ccj) * nctr_k
                                                                         + cck)
                                                                         * block_len;
-                                                                cart_out[(out_off + ctr_base + elem)
-                                                                    as usize] += val
+                                                                let contrib = val
                                                                     * coeff_i_val
                                                                     * coeff_j_val
                                                                     * coeff_k_val;
+                                                                let oidx =
+                                                                    (out_off + ctr_base + elem)
+                                                                        as usize;
+                                                                if gempty == 1u32 {
+                                                                    cart_out[oidx] = contrib;
+                                                                } else {
+                                                                    cart_out[oidx] += contrib;
+                                                                }
                                                                 cck += 1u32;
                                                             }
                                                             ccj += 1u32;
@@ -1163,11 +1287,14 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
                                 }
                                 ka += 1u32;
                             }
+                            // Cleared after the *whole* element walk, so every
+                            // element of this primitive took the same branch.
+                            gempty = 0u32;
                         }
 
-                        ip += 1u32;
+                        pinn += 1u32;
                     }
-                    jp += 1u32;
+                    po += 1u32;
                 }
                 kp += 1u32;
             }
@@ -1179,7 +1306,7 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement, N: Size>(
 
 /// `u32` shape scalars per class row of the device shape table: `li, lj, lk`,
 /// in the kernel's canonical `li >= lj` order.
-const THREE_C2E_SHAPE_STRIDE: usize = 3;
+const THREE_C2E_SHAPE_STRIDE: usize = 4;
 
 /// `u32` shape scalars per class row of the **derivative** shape table:
 /// `li, lj, lk, di, dk, dl, dj, g_size, nmax, mmax, ibase`.
@@ -1298,7 +1425,14 @@ impl ThreeC2eDerivLaunchGroup {
 pub struct ThreeC2eLaunchGroup {
     /// Rys order — the kernel's only comptime parameter.
     pub nroots: u32,
-    /// [`THREE_C2E_SHAPE_STRIDE`] `u32` per merged class: canonical `li, lj, lk`.
+    /// [`THREE_C2E_SHAPE_STRIDE`] `u32` per merged class: canonical `li, lj,
+    /// lk`, then `swap` — whether the launcher exchanged `i` and `j`.
+    ///
+    /// The canonicalization is right for the recurrence (it lands on the same
+    /// reference centre and `rirj` sign libcint's `ibase` pivot would) but is
+    /// **not bit-neutral**: the coefficient chain, the pair centre, the exponent
+    /// product and the primitive loop nesting all have to be formed in the
+    /// caller's order to round the way libcint rounds.
     pub class_shape: Vec<u32>,
     /// One libcint `common_factor` per merged class.
     pub class_factor: Vec<f64>,
@@ -1331,9 +1465,10 @@ impl ThreeC2eLaunchGroup {
     /// Append a class and return the index its triple rows carry.
     ///
     /// `li`/`lj` must already be canonical (`li >= lj`), as the kernel assumes.
-    pub fn push_class(&mut self, li: u32, lj: u32, lk: u32, common_factor: f64) -> u32 {
+    pub fn push_class(&mut self, li: u32, lj: u32, lk: u32, swap: bool, common_factor: f64) -> u32 {
         let index = self.class_factor.len() as u32;
-        self.class_shape.extend_from_slice(&[li, lj, lk]);
+        self.class_shape
+            .extend_from_slice(&[li, lj, lk, u32::from(swap)]);
         self.class_factor.push(common_factor);
 
         let (li_u, lj_u, lk_u) = (li as usize, lj as usize, lk as usize);
@@ -1758,6 +1893,7 @@ fn evaluate_3c2e_batch_inner(
             u32::from(li),
             u32::from(lj),
             u32::from(lk),
+            swap_ij,
             // `CINTinit_int3c2e_EnvVars`: pi^3 * 2/sqrt(pi) * the three fac_sp.
             (PI * PI * PI) * 2.0 / SQRTPI
                 * common_fac_sp(li)
@@ -2017,6 +2153,10 @@ fn run_3c2e_device<R: Runtime>(
     coeff_i: &[f64],
     coeff_j: &[f64],
     coeff_k: &[f64],
+    // Did the caller exchange `i` and `j` to reach the canonical `li >= lj`
+    // this function is handed? The kernel needs it: the canonicalization is
+    // not bit-neutral for the order-sensitive scalars.
+    swap_ij: bool,
 ) -> Vec<f64> {
     let (li_u, lj_u, lk_u) = (li as usize, lj as usize, lk as usize);
     let nci = (li_u + 1) * (li_u + 2) / 2;
@@ -2042,7 +2182,9 @@ fn run_3c2e_device<R: Runtime>(
     }
 
     let mut group = ThreeC2eLaunchGroup::new(nroots);
-    let class_index = group.push_class(li, lj, lk, common_factor);
+    // `launch_center_3c2e_typed` has already exchanged the shells to reach
+    // canonical order and passes that here, so this path must say so.
+    let class_index = group.push_class(li, lj, lk, swap_ij, common_factor);
     group.triples.extend_from_slice(&[0, 1, 2, 0, class_index]);
     group.out_len = out_len;
 
@@ -2301,16 +2443,13 @@ fn center_3c2e_ip1_kernel<F: Float + CubeElement, N: Size>(
                         // rklrx = rkl - rl(=rk) = 0; rkrl = rl - rk = 0.
 
                         // Rys roots/weights.
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 5u32) {
-                            rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                            // fixed orders: the two global table branches first, the
+                            // per-order polynomial fit only in the band between them.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_rys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi entry
                             // (task 33-01). Reachable only once
@@ -3718,16 +3857,13 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement, N: Size>(
                         // rklrx = rkl - rl(=rk) = 0; rkrl = rl - rk = 0.
 
                         // Rys roots/weights.
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 5u32) {
-                            rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                            // fixed orders: the two global table branches first, the
+                            // per-order polynomial fit only in the band between them.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_rys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         } else {
                             // nroots 6..=12: the inline Wheeler/Jacobi entry
                             // (task 33-01). Reachable only once
@@ -5802,6 +5938,7 @@ fn launch_center_3c2e_typed<F: CintFloat>(
                 &coeff_i,
                 &coeff_j,
                 &coeff_k,
+                swap_ij,
             ),
             #[cfg(feature = "wgpu")]
             ResolvedBackend::Wgpu(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
@@ -5826,6 +5963,7 @@ fn launch_center_3c2e_typed<F: CintFloat>(
                 &coeff_i,
                 &coeff_j,
                 &coeff_k,
+                swap_ij,
             ),
             #[cfg(feature = "cuda")]
             ResolvedBackend::Cuda(client) => run_3c2e_device::<cubecl_cuda::CudaRuntime>(
@@ -5850,6 +5988,7 @@ fn launch_center_3c2e_typed<F: CintFloat>(
                 &coeff_i,
                 &coeff_j,
                 &coeff_k,
+                swap_ij,
             ),
             #[cfg(feature = "rocm")]
             ResolvedBackend::Rocm(client) => run_3c2e_device::<cubecl_hip::HipRuntime>(
@@ -5874,6 +6013,7 @@ fn launch_center_3c2e_typed<F: CintFloat>(
                 &coeff_i,
                 &coeff_j,
                 &coeff_k,
+                swap_ij,
             ),
             #[cfg(feature = "metal")]
             ResolvedBackend::Metal(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
@@ -5898,6 +6038,7 @@ fn launch_center_3c2e_typed<F: CintFloat>(
                 &coeff_i,
                 &coeff_j,
                 &coeff_k,
+                swap_ij,
             ),
         }
     };
@@ -6493,7 +6634,7 @@ mod scalar_device_tests {
         let shell_meta: [u32; 12] = [0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1];
         // `[si, sj, sk, out_off, class]` — one class, index 0.
         let triples: [u32; 5] = [0, 1, 2, 0, 0];
-        let class_shape: [u32; THREE_C2E_SHAPE_STRIDE] = [0, 0, 0];
+        let class_shape: [u32; THREE_C2E_SHAPE_STRIDE] = [0, 0, 0, 0];
         let g_zero = [0.0_f32; 3];
         let gs_zero = [0.0_f32; 3];
         let work_zero = [0.0_f32; 1];

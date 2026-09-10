@@ -73,7 +73,7 @@ use crate::kernels::two_electron::{
     build_2e_shape_omega, fill_g_tensor_2e_range, two_e_shape_as_f12,
 };
 use crate::math::root_vec::{roots_load, vrr_fill_axis_roots_ket};
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys::rys_roots_fixed;
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
 };
@@ -89,7 +89,7 @@ use cubecl::prelude::*;
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI = sqrt(M_PI)`.
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
 /// Matches `rys_roots.c` `PIE4`.
@@ -318,12 +318,31 @@ fn center_2c2e_kernel<F: Float + CubeElement, N: Size>(
             let zij = riz - rkz;
             let rr = xij * xij + yij * yij + zij * zij;
 
-            let mut pi = 0u32;
-            while pi < nprim_i {
-                let ai = exps[(eoff_i + pi) as usize];
-                let mut pk = 0u32;
-                while pk < nprim_k {
-                    let ak = exps[(eoff_k + pk) as usize];
+            // `kp` outer, `ip` inner — `CINT2c2e_loop` (`cint2c2e.c:116-125`).
+            // The nesting fixes the order the primitive contributions are summed
+            // into the accumulator.
+            let mut pk = 0u32;
+            while pk < nprim_k {
+                let ak = exps[(eoff_k + pk) as usize];
+
+                // `fac1k = envs->common_factor * ck[kp]` when the ket is
+                // uncontracted, else `common_factor` alone (`cint2c2e.c:119-122`).
+                let mut fac1k = common_factor;
+                if nctr_k == 1u32 {
+                    fac1k = common_factor * coeffs[(coff_k + pk) as usize];
+                }
+
+                let mut pi = 0u32;
+                while pi < nprim_i {
+                    let ai = exps[(eoff_i + pi) as usize];
+
+                    // `fac1i = fac1k * ci[ip]` (`cint2c2e.c:128-131`) — the
+                    // scalar the G tensor is seeded from, so the coefficients
+                    // round at the seed rather than on the finished block.
+                    let mut fac_env = fac1k;
+                    if nctr_i == 1u32 {
+                        fac_env = fac1k * coeffs[(coff_i + pi) as usize];
+                    }
 
                     // For 2c2e: aij = ai, akl = ak.
                     let aij = ai;
@@ -334,16 +353,11 @@ fn center_2c2e_kernel<F: Float + CubeElement, N: Size>(
 
                     // Rys roots/weights depend only on (ai, ak) → compute once here.
                     // `nroots` is comptime, so exactly one branch is emitted.
-                    if comptime!(nroots == 1u32) {
-                        rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 2u32) {
-                        rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 3u32) {
-                        rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 4u32) {
-                        rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 5u32) {
-                        rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    if comptime!(nroots <= 5u32) {
+                        // `rys_roots_fixed` is the whole of `CINTrys_roots` for the
+                        // fixed orders: the two global table branches first, the
+                        // per-order polynomial fit only in the band between them.
+                        rys_roots_fixed::<F>(rys_tab, x_rys, &mut urys, &mut wrys, pie4, nroots);
                     } else {
                         // nroots 6..=12: the inline Wheeler/Jacobi entry
                         // (task 33-01), reachable only once
@@ -362,7 +376,7 @@ fn center_2c2e_kernel<F: Float + CubeElement, N: Size>(
                         }
                     }
 
-                    let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor;
+                    let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * fac_env;
 
                     // ── Fill the G-tensor (VRR) ──────────
                     // The roots as vector lanes (V1). This kernel runs its whole
@@ -567,20 +581,33 @@ fn center_2c2e_kernel<F: Float + CubeElement, N: Size>(
                                     }
 
                                     let elem = ci_idx + ck_idx * nci;
-                                    let mut ci = 0u32;
-                                    while ci < nctr_i {
-                                        let coeff_i_val =
-                                            coeffs[(coff_i + pi * nctr_i + ci) as usize];
-                                        let mut ck = 0u32;
-                                        while ck < nctr_k {
-                                            let coeff_k_val =
-                                                coeffs[(coff_k + pk * nctr_k + ck) as usize];
-                                            let block = (ci * nctr_k + ck) * block_len;
-                                            cart_out[(out_off + block + elem) as usize] +=
-                                                val * coeff_i_val * coeff_k_val;
-                                            ck += 1u32;
+                                    // `PRIM2CTR` applies the coefficient of a
+                                    // *contracted* side only; an uncontracted
+                                    // one already rode in through `fac1k`/`fac1i`.
+                                    if (nctr_i == 1u32) && (nctr_k == 1u32) {
+                                        cart_out[(out_off + elem) as usize] += val;
+                                    } else {
+                                        let mut ci = 0u32;
+                                        while ci < nctr_i {
+                                            let mut coeff_i_val = F::new(1.0_f32);
+                                            if nctr_i > 1u32 {
+                                                coeff_i_val =
+                                                    coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                            }
+                                            let mut ck = 0u32;
+                                            while ck < nctr_k {
+                                                let mut coeff_k_val = F::new(1.0_f32);
+                                                if nctr_k > 1u32 {
+                                                    coeff_k_val = coeffs
+                                                        [(coff_k + pk * nctr_k + ck) as usize];
+                                                }
+                                                let block = (ci * nctr_k + ck) * block_len;
+                                                cart_out[(out_off + block + elem) as usize] +=
+                                                    val * coeff_i_val * coeff_k_val;
+                                                ck += 1u32;
+                                            }
+                                            ci += 1u32;
                                         }
-                                        ci += 1u32;
                                     }
 
                                     ci_idx += 1u32;
@@ -595,9 +622,9 @@ fn center_2c2e_kernel<F: Float + CubeElement, N: Size>(
                         ka += 1u32;
                     }
 
-                    pk += 1u32;
+                    pi += 1u32;
                 }
-                pi += 1u32;
+                pk += 1u32;
             }
 
             qi += qi_step;

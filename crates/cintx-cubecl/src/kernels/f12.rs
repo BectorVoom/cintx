@@ -53,7 +53,7 @@ use cubecl::prelude::*;
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
 fn common_fac_sp(l: u8) -> f64 {

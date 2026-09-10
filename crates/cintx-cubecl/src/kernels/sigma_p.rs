@@ -72,7 +72,8 @@ use crate::kernels::one_electron::{
     ONE_E_DERIV_SHAPE_STRIDE, OneEDerivLaunchGroup, one_e_deriv_single_pair_group,
     one_e_g_slab_stride, one_e_launch_geometry, one_e_per_unit,
 };
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys::rys_roots_fixed;
+use crate::math::rys_wheeler::EXT_TABLES_LEN;
 use crate::transform::c2s::ncart;
 use crate::transform::c2spinor::{cart_to_spinor_si_2d, cart_to_spinor_si_2di, spinor_len};
 use cintx_core::CintFloat;
@@ -82,7 +83,7 @@ use cubecl::client::ComputeClient;
 use cubecl::prelude::*;
 
 /// sqrt(pi) — G-tensor base-case normalization (matches `g1e.c` `SQRTPI`).
-const SQRTPI: f64 = 1.7724538509055159_f64;
+const SQRTPI: f64 = 1.7724538509055160272981674833411451_f64;
 
 /// Number of gc blocks emitted per tensor component for the σ·p families:
 /// `gc_x, gc_y, gc_z, gc_1` (3 Pauli + 1 scalar). For `int1e_sp` the scalar
@@ -2680,6 +2681,7 @@ fn sa01_gout<F: Float>(
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn sa01_rys_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -2817,16 +2819,10 @@ fn sa01_rys_kernel<F: Float + CubeElement>(
                     let crijz = rcz - pz;
                     let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                    if comptime!(nroots == 1u32) {
-                        rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 2u32) {
-                        rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 3u32) {
-                        rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 4u32) {
-                        rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else {
-                        rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                    if comptime!(nroots <= 5u32) {
+                        // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+                        // the two global table branches the per-order fits sit behind.
+                        rys_roots_fixed::<F>(rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots);
                     }
 
                     let fac1 = F::new(2.0_f32) * pi_const * fac / zeta;
@@ -2836,7 +2832,7 @@ fn sa01_rys_kernel<F: Float + CubeElement>(
                         let u_n = urys[irys as usize];
                         let w_n = wrys[irys as usize];
                         let tau = u_n / (F::new(1.0_f32) + u_n);
-                        let rt = aij2 * (F::new(1.0_f32) - tau);
+                        let rt = aij2 - aij2 * tau;
 
                         let c00x = (px - rix) + tau * crijx;
                         let c00y = (py - riy) + tau * crijy;
@@ -3011,6 +3007,10 @@ fn run_sa01_rys_batches<R: Runtime>(
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
+        // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+        // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+        let rys_tab_h =
+            client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
         let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
@@ -3023,6 +3023,7 @@ fn run_sa01_rys_batches<R: Runtime>(
                         client,
                         crate::plane::cube_count_1d(n_cubes),
                         cube_dim,
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
                         ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
                         ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
@@ -3347,6 +3348,7 @@ pub fn launch_int1e_sa10sa01_spinor_pair<F: CintFloat>(
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn spgnucsp_rys_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -3493,16 +3495,12 @@ fn spgnucsp_rys_kernel<F: Float + CubeElement>(
                         let crijz = rcz - pz;
                         let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                        if comptime!(nroots == 1u32) {
-                            rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 2u32) {
-                            rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 3u32) {
-                            rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else if comptime!(nroots == 4u32) {
-                            rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else {
-                            rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        if comptime!(nroots <= 5u32) {
+                            // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+                            // the two global table branches the per-order fits sit behind.
+                            rys_roots_fixed::<F>(
+                                rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots,
+                            );
                         }
 
                         let fac1 = F::new(2.0_f32) * pi_const * charge_factor * fac / zeta;
@@ -3512,7 +3510,7 @@ fn spgnucsp_rys_kernel<F: Float + CubeElement>(
                             let u_n = urys[irys as usize];
                             let w_n = wrys[irys as usize];
                             let tau = u_n / (F::new(1.0_f32) + u_n);
-                            let rt = aij2 * (F::new(1.0_f32) - tau);
+                            let rt = aij2 - aij2 * tau;
 
                             let c00x = (px - rix) + tau * crijx;
                             let c00y = (py - riy) + tau * crijy;
@@ -3956,6 +3954,10 @@ fn run_spgnucsp_rys_batches<R: Runtime>(
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
+        // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+        // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+        let rys_tab_h =
+            client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
         let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
@@ -3968,6 +3970,7 @@ fn run_spgnucsp_rys_batches<R: Runtime>(
                         client,
                         crate::plane::cube_count_1d(n_cubes),
                         cube_dim,
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
                         ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
                         ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
@@ -4251,6 +4254,7 @@ pub fn launch_int1e_spgnucsp_spinor_pair<F: CintFloat>(
 // readable at a glance.
 #[allow(clippy::erasing_op)]
 fn spgsa01_rys_kernel<F: Float + CubeElement>(
+    rys_tab: &Array<f64>,
     exps: &Array<F>,
     coeffs: &Array<F>,
     centers: &Array<F>,
@@ -4394,16 +4398,10 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                     let crijz = rcz - pz;
                     let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
-                    if comptime!(nroots == 1u32) {
-                        rys_root1::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 2u32) {
-                        rys_root2::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 3u32) {
-                        rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else if comptime!(nroots == 4u32) {
-                        rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else {
-                        rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                    if comptime!(nroots <= 5u32) {
+                        // `rys_roots_fixed` is the whole of `CINTrys_roots`, including
+                        // the two global table branches the per-order fits sit behind.
+                        rys_roots_fixed::<F>(rys_tab, x_boys, &mut urys, &mut wrys, pie4, nroots);
                     }
 
                     let fac1 = F::new(2.0_f32) * pi_const * fac / zeta;
@@ -4413,7 +4411,7 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                         let u_n = urys[irys as usize];
                         let w_n = wrys[irys as usize];
                         let tau = u_n / (F::new(1.0_f32) + u_n);
-                        let rt = aij2 * (F::new(1.0_f32) - tau);
+                        let rt = aij2 - aij2 * tau;
 
                         let c00x = (px - rix) + tau * crijx;
                         let c00y = (py - riy) + tau * crijy;
@@ -4915,6 +4913,10 @@ fn run_spgsa01_rys_batches<R: Runtime>(
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
+        // The extended-Rys constant tables: `rys_roots_fixed` reads them for
+        // the two global `CINTrys_roots` branches (`x <= 3e-7`, `x >= 35+5n`).
+        let rys_tab_h =
+            client.create_from_slice(f64::as_bytes(&crate::math::rys_wheeler::ext_rys_tables()));
         let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
@@ -4927,6 +4929,7 @@ fn run_spgsa01_rys_batches<R: Runtime>(
                         client,
                         crate::plane::cube_count_1d(n_cubes),
                         cube_dim,
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
                         ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
                         ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
