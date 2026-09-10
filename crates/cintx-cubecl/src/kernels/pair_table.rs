@@ -66,10 +66,30 @@ pub const LIBCINT_EXPCUTOFF: f64 = 60.0;
 
 /// `f64` slots per surviving primitive pair in [`PairTable::data`].
 ///
-/// `[rij_x, rij_y, rij_z, eij, cceij]` — the product centre, the overlap
-/// exponential libcint calls `pdata->eij`, and the log-scale estimate the
-/// quartet-level cutoff compares.
-pub const PAIR_DATA_STRIDE: usize = 5;
+/// `[rij_x, rij_y, rij_z, eij, cceij, rkl_x, rkl_y, rkl_z, expkl]`.
+///
+/// The first five are `CINTset_pairdata`'s own fields — the product centre, the
+/// overlap exponential libcint calls `pdata->eij`, and the log-scale estimate
+/// the quartet-level cutoff compares. A row is used as a **bra** through those.
+///
+/// The last four are the *same primitive pair* under the different convention
+/// `CINT2e_loop_nopt` (`cint2e.c:202-213`) uses for the **ket**, which it forms
+/// inline because it has no table:
+///
+/// ```c
+/// akl = ak[kp] + al[lp];
+/// ekl = rr_kl * ak[kp] * al[lp] / akl;      // a true division
+/// rkl[0] = (ak[kp]*rk[0] + al[lp]*rl[0]) / akl;   // the weighted sum
+/// ekl = exp(-ekl);
+/// ```
+///
+/// Both conventions are carried because a row genuinely needs both: the bra
+/// reads `CINTset_pairdata`'s reciprocal-and-interpolate form and the ket reads
+/// this one, and they are one ULP apart. Precomputing the ket's form here
+/// rather than in the kernel restores what the table is *for* — a ket shell
+/// pair is shared by many quartets, so the `exp` and the three divisions are
+/// paid once per shell pair instead of once per quartet.
+pub const PAIR_DATA_STRIDE: usize = 9;
 
 /// `u32` slots per surviving primitive pair in [`PairTable::index`].
 ///
@@ -365,12 +385,21 @@ impl PairTable {
                 let aij = 1.0 / (ap + aq);
                 let eij = screen.rr * ap * aq * aij;
                 let wq = aq * aij;
+                // The ket's convention, formed exactly as `CINT2e_loop_nopt`
+                // forms it inline: `apq` as a sum divided into, not a reused
+                // reciprocal, and a weighted-sum centre.
+                let apq = ap + aq;
+                let ekl = screen.rr * ap * aq / apq;
                 self.data.extend_from_slice(&[
                     bra.center[0] + wq * (ket.center[0] - bra.center[0]),
                     bra.center[1] + wq * (ket.center[1] - bra.center[1]),
                     bra.center[2] + wq * (ket.center[2] - bra.center[2]),
                     (-eij).exp(),
                     cceij,
+                    (ap * bra.center[0] + aq * ket.center[0]) / apq,
+                    (ap * bra.center[1] + aq * ket.center[1]) / apq,
+                    (ap * bra.center[2] + aq * ket.center[2]) / apq,
+                    (-ekl).exp(),
                 ]);
                 self.index.push(p as u32);
                 self.index.push(q as u32);

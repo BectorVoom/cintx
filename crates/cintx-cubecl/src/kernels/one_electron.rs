@@ -15617,6 +15617,25 @@ mod tests {
         contract_nuclear(&pd, ri, rj, li, lj, atoms)
     }
 
+    /// Scale a host reference block by the factor the *kernel* now carries.
+    ///
+    /// `cint1e.c:120` folds `common_factor * CINTcommon_fac_sp(i_l) *
+    /// CINTcommon_fac_sp(j_l)` into `fac1j`, ahead of the recurrence, and the
+    /// scalar 1e kernel does the same through `OneELaunchGroup::class_fac`.
+    /// Its raw output therefore includes that factor, where these host
+    /// references stop at the bare Cartesian block. The launchers used to
+    /// multiply it in afterwards and no longer do — scaling the finished block
+    /// is the same integral only to within a few ULP, which is the whole reason
+    /// the factor moved.
+    #[cfg(feature = "cpu")]
+    fn with_sp_scale(mut host: Vec<f64>, li: u8, lj: u8) -> Vec<f64> {
+        let scale = common_fac_sp(li) * common_fac_sp(lj);
+        for value in &mut host {
+            *value *= scale;
+        }
+        host
+    }
+
     #[cfg(feature = "cpu")]
     fn assert_close(host: &[f64], dev: &[f64], tag: &str) {
         assert_eq!(host.len(), dev.len(), "length mismatch ({tag})");
@@ -15638,7 +15657,7 @@ mod tests {
         let ai = 0.9_f64;
         let aj = 1.3_f64;
         for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1), (2, 2)] {
-            let host = host_overlap_block(ai, aj, ri, rj, li, lj);
+            let host = with_sp_scale(host_overlap_block(ai, aj, ri, rj, li, lj), li, lj);
             let dev = run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
                 &cpu_client_1e(),
                 0,
@@ -15670,7 +15689,7 @@ mod tests {
         let ai = 0.9_f64;
         let aj = 1.3_f64;
         for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1), (2, 2)] {
-            let host = host_kinetic_block(ai, aj, ri, rj, li, lj);
+            let host = with_sp_scale(host_kinetic_block(ai, aj, ri, rj, li, lj), li, lj);
             let dev = run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
                 &cpu_client_1e(),
                 1,
@@ -15718,7 +15737,7 @@ mod tests {
         // limit the cross-check pairs to li+lj<=3 (overlap/kinetic cover (2,2)).
         for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1)] {
             let nroots = (li as u32 + lj as u32) / 2 + 1;
-            let host = host_nuclear_block(ai, aj, ri, rj, li, lj, &atoms);
+            let host = with_sp_scale(host_nuclear_block(ai, aj, ri, rj, li, lj, &atoms), li, lj);
             let dev = run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
                 &cpu_client_1e(),
                 2,

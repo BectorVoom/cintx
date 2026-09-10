@@ -6550,6 +6550,9 @@ mod scalar_device_tests {
             &[coeff_i],
             &[coeff_j],
             &[coeff_k],
+            // This helper is handed `(li, lj)` as the caller wrote them, so
+            // nothing was exchanged.
+            false,
         );
 
         assert_eq!(

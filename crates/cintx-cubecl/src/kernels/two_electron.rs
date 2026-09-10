@@ -2247,31 +2247,22 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                 let al = exps[(eoff_l + pl) as usize];
                 let akl = ak + al;
 
-                // The **ket** pair data, inline — `CINT2e_loop_nopt`
-                // (`cint2e.c:202-213`), which is the path a caller with no
-                // optimizer takes and the one the oracle compares against:
+                // The **ket** pair data, in `CINT2e_loop_nopt`'s convention
+                // (`cint2e.c:202-213`) — the path a caller with no optimizer
+                // takes, and the one the oracle compares against. It is *not*
+                // `CINTset_pairdata`'s form, which the same row also carries
+                // and which the bra reads below: the ket divides by `akl`
+                // rather than reusing a reciprocal, and takes the weighted-sum
+                // centre rather than the interpolation. One ULP apart.
                 //
-                // ```c
-                // akl = ak[kp] + al[lp];
-                // ekl = rr_kl * ak[kp] * al[lp] / akl;
-                // rkl[0] = (ak[kp]*rk[0] + al[lp]*rl[0]) / akl;
-                // ekl = exp(-ekl);
-                // ```
-                //
-                // This is **not** `CINTset_pairdata`'s form, which the pair
-                // table stores and the *bra* still uses (`pdata_base`, built by
-                // `CINTset_pairdata`, is the bra's alone in this loop). The ket
-                // divides by `akl` instead of reusing a reciprocal, and takes
-                // the weighted-sum centre instead of the interpolation — the
-                // same value in exact arithmetic, one ULP apart in `f64`.
-                let klx = rkx - rlx;
-                let kly = rky - rly;
-                let klz = rkz - rlz;
-                let rr_kl = klx * klx + kly * kly + klz * klz;
-                let fac_kl = F::exp(F::new(0.0_f32) - (rr_kl * ak * al / akl));
-                let rklx = (ak * rkx + al * rlx) / akl;
-                let rkly = (ak * rky + al * rly) / akl;
-                let rklz = (ak * rkz + al * rlz) / akl;
+                // Read, not recomputed. `_nopt` forms these inline because it
+                // has no table; cintx has one, and a ket shell pair is shared
+                // by many quartets, so the `exp` and the three divisions belong
+                // once per shell pair rather than once per quartet.
+                let rklx = pair_data[(kl_d + 5u32) as usize];
+                let rkly = pair_data[(kl_d + 6u32) as usize];
+                let rklz = pair_data[(kl_d + 7u32) as usize];
+                let fac_kl = pair_data[(kl_d + 8u32) as usize];
                 // `cint2e.c:212`: what is left of the budget for a bra pair.
                 let eijcutoff = expcutoff - ccekl;
                 let rklrxx = rklx - rx_kl_x;
