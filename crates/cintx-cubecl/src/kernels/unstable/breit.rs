@@ -1029,7 +1029,7 @@ fn run_breit_g_device<R: Runtime>(
         client,
         crate::plane::single_cube_count(),
         crate::plane::backend_plane_cube_dim::<R>(client),
-        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
+        unsafe { ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN) },
         unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_size_u) },
         unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
         unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },

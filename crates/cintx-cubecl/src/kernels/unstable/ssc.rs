@@ -1101,7 +1101,7 @@ fn run_ssc_scalar_device<R: Runtime>(
                 client,
                 crate::plane::single_cube_count(),
                 crate::plane::backend_plane_cube_dim::<R>(client),
-                ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
+                unsafe { ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN) },
                 unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
